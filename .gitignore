@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+build/
+*.bun-build
+.bun-build/
+
+# Compiled single-file binaries (bun build --compile output)
+/bin/
+packages/*/bin/
+
+# Logs & runtime state
+*.log
+*.pid
+*.seed
+
+# Env
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+.cursor/
+
+# Test / coverage
+coverage/
+.nyc_output/
+
+# Spike scratch (rebuilt locally as needed)
+docs/spikes/*/node_modules/
+docs/spikes/*/agmux-wrap
+docs/spikes/*/*.bun-build
