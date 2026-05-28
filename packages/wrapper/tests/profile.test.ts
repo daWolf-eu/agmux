@@ -55,3 +55,21 @@ test("loadProfile defaults args=[] and env={} when omitted", () => {
   expect(p.env).toEqual({});
 });
 
+test("parseConfig tilde-expands prefix `~` in command, cwd, and env values", () => {
+  const home = os.homedir();
+  const cfg = parseConfig(`
+[profiles.tilde]
+agent_kind = "claude"
+command = "~/bin/claude"
+cwd = "~/work"
+env = { CLAUDE_CONFIG_DIR = "~/.claude-chax", PLAIN = "no-tilde", EMBEDDED = "/opt/~tilde" }
+`);
+  const p = cfg.profiles["tilde"]!;
+  expect(p.command).toBe(`${home}/bin/claude`);
+  expect(p.cwd).toBe(`${home}/work`);
+  expect(p.env.CLAUDE_CONFIG_DIR).toBe(`${home}/.claude-chax`);
+  // Non-prefix tildes are left alone (matches shell semantics).
+  expect(p.env.PLAIN).toBe("no-tilde");
+  expect(p.env.EMBEDDED).toBe("/opt/~tilde");
+});
+

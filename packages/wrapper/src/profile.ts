@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import { parse as parseToml } from "smol-toml";
 import type { AgentKind } from "@agmux/protocol";
 
@@ -20,6 +21,14 @@ function asAgentKind(v: unknown): AgentKind {
   throw new Error(`profile: agent_kind must be 'claude' or 'codex', got ${JSON.stringify(v)}`);
 }
 
+// POSIX-shell-style prefix tilde expansion: leading `~` or `~/` → $HOME.
+// Embedded `~` is left alone (matches shell semantics; only quoting-bare prefix expands).
+export function expandTilde(s: string): string {
+  if (s === "~") return os.homedir();
+  if (s.startsWith("~/")) return os.homedir() + s.slice(1);
+  return s;
+}
+
 export function parseConfig(toml: string): AgmuxConfig {
   const raw = parseToml(toml) as any;
   const profiles: Record<string, ProfileConfig> = {};
@@ -27,12 +36,12 @@ export function parseConfig(toml: string): AgmuxConfig {
   for (const [name, p] of Object.entries(src)) {
     profiles[name] = {
       agent_kind: asAgentKind(p.agent_kind),
-      command: String(p.command),
+      command: expandTilde(String(p.command)),
       args: Array.isArray(p.args) ? p.args.map(String) : [],
       env: typeof p.env === "object" && p.env !== null
-        ? Object.fromEntries(Object.entries(p.env).map(([k, v]) => [k, String(v)]))
+        ? Object.fromEntries(Object.entries(p.env).map(([k, v]) => [k, expandTilde(String(v))]))
         : {},
-      cwd: typeof p.cwd === "string" ? p.cwd : undefined,
+      cwd: typeof p.cwd === "string" ? expandTilde(p.cwd) : undefined,
       resume_template: typeof p.resume_template === "string" ? p.resume_template : undefined,
     };
   }
