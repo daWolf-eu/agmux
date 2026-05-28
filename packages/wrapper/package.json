@@ -12,6 +12,10 @@
     "ulid": "^2.3.0",
     "smol-toml": "^1.3.0"
   },
+  "devDependencies": {
+    "@agmux/hub": "workspace:*",
+    "@agmux/store": "workspace:*"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"

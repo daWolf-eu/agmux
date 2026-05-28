@@ -16,6 +16,9 @@
     "packages/hub": {
       "name": "@agmux/hub",
       "version": "0.0.0",
+      "bin": {
+        "agmux-hub": "bin/agmux-hub.ts",
+      },
       "dependencies": {
         "@agmux/protocol": "workspace:*",
         "@agmux/store": "workspace:*",
@@ -39,6 +42,10 @@
         "@agmux/protocol": "workspace:*",
         "smol-toml": "^1.3.0",
         "ulid": "^2.3.0",
+      },
+      "devDependencies": {
+        "@agmux/hub": "workspace:*",
+        "@agmux/store": "workspace:*",
       },
     },
   },
