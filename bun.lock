@@ -55,6 +55,14 @@
         "@agmux/store": "workspace:*",
       },
     },
+    "tests": {
+      "name": "@agmux/tests",
+      "dependencies": {
+        "@agmux/hub": "workspace:*",
+        "@agmux/protocol": "workspace:*",
+        "@agmux/store": "workspace:*",
+      },
+    },
   },
   "packages": {
     "@agmux/cli": ["@agmux/cli@workspace:packages/cli"],
@@ -64,6 +72,8 @@
     "@agmux/protocol": ["@agmux/protocol@workspace:packages/protocol"],
 
     "@agmux/store": ["@agmux/store@workspace:packages/store"],
+
+    "@agmux/tests": ["@agmux/tests@workspace:tests"],
 
     "@agmux/wrapper": ["@agmux/wrapper@workspace:packages/wrapper"],
 

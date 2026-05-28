@@ -2,7 +2,7 @@
   "name": "agmux",
   "private": true,
   "version": "0.0.0",
-  "workspaces": ["packages/*"],
+  "workspaces": ["packages/*", "tests"],
   "scripts": {
     "test": "bun test",
     "typecheck": "bun run --filter '*' typecheck",

@@ -1,0 +1,10 @@
+{
+  "name": "@agmux/tests",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@agmux/hub": "workspace:*",
+    "@agmux/store": "workspace:*",
+    "@agmux/protocol": "workspace:*"
+  }
+}
