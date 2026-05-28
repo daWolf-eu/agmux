@@ -8,9 +8,11 @@ function makeServer() {
   return { store, server, url: `http://${server.hostname}:${server.port}` };
 }
 
+// Use a fresh "now" timestamp so the live-status projection (which compares against
+// real-time) treats the session as idle, not lost.
 const startedEv = {
   event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2P",
-  ts: "2026-05-28T12:00:00.000Z",
+  ts: new Date().toISOString(),
   session_id: "0190a3e0-0000-7000-8000-000000000000",
   kind: "session.started",
   version: 1,

@@ -21,7 +21,7 @@ const startedEv = {
 test("append() + projection: getSession returns the row", () => {
   const s = makeStore();
   s.append(startedEv);
-  const row = s.getSession(sid);
+  const row = s.getSession(sid, new Date("2026-05-28T12:00:10.000Z"));
   expect(row?.status).toBe("idle");
   expect(row?.command).toBe("ccc");
 });
