@@ -24,6 +24,9 @@
     "packages/store": {
       "name": "@agmux/store",
       "version": "0.0.0",
+      "dependencies": {
+        "@agmux/protocol": "workspace:*",
+      },
     },
     "packages/wrapper": {
       "name": "@agmux/wrapper",
