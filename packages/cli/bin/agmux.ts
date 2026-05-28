@@ -19,8 +19,9 @@ const verb = argv[0];
 
 function usage(): never {
   console.error(`usage: agmux <verb> [args]
-  run [--kind=<claude|codex>] <command> [args...]
-  run -p <profile>
+  run [placement] [--kind=<claude|codex>] <command> [args...]
+  run [placement] -p <profile>
+    placement: -d/--detach (default --new-pane) | --new-pane | --new-window | --new-session
   ls [--live] [--all] [--agent <kind>] [--profile <name>]
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
@@ -43,13 +44,21 @@ async function main(): Promise<number> {
         return 2;
       }
       if (parsed.kind === "profile") {
-        return runCmd({ kind: "profile", profileName: parsed.profileName, hubUrl, wrapBin });
+        return runCmd({
+          kind: "profile",
+          profileName: parsed.profileName,
+          placement: parsed.placement,
+          detach: parsed.detach,
+          hubUrl, wrapBin,
+        });
       }
       return runCmd({
         kind: "inline",
         agent_kind: parsed.agent_kind,
         command: parsed.command,
         args: parsed.args,
+        placement: parsed.placement,
+        detach: parsed.detach,
         hubUrl, wrapBin,
       });
     }
