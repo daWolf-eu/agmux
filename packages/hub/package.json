@@ -7,6 +7,10 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "dependencies": {
+    "@agmux/protocol": "workspace:*",
+    "@agmux/store": "workspace:*"
+  },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "bun test"

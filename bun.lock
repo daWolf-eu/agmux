@@ -16,6 +16,10 @@
     "packages/hub": {
       "name": "@agmux/hub",
       "version": "0.0.0",
+      "dependencies": {
+        "@agmux/protocol": "workspace:*",
+        "@agmux/store": "workspace:*",
+      },
     },
     "packages/protocol": {
       "name": "@agmux/protocol",
