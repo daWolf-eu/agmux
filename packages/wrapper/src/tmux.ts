@@ -4,7 +4,9 @@ export interface TmuxCoords { session: string; window: string; pane: string; }
 
 export async function readCurrentTmuxCoords(): Promise<TmuxCoords | null> {
   if (!process.env.TMUX) return null;
-  const out = (await $`tmux display-message -p '#{session_name}\t#{window_id}\t#{pane_id}'`.text()).trim();
+  // Use a JS string with real tab chars so tmux receives them as separators, not literal \t.
+  const fmt = "#{session_name}\t#{window_id}\t#{pane_id}";
+  const out = (await $`tmux display-message -p ${fmt}`.text()).trim();
   const [session, window, pane] = out.split("\t");
   if (!session || !window || !pane) return null;
   return { session, window, pane };

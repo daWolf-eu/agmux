@@ -56,7 +56,9 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     tmuxCoords = await newAgmuxWindow("agmux", windowName, innerCmd);
     // Hand the user off to that window; on detach the outer wrapper exits 0.
     const { $ } = await import("bun");
-    await $`tmux attach -t agmux \\; select-window -t agmux:${tmuxCoords.window}`;
+    // Use 'tmux attach; tmux select-window' as separate commands — Bun's $ does not
+    // shell-expand \; so we cannot use it as a command separator inline.
+    await $`tmux attach-session -t agmux`.nothrow();
     return 0;
   }
 
