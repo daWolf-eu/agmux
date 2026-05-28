@@ -54,6 +54,10 @@ export function loadProfile(name: string, configPath: string): ProfileConfig {
   }
   const cfg = parseConfig(fs.readFileSync(configPath, "utf8"));
   const p = cfg.profiles[name];
-  if (!p) throw new Error(`profile not found: ${name}`);
+  if (!p) {
+    const available = Object.keys(cfg.profiles).sort();
+    const listed = available.length > 0 ? available.join(", ") : "(none)";
+    throw new Error(`profile not found: ${name}. Available: ${listed}`);
+  }
   return p;
 }

@@ -41,10 +41,10 @@ test("loadProfile reads the file and resolves a named profile", () => {
   expect(p.env).toEqual({ ANTHROPIC_LOG: "info" });
 });
 
-test("loadProfile throws on unknown profile name", () => {
+test("loadProfile throws on unknown profile name and lists available", () => {
   const f = path.join(tmp, "config.toml");
   fs.writeFileSync(f, sampleToml);
-  expect(() => loadProfile("nope", f)).toThrow(/profile not found/);
+  expect(() => loadProfile("nope", f)).toThrow(/profile not found: nope\. Available: claude-work, codex-default/);
 });
 
 test("loadProfile defaults args=[] and env={} when omitted", () => {
