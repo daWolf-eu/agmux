@@ -53,6 +53,11 @@ args = []
 agent_kind = "codex"
 command = "codex"
 args = []
+
+# By default profiles spawn via `$SHELL -ic 'exec <command> <args>'` so
+# user-defined shell aliases (like `ccc` above) resolve. Set use_shell = false
+# for compound aliases or when you want raw execvp on an absolute path.
+# use_shell = false
 TOML
 
 # Use it

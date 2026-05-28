@@ -54,3 +54,24 @@ test("loadProfile defaults args=[] and env={} when omitted", () => {
   expect(p.args).toEqual([]);
   expect(p.env).toEqual({});
 });
+
+test("parseConfig carries use_shell when set; otherwise undefined", () => {
+  const cfg = parseConfig(`
+[profiles.with-shell]
+agent_kind = "claude"
+command = "ccc"
+use_shell = true
+
+[profiles.raw]
+agent_kind = "claude"
+command = "/usr/bin/claude"
+use_shell = false
+
+[profiles.default]
+agent_kind = "claude"
+command = "cc"
+`);
+  expect(cfg.profiles["with-shell"]?.use_shell).toBe(true);
+  expect(cfg.profiles["raw"]?.use_shell).toBe(false);
+  expect(cfg.profiles["default"]?.use_shell).toBeUndefined();
+});
