@@ -27,7 +27,7 @@ export async function lsCmd(opts: LsOpts): Promise<number> {
 function printTable(rows: SessionRow[]): void {
   const header = ["ID", "AGENT", "PROFILE", "STATUS", "PID", "TMUX", "START", "LAST_SEEN"];
   const data = rows.map((r) => [
-    r.session_id.slice(0, 8),
+    r.session_id.slice(0, 23),
     r.agent_kind,
     r.profile ?? "-",
     r.status,
