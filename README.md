@@ -59,8 +59,11 @@ command = "codex"
 args = []
 TOML
 
-# Use it
-agmux run claude-work        # launches into a new tmux window
+# Use it — two ways to launch:
+agmux run claude --resume abc            # ad-hoc: command + args; agent_kind detected from basename
+agmux run --kind=codex /opt/codex-rc1    # explicit --kind for unknown binary names
+agmux run -p claude-work                 # profile from ~/.config/agmux/config.toml
+
 agmux ls                     # recent 50 sessions (any status) — newest first
 agmux ls --live              # only live sessions (idle/running/waiting)
 agmux ls --all               # uncapped

@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { AGMUX_STATE_DIR_DEFAULT } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
+import { parseRunArgs } from "../src/parse-run.ts";
 import { lsCmd } from "../src/ls.ts";
 import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
@@ -18,7 +19,8 @@ const verb = argv[0];
 
 function usage(): never {
   console.error(`usage: agmux <verb> [args]
-  run <profile>
+  run [--kind=<claude|codex>] <command> [args...]
+  run -p <profile>
   ls [--live] [--all] [--agent <kind>] [--profile <name>]
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
@@ -35,9 +37,21 @@ async function main(): Promise<number> {
 
   switch (verb) {
     case "run": {
-      const profile = argv[1];
-      if (!profile) usage();
-      return runCmd({ profileName: profile, hubUrl, wrapBin });
+      const parsed = parseRunArgs(argv.slice(1));
+      if (parsed.kind === "error") {
+        console.error(parsed.message);
+        return 2;
+      }
+      if (parsed.kind === "profile") {
+        return runCmd({ kind: "profile", profileName: parsed.profileName, hubUrl, wrapBin });
+      }
+      return runCmd({
+        kind: "inline",
+        agent_kind: parsed.agent_kind,
+        command: parsed.command,
+        args: parsed.args,
+        hubUrl, wrapBin,
+      });
     }
     case "ls": {
       const live = argv.includes("--live");

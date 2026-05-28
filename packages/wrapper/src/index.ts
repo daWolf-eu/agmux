@@ -8,7 +8,7 @@ import {
   AGMUX_TMUX_SESSION_DEFAULT,
 } from "@agmux/protocol";
 import { openPty, setWinsize } from "./pty.ts";
-import { loadProfile } from "./profile.ts";
+import type { ProfileConfig } from "./profile.ts";
 import { HubClient } from "./hub-client.ts";
 import { mintSessionId } from "./ids.ts";
 import { buildStartedEvent, buildEndedEvent, buildResumedEvent } from "./lifecycle.ts";
@@ -18,15 +18,15 @@ import {
 } from "./tmux.ts";
 
 export interface RunOpts {
-  profileName: string;
-  configPath: string;
+  profile: ProfileConfig;
+  profileName: string | null;   // null for ad-hoc invocations
   stateDir: string;
   hubUrl: string;
-  argv: string[]; // process.argv.slice(2)
+  argv: string[]; // process.argv.slice(2) — passed to the inner wrapper on tmux re-exec
 }
 
 export async function runWrapper(opts: RunOpts): Promise<number> {
-  const profile = loadProfile(opts.profileName, opts.configPath);
+  const profile = opts.profile;
 
   // Identity: reuse parent-set AGMUX_SESSION_ID (resume) or mint fresh (new).
   const parentId = process.env[AGMUX_SESSION_ID_ENV];
@@ -55,13 +55,27 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     }
     await ensureAgmuxSession(tmuxSessionName);
     const shortId = sessionId.slice(0, 8);
-    const windowName = `${opts.profileName}-${shortId}`;
+    const windowLabel = opts.profileName ?? profile.command.split("/").pop()!;
+    const windowName = `${windowLabel}-${shortId}`;
     // The new window itself runs the same wrapper, but with $TMUX set inside the pane
     // so the next call detects the existing pane and proceeds inline.
     // We pass our own argv along to that inner invocation.
     const innerCmd = ["bun", import.meta.path.replace(/\/src\/index\.ts$/, "/bin/agmux-wrap.ts"),
       ...opts.argv];
-    tmuxCoords = await newAgmuxWindow(tmuxSessionName, windowName, innerCmd);
+    // Forward agmux-relevant env vars per-window via `-e`. Session env is a snapshot at
+    // create time, so we can't rely on it for AGMUX_INLINE_PROFILE / AGMUX_SESSION_ID
+    // when the agmux tmux session already existed.
+    const innerEnv: Record<string, string> = {};
+    for (const k of [
+      "AGMUX_INLINE_PROFILE",
+      AGMUX_HUB_URL_ENV,
+      AGMUX_SESSION_ID_ENV,
+      AGMUX_TMUX_SESSION_ENV,
+    ] as const) {
+      const v = process.env[k];
+      if (v) innerEnv[k] = v;
+    }
+    tmuxCoords = await newAgmuxWindow(tmuxSessionName, windowName, innerCmd, innerEnv);
     // Hand the user off to that window; on detach the outer wrapper exits 0.
     const { $ } = await import("bun");
     // Use 'tmux attach; tmux select-window' as separate commands — Bun's $ does not

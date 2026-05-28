@@ -24,18 +24,31 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     return 0;
   }
 
-  // dead / lost: relaunch the wrapper under the same session_id
-  if (!session.profile) {
-    console.error(`cannot resume — original profile name was not recorded`);
-    return 1;
+  // dead / lost: relaunch the wrapper under the same session_id.
+  // Profile mode → wrapper re-loads from config.toml by name.
+  // Ad-hoc mode (profile is null) → reconstruct the inline profile from the stored
+  // command/args/env so we can resume without the user re-typing the invocation.
+  const childEnv: Record<string, string> = {
+    ...process.env,
+    [AGMUX_SESSION_ID_ENV]: session.session_id,
+    [AGMUX_HUB_URL_ENV]: opts.hubUrl,
+  };
+  let wrapArgv: string[];
+  if (session.profile) {
+    wrapArgv = [opts.wrapBin, session.profile];
+  } else {
+    const inlineProfile = {
+      agent_kind: session.agent_kind,
+      command: session.command,
+      args: session.args,
+      env: session.env_overrides ?? {},
+    };
+    childEnv.AGMUX_INLINE_PROFILE = JSON.stringify(inlineProfile);
+    wrapArgv = [opts.wrapBin, session.command.split("/").pop() ?? "agent"];
   }
-  const child = Bun.spawn([opts.wrapBin, session.profile], {
+  const child = Bun.spawn(wrapArgv, {
     stdio: ["inherit", "inherit", "inherit"],
-    env: {
-      ...process.env,
-      [AGMUX_SESSION_ID_ENV]: session.session_id,
-      [AGMUX_HUB_URL_ENV]: opts.hubUrl,
-    },
+    env: childEnv,
   });
   await child.exited;
   return child.exitCode ?? 0;

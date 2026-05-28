@@ -21,10 +21,23 @@ export async function ensureAgmuxSession(name = "agmux"): Promise<void> {
   }
 }
 
-export async function newAgmuxWindow(sessionName: string, windowName: string, cmd: string[]): Promise<TmuxCoords> {
+export async function newAgmuxWindow(
+  sessionName: string,
+  windowName: string,
+  cmd: string[],
+  env: Record<string, string> = {},
+): Promise<TmuxCoords> {
   // Create the window, with the wrapper invocation as its initial command, and capture coords.
+  // `-e KEY=VAL` (tmux >=3.0) sets env per-window so we don't depend on the session's
+  // env snapshot (which is fixed at session-create time).
   const fmt = "#{session_name}\t#{window_id}\t#{pane_id}";
-  const out = (await $`tmux new-window -t ${sessionName} -n ${windowName} -P -F ${fmt} -- ${cmd}`.text()).trim();
+  const eFlags: string[] = [];
+  for (const [k, v] of Object.entries(env)) {
+    eFlags.push("-e", `${k}=${v}`);
+  }
+  const out = (
+    await $`tmux new-window -t ${sessionName} -n ${windowName} ${eFlags} -P -F ${fmt} -- ${cmd}`.text()
+  ).trim();
   const [session, window, pane] = out.split("\t");
   if (!session || !window || !pane) throw new Error(`tmux new-window: unparseable output: ${out}`);
   return { session, window, pane };
