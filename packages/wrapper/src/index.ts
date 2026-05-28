@@ -75,19 +75,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const initCols = process.stdout.columns || 80;
   const { master, slave, slaveOut, slaveErr } = openPty(initRows, initCols);
 
-  // Default: wrap in `$SHELL -ic 'exec <cmd>'` so user-defined aliases (e.g. zshrc
-  // `alias ccc=claude…`) resolve, and `exec` replaces the shell so the recorded pid
-  // is the agent's, not the shell's. Profiles can opt out with use_shell=false.
-  const useShell = profile.use_shell ?? true;
-  const spawnArgv = useShell
-    ? [
-        process.env.SHELL ?? "/bin/sh",
-        "-ic",
-        `exec ${[profile.command, ...profile.args].map(posixQuote).join(" ")}`,
-      ]
-    : [profile.command, ...profile.args];
-
-  const child = Bun.spawn(spawnArgv, {
+  const child = Bun.spawn([profile.command, ...profile.args], {
     stdin: slave, stdout: slaveOut, stderr: slaveErr,
     cwd: profile.cwd ?? process.cwd(),
     env: {
@@ -164,9 +152,4 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     return 128 + 0; // unreachable
   }
   return exitCode ?? 0;
-}
-
-// Single-quote a string for POSIX shells, handling embedded single quotes.
-function posixQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }

@@ -36,28 +36,27 @@ ln -sf "$(pwd)/packages/hub/dist/agmux-hub"      /usr/local/bin/agmux-hub
 ln -sf "$(pwd)/packages/wrapper/dist/agmux-wrap" /usr/local/bin/agmux-wrap
 ln -sf "$(pwd)/packages/cli/dist/agmux"          /usr/local/bin/agmux
 
-# Configure a profile
+# Configure a profile.
+# `command` is exec'd directly via PATH lookup — shell aliases and built-ins
+# are NOT resolved. Use absolute paths or rely on PATH. Put env overrides and
+# flags in the profile itself.
 mkdir -p ~/.config/agmux
 cat > ~/.config/agmux/config.toml <<'TOML'
 [profiles.claude-work]
 agent_kind = "claude"
-command = "ccc"
+command = "claude"
 args = []
+env = { ANTHROPIC_API_KEY = "..." }
 
 [profiles.claude-private]
 agent_kind = "claude"
-command = "cc"
+command = "claude"
 args = []
 
 [profiles.codex-default]
 agent_kind = "codex"
 command = "codex"
 args = []
-
-# By default profiles spawn via `$SHELL -ic 'exec <command> <args>'` so
-# user-defined shell aliases (like `ccc` above) resolve. Set use_shell = false
-# for compound aliases or when you want raw execvp on an absolute path.
-# use_shell = false
 TOML
 
 # Use it

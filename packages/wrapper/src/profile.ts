@@ -9,9 +9,6 @@ export interface ProfileConfig {
   env: Record<string, string>;
   cwd?: string;
   resume_template?: string; // reserved; ignored in MVP
-  // When true (default), spawn via `$SHELL -ic 'exec <command> <args...>'` so user
-  // shell aliases resolve. Opt out for compound aliases or raw-binary requirements.
-  use_shell?: boolean;
 }
 
 export interface AgmuxConfig {
@@ -37,7 +34,6 @@ export function parseConfig(toml: string): AgmuxConfig {
         : {},
       cwd: typeof p.cwd === "string" ? p.cwd : undefined,
       resume_template: typeof p.resume_template === "string" ? p.resume_template : undefined,
-      use_shell: typeof p.use_shell === "boolean" ? p.use_shell : undefined,
     };
   }
   return { profiles };
