@@ -1,7 +1,12 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV } from "@agmux/protocol";
+import {
+  AGMUX_SESSION_ID_ENV,
+  AGMUX_HUB_URL_ENV,
+  AGMUX_TMUX_SESSION_ENV,
+  AGMUX_TMUX_SESSION_DEFAULT,
+} from "@agmux/protocol";
 import { openPty, setWinsize } from "./pty.ts";
 import { loadProfile } from "./profile.ts";
 import { HubClient } from "./hub-client.ts";
@@ -32,6 +37,9 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const queueDir = path.join(opts.stateDir, "queue");
   const client = new HubClient({ hubUrl: opts.hubUrl, queueDir, sessionId });
 
+  // Tmux session name is overridable so e2e tests don't collide with the user's real "agmux".
+  const tmuxSessionName = process.env[AGMUX_TMUX_SESSION_ENV] ?? AGMUX_TMUX_SESSION_DEFAULT;
+
   // Tmux placement.
   let tmuxCoords = await readCurrentTmuxCoords();
   if (!tmuxCoords) {
@@ -45,7 +53,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
       console.error(`agmux-wrap: tmux >=3.2 required, found ${v}`);
       return 2;
     }
-    await ensureAgmuxSession("agmux");
+    await ensureAgmuxSession(tmuxSessionName);
     const shortId = sessionId.slice(0, 8);
     const windowName = `${opts.profileName}-${shortId}`;
     // The new window itself runs the same wrapper, but with $TMUX set inside the pane
@@ -53,12 +61,12 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     // We pass our own argv along to that inner invocation.
     const innerCmd = ["bun", import.meta.path.replace(/\/src\/index\.ts$/, "/bin/agmux-wrap.ts"),
       ...opts.argv];
-    tmuxCoords = await newAgmuxWindow("agmux", windowName, innerCmd);
+    tmuxCoords = await newAgmuxWindow(tmuxSessionName, windowName, innerCmd);
     // Hand the user off to that window; on detach the outer wrapper exits 0.
     const { $ } = await import("bun");
     // Use 'tmux attach; tmux select-window' as separate commands — Bun's $ does not
     // shell-expand \; so we cannot use it as a command separator inline.
-    await $`tmux attach-session -t agmux`.nothrow();
+    await $`tmux attach-session -t ${tmuxSessionName}`.nothrow();
     return 0;
   }
 

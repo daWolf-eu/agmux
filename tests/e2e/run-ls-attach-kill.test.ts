@@ -4,11 +4,14 @@ import { makeTestEnv, waitFor } from "./helpers.ts";
 
 test("run → ls shows session → kill ends it", async () => {
   const env = makeTestEnv();
+  // Override the wrapper's internal tmux session name so we never touch the user's real "agmux".
+  const innerSession = "agmux-e2e-internal";
   const baseEnv = {
     HOME: env.stateDir.replace(/\.agmux$/, ""),
     XDG_CONFIG_HOME: env.stateDir.replace(/\.agmux$/, "") + "/.config",
     AGMUX_HUB_BIN: env.hubBin,
     AGMUX_WRAP_BIN: env.wrapBin,
+    AGMUX_TMUX_SESSION: innerSession,
     PATH: process.env.PATH ?? "",
   };
 
@@ -36,7 +39,7 @@ test("run → ls shows session → kill ends it", async () => {
     return out.includes(" ended ");
   });
 
-  // Cleanup
+  // Cleanup — only kill sessions this test created; never touch the user's "agmux".
   try { await $`tmux kill-session -t agmux-e2e`; } catch {}
-  try { await $`tmux kill-session -t agmux`; } catch {}
+  try { await $`tmux kill-session -t ${innerSession}`; } catch {}
 });
