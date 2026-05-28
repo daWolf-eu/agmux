@@ -35,3 +35,7 @@ coverage/
 docs/spikes/*/node_modules/
 docs/spikes/*/agmux-wrap
 docs/spikes/*/*.bun-build
+
+# TypeScript / Bun workspace
+*.tsbuildinfo
+bun.lock.bak
