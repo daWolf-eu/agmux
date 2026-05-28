@@ -83,33 +83,41 @@ test("POST /ingest is idempotent on duplicate event_id (still 202)", async () =>
   server.stop();
 });
 
-test("GET /sessions returns live rows by default", async () => {
-  const { server, url } = makeServer();
-  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(startedEv) });
-  const r = await fetch(`${url}/sessions`);
-  expect(r.status).toBe(200);
-  const body = await r.json() as any;
-  expect(body.sessions).toHaveLength(1);
-  expect(body.sessions[0].session_id).toBe(startedEv.session_id);
-  server.stop();
-});
-
-test("GET /sessions?all=1 includes ended", async () => {
+test("GET /sessions returns all statuses by default (live filter is opt-in)", async () => {
   const { server, url } = makeServer();
   await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(startedEv) });
   await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2X",
-      ts: "2026-05-28T12:01:00.000Z",
+      ts: new Date(Date.now() + 1000).toISOString(),
       session_id: startedEv.session_id,
       kind: "session.ended", version: 1, host: "macbook.local",
       payload: { exit_code: 0, signal: null, reason: "normal" } }) });
-  const r = await fetch(`${url}/sessions?all=1`);
+  const r = await fetch(`${url}/sessions`);
+  expect(r.status).toBe(200);
   const body = await r.json() as any;
+  // Ended session must appear by default — it's discoverable for `agmux attach`.
   expect(body.sessions).toHaveLength(1);
   expect(body.sessions[0].status).toBe("ended");
+  server.stop();
+});
+
+test("GET /sessions?live=1 filters to live statuses only", async () => {
+  const { server, url } = makeServer();
+  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(startedEv) });
+  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2Y",
+      ts: new Date(Date.now() + 1000).toISOString(),
+      session_id: startedEv.session_id,
+      kind: "session.ended", version: 1, host: "macbook.local",
+      payload: { exit_code: 0, signal: null, reason: "normal" } }) });
+  const r = await fetch(`${url}/sessions?live=1`);
+  const body = await r.json() as any;
+  // The session is now ended; live filter excludes it.
+  expect(body.sessions).toHaveLength(0);
   server.stop();
 });
 

@@ -40,13 +40,15 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
       }
 
       if (m === "GET" && url.pathname === "/sessions") {
-        const all = url.searchParams.get("all") === "1";
+        // Live filter is opt-in via ?live=1. Default returns all statuses so
+        // recently-ended sessions remain discoverable for `agmux attach`.
+        const live = url.searchParams.get("live") === "1";
         const agent_kind = url.searchParams.get("agent_kind") ?? undefined;
         const profile = url.searchParams.get("profile") ?? undefined;
         const since = url.searchParams.get("since") ?? undefined;
         const limit = url.searchParams.get("limit");
         const sessions = store.listSessions({
-          live: !all,
+          live,
           agent_kind,
           profile,
           since,

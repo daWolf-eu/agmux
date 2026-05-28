@@ -19,7 +19,7 @@ const verb = argv[0];
 function usage(): never {
   console.error(`usage: agmux <verb> [args]
   run <profile>
-  ls [--all] [--agent <kind>] [--profile <name>]
+  ls [--live] [--all] [--agent <kind>] [--profile <name>]
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>`);
@@ -40,11 +40,12 @@ async function main(): Promise<number> {
       return runCmd({ profileName: profile, hubUrl, wrapBin });
     }
     case "ls": {
+      const live = argv.includes("--live");
       const all = argv.includes("--all");
       const agentIdx = argv.indexOf("--agent");
       const profileIdx = argv.indexOf("--profile");
       return lsCmd({
-        all, hubUrl,
+        live, all, hubUrl,
         agent: agentIdx >= 0 ? argv[agentIdx + 1] : undefined,
         profile: profileIdx >= 0 ? argv[profileIdx + 1] : undefined,
       });

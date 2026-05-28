@@ -61,8 +61,10 @@ TOML
 
 # Use it
 agmux run claude-work        # launches into a new tmux window
-agmux ls                     # list live sessions
-agmux attach <prefix>        # re-enter a session (tmux switch live; agent-resume if dead)
+agmux ls                     # recent 50 sessions (any status) — newest first
+agmux ls --live              # only live sessions (idle/running/waiting)
+agmux ls --all               # uncapped
+agmux attach <prefix>        # live → tmux switch; ended/lost → relaunch w/ same session_id
 agmux kill   <prefix>        # signal it (default SIGTERM)
 agmux inspect <prefix>       # full row + recent events as JSON
 ```

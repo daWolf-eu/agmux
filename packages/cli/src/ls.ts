@@ -1,12 +1,22 @@
 import type { SessionRow } from "@agmux/protocol";
 
-export interface LsOpts { all: boolean; agent?: string; profile?: string; hubUrl: string; }
+export interface LsOpts {
+  live: boolean;   // --live → only idle/running/waiting
+  all: boolean;    // --all → no row cap
+  agent?: string;
+  profile?: string;
+  hubUrl: string;
+}
+
+const DEFAULT_LIMIT = 50;
+const ALL_LIMIT = 10000;
 
 export async function lsCmd(opts: LsOpts): Promise<number> {
   const qs = new URLSearchParams();
-  if (opts.all) qs.set("all", "1");
+  if (opts.live) qs.set("live", "1");
   if (opts.agent) qs.set("agent_kind", opts.agent);
   if (opts.profile) qs.set("profile", opts.profile);
+  qs.set("limit", String(opts.all ? ALL_LIMIT : DEFAULT_LIMIT));
   const r = await fetch(`${opts.hubUrl}/sessions?${qs.toString()}`);
   if (!r.ok) { console.error(`hub error ${r.status}`); return 1; }
   const { sessions } = (await r.json()) as { sessions: SessionRow[] };
