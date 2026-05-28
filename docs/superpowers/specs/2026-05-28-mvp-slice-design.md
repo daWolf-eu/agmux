@@ -163,7 +163,7 @@ CREATE TABLE sessions (
   end_ts                TEXT,
   exit_code             INTEGER,
   signal                TEXT,                        -- e.g. 'SIGTERM'
-  status                TEXT NOT NULL                -- 'active' | 'ended' | 'lost'
+  status                TEXT NOT NULL                -- 'idle' | 'running' | 'waiting' | 'ended' | 'lost'
 );
 CREATE INDEX idx_sessions_status  ON sessions(status);
 CREATE INDEX idx_sessions_project ON sessions(project);
@@ -171,9 +171,19 @@ CREATE INDEX idx_sessions_project ON sessions(project);
 
 ### 4.2 Status semantics
 
-- `active`: started, no `session.ended`, heartbeat within 2×interval (60s).
-- `ended`: `session.ended` event received.
-- `lost`: started, no `session.ended`, no heartbeat in >60s. Computed lazily on each `SELECT` against `sessions` (no background sweeper).
+Status is a projection of the event stream — no explicit `session.status_changed` event. Five values, three live + two terminal:
+
+| Status | Meaning | Driven by |
+|---|---|---|
+| `idle` | Session is alive; agent is not currently in an active turn. The default live state. | `session.started` / `session.resumed`; heartbeat fresh (<60s). |
+| `running` | Agent is actively processing a turn (LLM call, tool execution, code edits). | Adapter-emitted `turn.started`; cleared on `turn.ended` → back to `idle`. **Never set in MVP** (no adapters). |
+| `waiting` | Agent is blocked on user input — question prompt, permission gate, MCP confirmation, etc. | Adapter-emitted `input.required`; cleared on `input.received` → back to `idle` or `running`. **Never set in MVP**. |
+| `ended` | `session.ended` event received. Terminal. |  |
+| `lost` | Started, no `session.ended`, no heartbeat in >60s. Computed lazily on `SELECT` against `sessions` (no background sweeper). | |
+
+Live ↔ live transitions (`idle ↔ running ↔ waiting`) are reachable post-adapter without any schema change — the projection just observes new event kinds and updates the column. The event-kind names above (`turn.started`, `turn.ended`, `input.required`, `input.received`) are reserved here as the intended contract; their payloads are finalized when `@agmux/adapters` lands.
+
+In MVP, every live wrapper session is `idle` throughout its life until `ended` or `lost`. The CLI displays all five values so that the moment adapters emit signals, the distinction shows up without any client change.
 
 ### 4.3 Event kinds (MVP)
 
@@ -191,7 +201,7 @@ All payloads JSON. Unknown kinds (from future versions) are stored raw and ignor
 ### 4.4 Identity & resume semantics
 
 - Per foundation §5: canonical `session_id` minted at first spawn; `AGMUX_SESSION_ID` is ground truth and is propagated by every integration.
-- CLI `attach`'s dead-session-relaunch path sets `AGMUX_SESSION_ID=<old>` before invoking the wrapper. The wrapper emits `session.resumed` (not `session.started`); the projection updates mutable cols (`pid`, `tmux_*`, `last_heartbeat_ts`, `status←'active'`, `end_ts←null`) while leaving immutables (`start_ts`, `agent_kind`, `profile`, original `command`) intact.
+- CLI `attach`'s dead-session-relaunch path sets `AGMUX_SESSION_ID=<old>` before invoking the wrapper. The wrapper emits `session.resumed` (not `session.started`); the projection updates mutable cols (`pid`, `tmux_*`, `last_heartbeat_ts`, `status←'idle'`, `end_ts←null`) while leaving immutables (`start_ts`, `agent_kind`, `profile`, original `command`) intact.
 - **MVP gap:** with `native_session_id` unset and no adapters, the relaunch cannot pass the agent's native resume flag. The MVP relaunch therefore starts a *fresh* agent conversation under the same agmux `session_id`. Tracking is continuous; in-agent state is lost. Closing this gap is the first job of `@agmux/adapters`.
 
 ### 4.5 Config
@@ -230,8 +240,8 @@ State directory: `~/.agmux/` — holds `agmux.sqlite`, `hub.pid`, `hub.port`, `q
 | Verb | Behavior |
 |---|---|
 | `agmux run <profile>` | Ensures hub is up (auto-spawn if not). Execs `agmux-wrap` with the resolved profile. Control transfers immediately into the agent (with tmux interposed when not already in tmux). |
-| `agmux ls [--all] [--agent <kind>] [--profile <name>]` | `GET /sessions?status=active` by default; `--all` includes ended/lost. Tabular: `id  agent  profile  status  pid  tmux  start  last_seen`. Short id = first 8 chars of UUIDv7; unambiguous prefixes accepted. |
-| `agmux attach <id\|prefix>` | `GET /sessions/:id`. If `status='active'` and tmux coords present: `tmux switch-client -t <session>:<window>` (from inside tmux) or `tmux attach -t <session>` and auto-select-window (from outside). If `status='ended'` or `'lost'`: re-exec `agmux-wrap` with `AGMUX_SESSION_ID=<id>` set → resume path (§4.4). |
+| `agmux ls [--all] [--agent <kind>] [--profile <name>]` | Default lists live sessions (`status in (idle, running, waiting)`); `--all` includes `ended`/`lost`. Tabular: `id  agent  profile  status  pid  tmux  start  last_seen`. Short id = first 8 chars of UUIDv7; unambiguous prefixes accepted. |
+| `agmux attach <id\|prefix>` | `GET /sessions/:id`. If status is live (`idle`/`running`/`waiting`) and tmux coords present: `tmux switch-client -t <session>:<window>` (from inside tmux) or `tmux attach -t <session>` and auto-select-window (from outside). If `status='ended'` or `'lost'`: re-exec `agmux-wrap` with `AGMUX_SESSION_ID=<id>` set → resume path (§4.4). |
 | `agmux kill <id\|prefix> [--signal SIGTERM]` | Reads pid from projection, sends signal. Default SIGTERM. Wrapper handler emits `session.ended { reason:'signal', signal }` before exit. |
 | `agmux inspect <id\|prefix>` | `GET /sessions/:id`. Pretty-printed row + last N events. Debug-oriented. |
 
@@ -270,6 +280,7 @@ Concrete choices made so future packages slot in without schema or contract chan
 
 - **`AGMUX_SESSION_ID` is the only identity contract.** Adapters, comms, future MCP surfaces all stamp their events with the env-injected id.
 - **Append-only event log with versioned + raw-stored unknown kinds** absorbs new event types (prompt.sent, tool.used, token.usage, message.sent, …) without migration.
+- **`running`/`waiting` status values exist in the projection enum from day one.** Adapters emitting `turn.started` / `turn.ended` / `input.required` / `input.received` flip the column; no schema change, no client change.
 - **`project` and `parent_session_id` columns exist now**, null in MVP. The first user of either (per-project tmux placement; subagent spawning) adds behavior, not schema.
 - **`resume_template` reserved in the profile config schema.** Wrapper ignores it; adapters will read it.
 - **Single HTTP/JSON server**, no UDS, no special-case ingest transport — the same binary is the host-agent role under (B).
