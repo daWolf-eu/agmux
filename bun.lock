@@ -12,6 +12,13 @@
     "packages/cli": {
       "name": "@agmux/cli",
       "version": "0.0.0",
+      "dependencies": {
+        "@agmux/hub": "workspace:*",
+        "@agmux/protocol": "workspace:*",
+      },
+      "devDependencies": {
+        "@agmux/store": "workspace:*",
+      },
     },
     "packages/hub": {
       "name": "@agmux/hub",
