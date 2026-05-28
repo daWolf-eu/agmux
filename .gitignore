@@ -9,7 +9,6 @@ build/
 
 # Compiled single-file binaries (bun build --compile output)
 /bin/
-packages/*/bin/
 
 # Logs & runtime state
 *.log

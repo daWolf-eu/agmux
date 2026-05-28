@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
+  "bin": { "agmux-hub": "bin/agmux-hub.ts" },
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "build": "bun build --compile bin/agmux-hub.ts --outfile dist/agmux-hub"
   },
   "dependencies": {
     "@agmux/protocol": "workspace:*",
     "@agmux/store": "workspace:*"
-  },
-  "scripts": {
-    "typecheck": "tsc --noEmit",
-    "test": "bun test"
   }
 }

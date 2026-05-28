@@ -56,7 +56,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
                ORDER BY start_ts DESC
                LIMIT ?`;
   params.push(opts.limit ?? 200);
-  const raws = db.query<any, unknown[]>(sql).all(...params);
+  const raws = db.query<any, any[]>(sql).all(...(params as any[]));
   const now = opts.now ?? new Date();
   let rows = raws.map(decodeRow).map((r) => {
     r.status = computeEffectiveStatus(r, now);
@@ -84,7 +84,7 @@ export function listEvents(db: Database, opts: ListEventsOpts): EventEnvelope[] 
                ORDER BY id ASC
                LIMIT ?`;
   params.push(opts.limit ?? 1000);
-  return db.query<any, unknown[]>(sql).all(...params).map((r) => ({
+  return db.query<any, any[]>(sql).all(...(params as any[])).map((r) => ({
     event_id: r.event_id,
     ts: r.ts,
     session_id: r.session_id,

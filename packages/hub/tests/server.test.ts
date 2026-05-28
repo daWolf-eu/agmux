@@ -87,7 +87,7 @@ test("GET /sessions returns live rows by default", async () => {
     body: JSON.stringify(startedEv) });
   const r = await fetch(`${url}/sessions`);
   expect(r.status).toBe(200);
-  const body = await r.json();
+  const body = await r.json() as any;
   expect(body.sessions).toHaveLength(1);
   expect(body.sessions[0].session_id).toBe(startedEv.session_id);
   server.stop();
@@ -105,7 +105,7 @@ test("GET /sessions?all=1 includes ended", async () => {
       kind: "session.ended", version: 1, host: "macbook.local",
       payload: { exit_code: 0, signal: null, reason: "normal" } }) });
   const r = await fetch(`${url}/sessions?all=1`);
-  const body = await r.json();
+  const body = await r.json() as any;
   expect(body.sessions).toHaveLength(1);
   expect(body.sessions[0].status).toBe("ended");
   server.stop();
@@ -117,7 +117,7 @@ test("GET /sessions/:id returns row plus recent events", async () => {
     body: JSON.stringify(startedEv) });
   const r = await fetch(`${url}/sessions/${startedEv.session_id}`);
   expect(r.status).toBe(200);
-  const body = await r.json();
+  const body = await r.json() as any;
   expect(body.session.session_id).toBe(startedEv.session_id);
   expect(body.events).toHaveLength(1);
   server.stop();

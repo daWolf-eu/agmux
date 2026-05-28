@@ -9,7 +9,7 @@ export interface CreateServerOpts {
   hostname?: string; // default 127.0.0.1
 }
 
-export function createServer(opts: CreateServerOpts): Server {
+export function createServer(opts: CreateServerOpts): Server<undefined> {
   const { store } = opts;
   const hostname = opts.hostname ?? "127.0.0.1";
 
