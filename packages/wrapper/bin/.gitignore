@@ -1,0 +1,4 @@
+# Ignore compiled binaries (bun build --compile output), keep *.ts sources
+*
+!*.ts
+!.gitignore

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
+  "bin": { "agmux-wrap": "bin/agmux-wrap.ts" },
   "exports": {
     ".": "./src/index.ts"
   },
@@ -18,6 +19,7 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun build --compile bin/agmux-wrap.ts --outfile dist/agmux-wrap"
   }
 }
