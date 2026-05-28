@@ -4,12 +4,12 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "exports": {
-    ".": "./src/index.ts"
-  },
+  "bin": { "agmux": "bin/agmux.ts" },
+  "exports": { ".": "./src/index.ts" },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "build": "bun build --compile bin/agmux.ts --outfile dist/agmux"
   },
   "dependencies": {
     "@agmux/protocol": "workspace:*",
