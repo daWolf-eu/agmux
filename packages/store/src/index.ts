@@ -18,12 +18,17 @@ export class Store {
     const tx = this.db.transaction(() => {
       try {
         this.db.query(`
-          INSERT INTO events (event_id, ts, session_id, kind, version, payload, host)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
-        `).run(ev.event_id, ev.ts, ev.session_id, ev.kind, ev.version, JSON.stringify(ev.payload), ev.host);
+          INSERT INTO events (event_id, ts, session_id, kind, version, payload, host, dedup_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          ev.event_id, ev.ts, ev.session_id, ev.kind, ev.version,
+          JSON.stringify(ev.payload), ev.host, ev.dedup_key ?? null,
+        );
       } catch (e: any) {
         const msg = String(e?.message ?? e);
-        if (msg.includes("UNIQUE") && msg.includes("events.event_id")) return false;
+        // Either a replayed event_id (transport retry) or a repeated dedup_key
+        // (source observed the same fact twice) — both mean "already have it".
+        if (msg.includes("UNIQUE")) return false;
         throw e;
       }
       applyEventToProjection(this.db, ev);
