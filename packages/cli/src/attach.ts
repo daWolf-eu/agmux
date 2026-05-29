@@ -1,9 +1,11 @@
 import { $ } from "bun";
 import type { SessionRow } from "@agmux/protocol";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, LIVE_STATUSES } from "@agmux/protocol";
+import { LIVE_STATUSES } from "@agmux/protocol";
+import { createDefaultRegistry, type Registry } from "@agmux/adapters";
+import { buildRelaunchSpec } from "./relaunch.ts";
 import { resolvePrefix } from "./id-resolve.ts";
 
-export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; }
+export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
 export async function attachCmd(opts: AttachOpts): Promise<number> {
   const listR = await fetch(`${opts.hubUrl}/sessions?all=1&limit=1000`);
@@ -24,31 +26,17 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     return 0;
   }
 
-  // dead / lost: relaunch the wrapper under the same session_id.
-  // Profile mode → wrapper re-loads from config.toml by name.
-  // Ad-hoc mode (profile is null) → reconstruct the inline profile from the stored
-  // command/args/env so we can resume without the user re-typing the invocation.
-  const childEnv: Record<string, string> = {
-    ...process.env,
-    [AGMUX_SESSION_ID_ENV]: session.session_id,
-    [AGMUX_HUB_URL_ENV]: opts.hubUrl,
-  };
-  let wrapArgv: string[];
-  if (session.profile) {
-    wrapArgv = [opts.wrapBin, session.profile];
-  } else {
-    const inlineProfile = {
-      agent_kind: session.agent_kind,
-      command: session.command,
-      args: session.args,
-      env: session.env_overrides ?? {},
-    };
-    childEnv.AGMUX_INLINE_PROFILE = JSON.stringify(inlineProfile);
-    wrapArgv = [opts.wrapBin, session.command.split("/").pop() ?? "agent"];
-  }
-  const child = Bun.spawn(wrapArgv, {
+  // dead / lost: relaunch under the same session_id, resuming natively if the
+  // adapter supports it (spec §6.4). buildRelaunchSpec encapsulates the choice.
+  const spec = buildRelaunchSpec(session, {
+    hubUrl: opts.hubUrl,
+    wrapBin: opts.wrapBin,
+    registry: opts.registry ?? createDefaultRegistry(),
+    baseEnv: process.env,
+  });
+  const child = Bun.spawn(spec.wrapArgv, {
     stdio: ["inherit", "inherit", "inherit"],
-    env: childEnv,
+    env: spec.env,
   });
   await child.exited;
   return child.exitCode ?? 0;
