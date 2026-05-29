@@ -1,0 +1,98 @@
+import * as fs from "node:fs";
+import type { AgentKind } from "@agmux/protocol";
+import {
+  installAdapter, uninstallAdapter, loadRecord,
+  type Registry, type InstallContext,
+} from "@agmux/adapters";
+import { parseConfig, type AgmuxConfig } from "@agmux/wrapper";
+
+export interface AdapterCmdDeps {
+  registry: Registry;
+  stateDir: string;
+  configPath: string;
+  agmuxEmitPath: string;
+  out: (line: string) => void;
+}
+
+interface Target { agentKind: AgentKind; profile: string | null; profileEnv: Record<string, string>; }
+
+function readConfig(configPath: string): AgmuxConfig {
+  if (!fs.existsSync(configPath)) return { profiles: {} };
+  return parseConfig(fs.readFileSync(configPath, "utf8"));
+}
+
+// Resolve a CLI target. `["work"]` => profile "work"; `["--kind","claude"]` => bare kind.
+function resolveTarget(args: string[], cfg: AgmuxConfig): Target | { error: string } {
+  const kindIdx = args.indexOf("--kind");
+  if (kindIdx >= 0) {
+    const k = args[kindIdx + 1];
+    if (k !== "claude" && k !== "codex") return { error: `--kind must be 'claude' or 'codex'` };
+    return { agentKind: k, profile: null, profileEnv: {} };
+  }
+  const profile = args.find((a) => !a.startsWith("-"));
+  if (!profile) return { error: "expected a <profile> name or --kind <agent_kind>" };
+  const p = cfg.profiles[profile];
+  if (!p) return { error: `profile not found: ${profile}` };
+  return { agentKind: p.agent_kind, profile, profileEnv: p.env };
+}
+
+function ctxFor(t: Target, deps: AdapterCmdDeps): InstallContext {
+  return {
+    agentKind: t.agentKind, profile: t.profile, profileEnv: t.profileEnv,
+    agmuxEmitPath: deps.agmuxEmitPath, stateDir: deps.stateDir,
+  };
+}
+
+function label(t: { agentKind: AgentKind; profile: string | null }): string {
+  return t.profile ? `${t.agentKind}@${t.profile}` : `${t.agentKind} (bare)`;
+}
+
+export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promise<number> {
+  const sub = args[0];
+  const rest = args.slice(1);
+  const cfg = readConfig(deps.configPath);
+
+  if (sub === "list") {
+    const kinds = deps.registry.kinds();
+    if (kinds.length === 0) {
+      deps.out("no adapters registered (per-provider modules land in packages/adapters/src/adapters/index.ts)");
+      return 0;
+    }
+    for (const kind of kinds) {
+      const bare = loadRecord(deps.stateDir, kind, null);
+      deps.out(`${kind} (bare): ${bare ? `installed (v${bare.adapterVersion})` : "not installed"}`);
+      for (const [name, p] of Object.entries(cfg.profiles)) {
+        if (p.agent_kind !== kind) continue;
+        const rec = loadRecord(deps.stateDir, kind, name);
+        deps.out(`${kind}@${name}: ${rec ? `installed (v${rec.adapterVersion})` : "not installed"}`);
+      }
+    }
+    return 0;
+  }
+
+  if (sub === "install" || sub === "uninstall" || sub === "status") {
+    const t = resolveTarget(rest, cfg);
+    if ("error" in t) { deps.out(t.error); return 2; }
+    const adapter = deps.registry.lookup(t.agentKind);
+    if (!adapter) { deps.out(`no adapter registered for kind '${t.agentKind}'`); return 1; }
+    const ctx = ctxFor(t, deps);
+
+    if (sub === "install") {
+      const rec = installAdapter(adapter, ctx);
+      deps.out(`installed ${label(t)} (v${rec.adapterVersion})`);
+      return 0;
+    }
+    if (sub === "uninstall") {
+      const ok = uninstallAdapter(adapter, ctx);
+      deps.out(ok ? `uninstalled ${label(t)}` : `${label(t)} was not installed`);
+      return 0;
+    }
+    // status
+    const st = adapter.status(ctx);
+    deps.out(`${label(t)}: ${st.installed ? `installed (v${st.version})` : "not installed"}${st.drift ? " [drift]" : ""}`);
+    return 0;
+  }
+
+  deps.out("usage: agmux adapter list|install|status|uninstall (<profile> | --kind <agent_kind>)");
+  return 2;
+}

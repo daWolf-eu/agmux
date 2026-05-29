@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_STATE_DIR_DEFAULT } from "@agmux/protocol";
+import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { parseRunArgs } from "../src/parse-run.ts";
@@ -10,6 +10,7 @@ import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { runEmit } from "../src/emit.ts";
+import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -27,7 +28,9 @@ function usage(): never {
   ls [--live] [--all] [--agent <kind>] [--profile <name>]
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
-  inspect <id|prefix>`);
+  inspect <id|prefix>
+  adapter list|install|status|uninstall (<profile> | --kind <agent_kind>)
+  emit ...   (runtime callback; not user-facing)`);
   process.exit(2);
 }
 
@@ -46,6 +49,17 @@ async function main(): Promise<number> {
       stateDir,
     });
     return 0; // always 0 — never break the agent's surface
+  }
+
+  if (verb === "adapter") {
+    const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+    return runAdapterCmd(argv.slice(1), {
+      registry: createDefaultRegistry(),
+      stateDir,
+      configPath,
+      agmuxEmitPath: `${process.env.AGMUX_BIN ?? "agmux"} emit`,
+      out: (s) => console.log(s),
+    });
   }
 
   // Hub required for every verb. `run` would also accept a still-spawning hub
