@@ -6,7 +6,9 @@ import {
   AGMUX_HUB_URL_ENV,
   AGMUX_TMUX_SESSION_ENV,
   AGMUX_TMUX_SESSION_DEFAULT,
+  AGMUX_PROFILE_ENV,
 } from "@agmux/protocol";
+import { buildChildEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
 import type { ProfileConfig } from "./profile.ts";
 import { HubClient } from "./hub-client.ts";
@@ -72,6 +74,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
       AGMUX_HUB_URL_ENV,
       AGMUX_SESSION_ID_ENV,
       AGMUX_TMUX_SESSION_ENV,
+      AGMUX_PROFILE_ENV,
     ] as const) {
       const v = process.env[k];
       if (v) innerEnv[k] = v;
@@ -93,12 +96,12 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const child = Bun.spawn([profile.command, ...profile.args], {
     stdin: slave, stdout: slaveOut, stderr: slaveErr,
     cwd: profile.cwd ?? process.cwd(),
-    env: {
-      ...process.env,
-      ...profile.env,
-      [AGMUX_SESSION_ID_ENV]: sessionId,
-      [AGMUX_HUB_URL_ENV]: opts.hubUrl,
-    },
+    env: buildChildEnv(process.env, {
+      sessionId,
+      hubUrl: opts.hubUrl,
+      profileEnv: profile.env,
+      profileName: opts.profileName,
+    }),
   });
   for (const fd of [slave, slaveOut, slaveErr]) { try { fs.closeSync(fd); } catch {} }
 
