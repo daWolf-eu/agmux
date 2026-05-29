@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import type { EventEnvelope, SessionRow } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
-import { getSessionRaw, listSessions, listEvents, type ListSessionsOpts, type ListEventsOpts } from "./queries.ts";
+import { getSessionRaw, listSessions, listEvents, getSessionUsage, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
 
 export class Store {
   private db: Database;
@@ -47,6 +47,10 @@ export class Store {
 
   listEvents(opts: ListEventsOpts = {}): EventEnvelope[] {
     return listEvents(this.db, opts);
+  }
+
+  getSessionUsage(sid: string): SessionUsageRow | null {
+    return getSessionUsage(this.db, sid);
   }
 
   rebuildProjections(): void {

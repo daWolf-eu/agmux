@@ -94,3 +94,33 @@ export function listEvents(db: Database, opts: ListEventsOpts): EventEnvelope[] 
     payload: JSON.parse(r.payload),
   }));
 }
+
+export interface SessionUsageRow {
+  session_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  reasoning_output_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  cost_usd: number;
+  last_model: string | null;
+  last_rate_limit: unknown;     // decoded from JSON
+  turn_count: number;
+}
+
+export function getSessionUsage(db: Database, sid: string): SessionUsageRow | null {
+  const raw = db.query<any, [string]>(`SELECT * FROM session_usage WHERE session_id = ?`).get(sid);
+  if (!raw) return null;
+  return {
+    session_id: raw.session_id,
+    input_tokens: raw.input_tokens,
+    output_tokens: raw.output_tokens,
+    reasoning_output_tokens: raw.reasoning_output_tokens,
+    cache_read_tokens: raw.cache_read_tokens,
+    cache_write_tokens: raw.cache_write_tokens,
+    cost_usd: raw.cost_usd,
+    last_model: raw.last_model,
+    last_rate_limit: raw.last_rate_limit == null ? null : JSON.parse(raw.last_rate_limit),
+    turn_count: raw.turn_count,
+  };
+}
