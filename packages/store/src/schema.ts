@@ -43,3 +43,25 @@ CREATE TABLE IF NOT EXISTS sessions (
 CREATE INDEX IF NOT EXISTS idx_sessions_status  ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project);
 `;
+
+export const SCHEMA_V2 = `
+CREATE TABLE IF NOT EXISTS session_usage (
+  session_id              TEXT PRIMARY KEY,
+  input_tokens            INTEGER NOT NULL DEFAULT 0,
+  output_tokens           INTEGER NOT NULL DEFAULT 0,
+  reasoning_output_tokens INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens       INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens      INTEGER NOT NULL DEFAULT 0,
+  cost_usd                REAL NOT NULL DEFAULT 0,
+  last_model              TEXT,
+  last_rate_limit         TEXT,
+  turn_count              INTEGER NOT NULL DEFAULT 0
+);
+
+ALTER TABLE events ADD COLUMN dedup_key TEXT;
+-- Partial unique index: many NULLs allowed (the common case), but a non-null
+-- dedup_key may appear at most once — source idempotency (§4.4).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup ON events(dedup_key) WHERE dedup_key IS NOT NULL;
+
+ALTER TABLE sessions ADD COLUMN adapter_capabilities TEXT;
+`;
