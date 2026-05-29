@@ -20,7 +20,11 @@
     "packages/cli": {
       "name": "@agmux/cli",
       "version": "0.0.0",
+      "bin": {
+        "agmux": "bin/agmux.ts",
+      },
       "dependencies": {
+        "@agmux/adapters": "workspace:*",
         "@agmux/hub": "workspace:*",
         "@agmux/protocol": "workspace:*",
       },

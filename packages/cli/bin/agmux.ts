@@ -9,6 +9,8 @@ import { lsCmd } from "../src/ls.ts";
 import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
+import { runEmit } from "../src/emit.ts";
+import { createDefaultRegistry } from "@agmux/adapters";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
 const hubBin = process.env.AGMUX_HUB_BIN ?? "agmux-hub";
@@ -31,6 +33,20 @@ function usage(): never {
 
 async function main(): Promise<number> {
   if (!verb) usage();
+
+  if (verb === "emit") {
+    const chunks: Buffer[] = [];
+    for await (const c of Bun.stdin.stream()) chunks.push(Buffer.from(c));
+    const stdin = Buffer.concat(chunks).toString("utf8");
+    await runEmit(argv.slice(1), {
+      registry: createDefaultRegistry(),
+      env: process.env,
+      stdin,
+      host: os.hostname(),
+      stateDir,
+    });
+    return 0; // always 0 — never break the agent's surface
+  }
 
   // Hub required for every verb. `run` would also accept a still-spawning hub
   // because the wrapper queues to disk; for simplicity here we ensure it for all.

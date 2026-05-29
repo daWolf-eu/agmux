@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@agmux/protocol": "workspace:*",
-    "@agmux/hub": "workspace:*"
+    "@agmux/hub": "workspace:*",
+    "@agmux/adapters": "workspace:*"
   },
   "devDependencies": {
     "@agmux/store": "workspace:*"
