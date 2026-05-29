@@ -56,6 +56,7 @@ export class Store {
   rebuildProjections(): void {
     this.db.transaction(() => {
       this.db.exec(`DELETE FROM sessions`);
+      this.db.exec(`DELETE FROM session_usage`);
       const rows = this.db.query<any, []>(
         `SELECT event_id, ts, session_id, kind, version, payload, host FROM events ORDER BY id ASC`
       ).all();

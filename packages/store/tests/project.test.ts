@@ -118,9 +118,68 @@ test("unknown event kinds do not crash and do not update the projection", () => 
   applyEventToProjection(db, {
     event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2T",
     ts: "2026-05-28T12:06:00.000Z",
-    session_id: sid, kind: "turn.started", version: 1, host: "macbook.local",
+    session_id: sid, kind: "future.unknown.kind", version: 1, host: "macbook.local",
     payload: { anything: 1 },
   } as any);
   const row = db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get();
   expect(row.status).toBe("idle");
+});
+
+function ev(kind: string, ts: string, payload: unknown, extra: Record<string, unknown> = {}) {
+  return {
+    event_id: "01HZ7P0K8WVQH8WGS8X9DC" + Math.random().toString(36).slice(2, 8).toUpperCase(),
+    ts, session_id: sid, kind, version: 1, host: "h", payload, ...extra,
+  } as any;
+}
+
+test("turn.started -> running, turn.ended -> idle", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("turn.started", "2026-05-28T12:01:00.000Z", {}));
+  expect(db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get().status).toBe("running");
+  applyEventToProjection(db, ev("turn.ended", "2026-05-28T12:02:00.000Z", { reason: "done" }));
+  expect(db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get().status).toBe("idle");
+});
+
+test("input.required -> waiting, input.received -> running", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("input.required", "2026-05-28T12:01:00.000Z", { kind: "permission" }));
+  expect(db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get().status).toBe("waiting");
+  applyEventToProjection(db, ev("input.received", "2026-05-28T12:01:30.000Z", {}));
+  expect(db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get().status).toBe("running");
+});
+
+test("live transition on an ended row is ignored (no resurrection)", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("session.ended", "2026-05-28T12:05:00.000Z", { exit_code: 0, signal: null, reason: "normal" }));
+  applyEventToProjection(db, ev("turn.started", "2026-05-28T12:06:00.000Z", {}));
+  expect(db.query<any, []>(`SELECT status FROM sessions WHERE session_id='${sid}'`).get().status).toBe("ended");
+});
+
+test("session.linked sets native_session_id", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("session.linked", "2026-05-28T12:01:00.000Z", { native_session_id: "codex-xyz" }));
+  expect(db.query<any, []>(`SELECT native_session_id FROM sessions WHERE session_id='${sid}'`).get().native_session_id).toBe("codex-xyz");
+});
+
+test("session.adapter_attached records capabilities JSON", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  const caps = { "turn.started": { fulfil: "yes", source: "hook-command" } };
+  applyEventToProjection(db, ev("session.adapter_attached", "2026-05-28T12:00:30.000Z", {
+    agent_kind: "codex", profile: null, adapter_version: "1", capabilities: caps,
+  }));
+  const raw = db.query<any, []>(`SELECT adapter_capabilities FROM sessions WHERE session_id='${sid}'`).get();
+  expect(JSON.parse(raw.adapter_capabilities)).toEqual(caps);
+});
+
+test("turn.started bumps session_usage.turn_count and creates the row", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("turn.started", "2026-05-28T12:01:00.000Z", {}));
+  const u = db.query<any, []>(`SELECT turn_count FROM session_usage WHERE session_id='${sid}'`).get();
+  expect(u.turn_count).toBe(1);
 });
