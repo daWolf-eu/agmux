@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { $ } from "bun";
-import { makeTestEnv, waitFor } from "./helpers.ts";
+import { makeTestEnv, waitFor, warmHub } from "./helpers.ts";
 
 test("after SIGKILL, attach <id> relaunches under same session_id (status=ended → idle)", async () => {
   const env = makeTestEnv();
@@ -15,15 +15,24 @@ test("after SIGKILL, attach <id> relaunches under same session_id (status=ended 
     PATH: process.env.PATH ?? "",
   };
 
-  await $`tmux new-session -d -s agmux-e2e '${env.cliBin} run echo'`.env(baseEnv);
+  // Bring up one hub first so the wrapper and the polling `ls` below don't race to spawn.
+  await warmHub(env.cliBin, baseEnv);
 
+  // `-p echo` selects the profile from config.toml (run is ad-hoc by default).
+  await $`tmux new-session -d -s agmux-e2e '${env.cliBin} run -p echo'`.env(baseEnv);
+
+  // Capture the session_id prefix from ls's first column, width-agnostically:
+  // skip the header row, take the first whitespace-delimited token.
   let sid = "";
   await waitFor(async () => {
     const out = await $`${env.cliBin} ls`.env(baseEnv).text();
-    const m = out.match(/^([0-9a-f]{8})\s/m);
-    if (m) { sid = m[1]!; return true; }
+    const lines = out.split("\n").slice(1).filter((l) => l.trim());
+    if (lines.length >= 1) {
+      sid = lines[0]!.split(/\s+/)[0]!;
+      return true;
+    }
     return false;
-  });
+  }, 15000);
 
   // SIGKILL: kill the wrapper pid (no graceful end event)
   const insp = JSON.parse(await $`${env.cliBin} inspect ${sid}`.env(baseEnv).text());
@@ -38,7 +47,7 @@ test("after SIGKILL, attach <id> relaunches under same session_id (status=ended 
     const insp2 = JSON.parse(await $`${env.cliBin} inspect ${sid}`.env(baseEnv).text());
     const kinds = insp2.events.map((e: any) => e.kind);
     return kinds.includes("session.resumed");
-  });
+  }, 15000);
 
   const final = JSON.parse(await $`${env.cliBin} inspect ${sid}`.env(baseEnv).text());
   expect(final.session.session_id.startsWith(sid)).toBe(true);
@@ -48,4 +57,4 @@ test("after SIGKILL, attach <id> relaunches under same session_id (status=ended 
   try { await $`tmux kill-session -t agmux-e2e`; } catch {}
   try { await $`tmux kill-session -t agmux-e2e-2`; } catch {}
   try { await $`tmux kill-session -t ${innerSession}`; } catch {}
-});
+}, 30000);

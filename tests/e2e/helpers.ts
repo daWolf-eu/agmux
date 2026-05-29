@@ -58,3 +58,18 @@ export async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs
   }
   throw new Error("waitFor timed out");
 }
+
+/**
+ * Pre-spawn a single hub and wait until it answers, BEFORE launching the
+ * tmux/wrapper activity. Otherwise the bare `ls` polling and the wrapper both
+ * race to first-spawn a hub; under `bun test` CPU contention several `bun`
+ * cold-starts pile up and the spawner's patience can lapse. Warming one hub
+ * makes every later `ls` hit a live daemon instantly.
+ */
+export async function warmHub(cliBin: string, baseEnv: Record<string, string>): Promise<void> {
+  const { $ } = await import("bun");
+  await waitFor(async () => {
+    const r = await $`${cliBin} ls`.env(baseEnv).nothrow().quiet();
+    return r.exitCode === 0;
+  }, 15000);
+}

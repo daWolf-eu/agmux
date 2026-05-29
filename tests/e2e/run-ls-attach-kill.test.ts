@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { $ } from "bun";
-import { makeTestEnv, waitFor } from "./helpers.ts";
+import { makeTestEnv, waitFor, warmHub } from "./helpers.ts";
 
 test("run → ls shows session → kill ends it", async () => {
   const env = makeTestEnv();
@@ -15,10 +15,15 @@ test("run → ls shows session → kill ends it", async () => {
     PATH: process.env.PATH ?? "",
   };
 
-  // Launch in a detached tmux session named 'agmux-e2e' so we don't take over the user's terminal.
-  await $`tmux new-session -d -s agmux-e2e '${env.cliBin} run echo'`.env(baseEnv);
+  // Bring up one hub first so the wrapper and the polling `ls` below don't race to spawn.
+  await warmHub(env.cliBin, baseEnv);
 
-  // Wait for the projection to surface a live session.
+  // Launch in a detached tmux session named 'agmux-e2e' so we don't take over the user's terminal.
+  // `-p echo` selects the profile from config.toml (run is ad-hoc by default).
+  await $`tmux new-session -d -s agmux-e2e '${env.cliBin} run -p echo'`.env(baseEnv);
+
+  // Wait for the projection to surface a live session. Cold start spins up the hub,
+  // wrapper, tmux and a PTY, so give it real headroom (well under the 30s test budget).
   let runningId = "";
   await waitFor(async () => {
     const out = await $`${env.cliBin} ls`.env(baseEnv).text();
@@ -28,18 +33,20 @@ test("run → ls shows session → kill ends it", async () => {
       return true;
     }
     return false;
-  });
+  }, 15000);
 
-  expect(runningId).toMatch(/^[0-9a-f]{8}$/);
+  // Width-agnostic: just a session_id prefix token (hex + hyphens). The real
+  // correctness check is that kill/inspect resolve it below — don't pin a width.
+  expect(runningId).toMatch(/^[0-9a-f][0-9a-f-]+$/);
 
   await $`${env.cliBin} kill ${runningId}`.env(baseEnv);
 
   await waitFor(async () => {
     const out = await $`${env.cliBin} ls --all`.env(baseEnv).text();
     return out.includes(" ended ");
-  });
+  }, 15000);
 
   // Cleanup — only kill sessions this test created; never touch the user's "agmux".
   try { await $`tmux kill-session -t agmux-e2e`; } catch {}
   try { await $`tmux kill-session -t ${innerSession}`; } catch {}
-});
+}, 30000);
