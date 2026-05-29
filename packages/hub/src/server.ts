@@ -63,7 +63,8 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
         const session = store.getSession(sid);
         if (!session) return Response.json({ error: "not_found" }, { status: 404 });
         const events = store.listEvents({ session_id: sid, limit: 100 });
-        return Response.json({ session, events });
+        const usage = store.getSessionUsage(sid);
+        return Response.json({ session, events, usage });
       }
 
       if (m === "GET" && url.pathname === "/events") {

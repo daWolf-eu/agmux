@@ -139,3 +139,33 @@ test("GET /sessions/:id 404 when missing", async () => {
   expect(r.status).toBe(404);
   server.stop();
 });
+
+test("GET /sessions/:id includes usage totals", async () => {
+  const sid = "0190a3e0-0000-7000-8000-000000000000";
+  const store = Store.openInMemory();
+  const server = createServer({ store, port: 0 });
+  const base = `http://${server.hostname}:${server.port}`;
+
+  await fetch(`${base}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2P", ts: "2026-05-28T12:00:00.000Z",
+      session_id: sid, kind: "session.started", version: 1, host: "h",
+      payload: { agent_kind: "codex", profile: null, command: "codex", args: [], env_overrides: {}, cwd: "/tmp", pid: 1, tmux_session: null, tmux_window: null, tmux_pane: null, project: null },
+    }),
+  });
+  await fetch(`${base}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2Q", ts: "2026-05-28T12:01:00.000Z",
+      session_id: sid, kind: "usage.reported", version: 1, host: "h",
+      payload: { cumulative: false, source: "manual-command", input_tokens: 100 },
+    }),
+  });
+
+  const r = await fetch(`${base}/sessions/${sid}`);
+  const body = await r.json() as any;
+  expect(body.usage.input_tokens).toBe(100);
+  server.stop();
+  store.close();
+});
