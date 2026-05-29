@@ -64,6 +64,44 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "session.ended: reason invalid" };
       return { ok: true };
     }
+    case "session.linked": {
+      if (!isStringNonEmpty(payload.native_session_id))
+        return { ok: false, error: "session.linked: native_session_id missing" };
+      return { ok: true };
+    }
+    case "turn.started":
+    case "turn.ended":
+    case "input.received":
+    case "prompt.sent":
+      // Log/state events with no load-bearing required fields. Payload-is-object
+      // already checked above; anything else is optional/best-effort.
+      return { ok: true };
+    case "input.required": {
+      if (payload.kind !== "prompt" && payload.kind !== "permission" && payload.kind !== "confirm")
+        return { ok: false, error: "input.required: kind must be prompt|permission|confirm" };
+      return { ok: true };
+    }
+    case "usage.reported": {
+      if (typeof payload.cumulative !== "boolean")
+        return { ok: false, error: "usage.reported: cumulative not boolean" };
+      if (!isStringNonEmpty(payload.source))
+        return { ok: false, error: "usage.reported: source missing" };
+      return { ok: true };
+    }
+    case "tool.used": {
+      if (!isStringNonEmpty(payload.tool))
+        return { ok: false, error: "tool.used: tool missing" };
+      return { ok: true };
+    }
+    case "session.adapter_attached": {
+      if (payload.agent_kind !== "claude" && payload.agent_kind !== "codex")
+        return { ok: false, error: "session.adapter_attached: agent_kind invalid" };
+      if (!isStringNonEmpty(payload.adapter_version))
+        return { ok: false, error: "session.adapter_attached: adapter_version missing" };
+      if (!isPlainObject(payload.capabilities))
+        return { ok: false, error: "session.adapter_attached: capabilities not object" };
+      return { ok: true };
+    }
     default:
       // Unknown future kind: stored raw, validation passes.
       return { ok: true };
