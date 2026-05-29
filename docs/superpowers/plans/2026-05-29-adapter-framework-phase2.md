@@ -757,7 +757,7 @@ test("installAdapter writes the ledger and adapter marker; uninstall reverses bo
 
   const loaded = loadRecord(stateDir, "claude", "work");
   expect(loaded!.adapterVersion).toBe("1");
-  expect(loaded!.capabilities["turn.started"].fulfil).toBe("yes");
+  expect(loaded!.capabilities["turn.started"]!.fulfil).toBe("yes");
 
   expect(uninstallAdapter(fakeAdapter, ctx)).toBe(true);
   expect(fs.existsSync(ledgerPath(stateDir, "claude", "work"))).toBe(false);
