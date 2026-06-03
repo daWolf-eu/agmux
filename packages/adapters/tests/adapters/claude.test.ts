@@ -115,3 +115,36 @@ test("isInstalled parses the /plugin list --json output", () => {
   const empty = recordingSpawner("[]");
   expect(claudePluginRunner("claude", empty.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(false);
 });
+
+import { resolveConfigDir, claudeInstall, claudeUninstall, claudeStatus, PLUGIN_REF, ADAPTER_VERSION } from "../../src/adapters/claude/install.ts";
+import { fakePluginRunner } from "./fixtures/fake-plugin-runner.ts";
+
+const ictx = (configDir: string | undefined, profile: string | null = null) => ({
+  agentKind: "claude" as const, profile,
+  profileEnv: (configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}) as Record<string, string>,
+  agmuxEmitPath: "/abs/agmux emit", stateDir: "/tmp/state",
+});
+
+test("resolveConfigDir prefers CLAUDE_CONFIG_DIR from profileEnv, else default ~/.claude", () => {
+  expect(resolveConfigDir(ictx("/cfg"))).toBe("/cfg");
+  expect(resolveConfigDir(ictx(undefined)).endsWith("/.claude")).toBe(true);
+});
+
+test("install records the plugin + marketplace artifacts and flips status", () => {
+  const runner = fakePluginRunner();
+  const ctx = ictx("/cfg", "work");
+  const rec = claudeInstall(ctx, runner, "/repo/marketplace");
+  expect(rec).toMatchObject({ agentKind: "claude", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
+  expect(rec.artifacts.some((a) => a.detail === `plugin ${PLUGIN_REF}`)).toBe(true);
+  expect(claudeStatus(ctx, runner)).toMatchObject({ installed: true, version: ADAPTER_VERSION, runtimeGate: "hook-trust" });
+
+  claudeUninstall(ctx, runner);
+  expect(claudeStatus(ctx, runner).installed).toBe(false);
+});
+
+test("separate config dirs install independently (profile isolation)", () => {
+  const runner = fakePluginRunner();
+  claudeInstall(ictx("/cfg-a"), runner, "/m");
+  expect(claudeStatus(ictx("/cfg-a"), runner).installed).toBe(true);
+  expect(claudeStatus(ictx("/cfg-b"), runner).installed).toBe(false);
+});
