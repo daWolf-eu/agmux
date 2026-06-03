@@ -148,3 +148,24 @@ test("separate config dirs install independently (profile isolation)", () => {
   expect(claudeStatus(ictx("/cfg-a"), runner).installed).toBe(true);
   expect(claudeStatus(ictx("/cfg-b"), runner).installed).toBe(false);
 });
+
+import { createClaudeAdapter, claudeAdapter } from "../../src/adapters/claude/index.ts";
+import { assertAdapterConformance } from "../../src/core/conformance.ts";
+import * as os from "node:os";
+import * as fs from "node:fs";
+
+test("the default claudeAdapter exposes the expected shape", () => {
+  expect(claudeAdapter.agentKind).toBe("claude");
+  expect(claudeAdapter.sources({} as any).length).toBe(2);
+  expect(Object.keys(claudeAdapter.capabilities({} as any))).toContain("usage.reported");
+});
+
+test("createClaudeAdapter passes the framework conformance battery (with a fake runner)", () => {
+  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-claude-conf-"));
+  const adapter = createClaudeAdapter({ runner: fakePluginRunner(), marketplacePath: "/repo/marketplace" });
+  const passed = assertAdapterConformance(adapter, {
+    makeContext: () => ({ agentKind: "claude", profile: null, profileEnv: { CLAUDE_CONFIG_DIR: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: cfg }),
+    makeResumeContext: (nid) => ({ agentKind: "claude", profile: null, command: "claude", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
+  });
+  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+});
