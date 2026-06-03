@@ -183,3 +183,36 @@ test("turn.started bumps session_usage.turn_count and creates the row", () => {
   const u = db.query<any, []>(`SELECT turn_count FROM session_usage WHERE session_id='${sid}'`).get();
   expect(u.turn_count).toBe(1);
 });
+
+test("session.linked after session.ended is ignored (identity frozen on death)", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("session.linked", "2026-05-28T12:01:00.000Z", { native_session_id: "real-conversation" }));
+  applyEventToProjection(db, ev("session.ended", "2026-05-28T12:05:00.000Z", { exit_code: 0, signal: null, reason: "normal" }));
+  // e.g. a SessionEnd-hook summarizer (`claude -p`) inheriting AGMUX_SESSION_ID
+  applyEventToProjection(db, ev("session.linked", "2026-05-28T12:05:02.000Z", { native_session_id: "summarizer-session" }));
+  expect(db.query<any, []>(`SELECT native_session_id FROM sessions WHERE session_id='${sid}'`).get().native_session_id).toBe("real-conversation");
+});
+
+test("usage and turn_count after session.ended are ignored (telemetry frozen on death)", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("turn.started", "2026-05-28T12:01:00.000Z", {}));
+  applyEventToProjection(db, ev("usage.reported", "2026-05-28T12:02:00.000Z", { cumulative: false, source: "s", input_tokens: 100 }));
+  applyEventToProjection(db, ev("session.ended", "2026-05-28T12:05:00.000Z", { exit_code: 0, signal: null, reason: "normal" }));
+  applyEventToProjection(db, ev("turn.started", "2026-05-28T12:05:02.000Z", {}));
+  applyEventToProjection(db, ev("usage.reported", "2026-05-28T12:05:03.000Z", { cumulative: false, source: "s", input_tokens: 9999 }));
+  const u = db.query<any, []>(`SELECT turn_count, input_tokens FROM session_usage WHERE session_id='${sid}'`).get();
+  expect(u.turn_count).toBe(1);
+  expect(u.input_tokens).toBe(100);
+});
+
+test("session.adapter_attached after session.ended is ignored", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  applyEventToProjection(db, ev("session.ended", "2026-05-28T12:05:00.000Z", { exit_code: 0, signal: null, reason: "normal" }));
+  applyEventToProjection(db, ev("session.adapter_attached", "2026-05-28T12:05:02.000Z", {
+    agent_kind: "claude", profile: null, adapter_version: "9", capabilities: { "turn.started": { fulfil: "yes" } },
+  }));
+  expect(db.query<any, []>(`SELECT adapter_capabilities FROM sessions WHERE session_id='${sid}'`).get().adapter_capabilities).toBeNull();
+});

@@ -104,6 +104,9 @@ export interface NormalizeInput {
   cursor?: string | null;             // per-session source cursor (transcript offset, etc.)
   target: { agentKind: AgentKind; profile: string | null };
   agentVersion?: string | null;
+  // The emit process env (inherited from the provider's hook). Lets adapters
+  // cross-check identity signals the provider exports (e.g. detect nested runs).
+  env?: Record<string, string | undefined>;
 }
 
 export interface NormalizeOutput {

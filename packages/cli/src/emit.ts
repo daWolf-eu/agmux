@@ -76,6 +76,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
       const out = adapter.normalize({
         point: a.point, source: a.source, raw: parseRaw(deps.stdin), cursor,
         target: { agentKind: a.from as AgentKind, profile: a.profile },
+        env: deps.env, // provider-exported identity signals (nesting guard etc.)
       });
       events = out.events;
       if (a.cursorFile && out.cursor != null) {

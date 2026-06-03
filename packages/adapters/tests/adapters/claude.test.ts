@@ -175,3 +175,27 @@ test("claudeAdapter passes the framework conformance battery (real fs install)",
   });
   expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
 });
+
+test("identity mismatch (nested claude run) drops all events", () => {
+  // env CLAUDE_CODE_SESSION_ID comes from the OUTER claude; stdin session_id is
+  // the nested one's. Disagreement = leaked AGMUX_SESSION_ID — drop everything.
+  const out = normalizeClaude({
+    point: "session.linked", source: "hook-command",
+    raw: { session_id: "nested-xyz" }, target,
+    env: { CLAUDE_CODE_SESSION_ID: "outer-abc" },
+  });
+  expect(out.events).toHaveLength(0);
+});
+
+test("identity match or absent env keeps events flowing", () => {
+  const match = normalizeClaude({
+    point: "session.linked", source: "hook-command",
+    raw: { session_id: "sess-abc" }, target,
+    env: { CLAUDE_CODE_SESSION_ID: "sess-abc" },
+  });
+  expect(match.events).toHaveLength(1);
+  const absent = normalizeClaude({
+    point: "turn.started", source: "hook-command", raw: { session_id: "sess-abc" }, target,
+  });
+  expect(absent.events).toHaveLength(1);
+});
