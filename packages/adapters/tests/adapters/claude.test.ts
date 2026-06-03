@@ -91,8 +91,6 @@ import { resolveConfigDir, skillsPluginDir, claudeInstall, claudeUninstall, clau
 import * as os from "node:os";
 import * as fs from "node:fs";
 
-const PLUGIN_SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "adapters", "claude", "plugin");
-
 function tmpCfg(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-claude-cfg-"));
 }
@@ -110,12 +108,12 @@ test("resolveConfigDir: explicit override > profileEnv CLAUDE_CONFIG_DIR > defau
   expect(resolveConfigDir(ictx(undefined)).endsWith("/.claude")).toBe(true);
 });
 
-test("install copies the plugin into <configDir>/skills/agmux and flips status; uninstall reverses", () => {
+test("install writes the plugin into <configDir>/skills/agmux and flips status; uninstall reverses", () => {
   const cfg = tmpCfg();
   const ctx = ictx(cfg, "work");
 
-  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(false);
-  const rec = claudeInstall(ctx, PLUGIN_SRC);
+  expect(claudeStatus(ctx).installed).toBe(false);
+  const rec = claudeInstall(ctx);
   expect(rec).toMatchObject({ agentKind: "claude", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
 
   // The skills-dir plugin is fully materialized: manifest, hooks, executable shim.
@@ -126,41 +124,41 @@ test("install copies the plugin into <configDir>/skills/agmux and flips status; 
   expect(shimMode).not.toBe(0); // executable bit preserved
   expect(rec.artifacts.some((a) => a.kind === "file" && a.path === dest)).toBe(true);
 
-  expect(claudeStatus(ctx, PLUGIN_SRC)).toMatchObject({ installed: true, version: ADAPTER_VERSION, drift: false });
+  expect(claudeStatus(ctx)).toMatchObject({ installed: true, version: ADAPTER_VERSION, drift: false });
 
   claudeUninstall(ctx, rec);
   expect(fs.existsSync(dest)).toBe(false);
-  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(false);
+  expect(claudeStatus(ctx).installed).toBe(false);
 });
 
 test("install is idempotent (re-install refreshes the copy)", () => {
   const cfg = tmpCfg();
   const ctx = ictx(cfg);
-  claudeInstall(ctx, PLUGIN_SRC);
-  const rec = claudeInstall(ctx, PLUGIN_SRC);
-  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(true);
+  claudeInstall(ctx);
+  const rec = claudeInstall(ctx);
+  expect(claudeStatus(ctx).installed).toBe(true);
   claudeUninstall(ctx, rec);
 });
 
-test("status reports drift when the installed plugin.json version differs from source", () => {
+test("status reports drift when the installed plugin.json version differs from the embedded payload", () => {
   const cfg = tmpCfg();
   const ctx = ictx(cfg);
-  claudeInstall(ctx, PLUGIN_SRC);
+  claudeInstall(ctx);
   const manifest = path.join(skillsPluginDir(cfg), ".claude-plugin", "plugin.json");
   const p = JSON.parse(fs.readFileSync(manifest, "utf8"));
   fs.writeFileSync(manifest, JSON.stringify({ ...p, version: "0.0.1-stale" }));
-  expect(claudeStatus(ctx, PLUGIN_SRC).drift).toBe(true);
+  expect(claudeStatus(ctx).drift).toBe(true);
 });
 
 test("separate config dirs install independently (profile isolation)", () => {
   const cfgA = tmpCfg();
   const cfgB = tmpCfg();
-  claudeInstall(ictx(cfgA), PLUGIN_SRC);
-  expect(claudeStatus(ictx(cfgA), PLUGIN_SRC).installed).toBe(true);
-  expect(claudeStatus(ictx(cfgB), PLUGIN_SRC).installed).toBe(false);
+  claudeInstall(ictx(cfgA));
+  expect(claudeStatus(ictx(cfgA)).installed).toBe(true);
+  expect(claudeStatus(ictx(cfgB)).installed).toBe(false);
 });
 
-import { createClaudeAdapter, claudeAdapter } from "../../src/adapters/claude/index.ts";
+import { claudeAdapter } from "../../src/adapters/claude/index.ts";
 import { assertAdapterConformance } from "../../src/core/conformance.ts";
 
 test("the default claudeAdapter exposes the expected shape", () => {

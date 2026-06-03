@@ -1,19 +1,21 @@
 import { test, expect } from "bun:test";
-import * as fs from "node:fs";
-import * as path from "node:path";
-import { fileURLToPath } from "node:url";
+import { PLUGIN_FILES, PLUGIN_VERSION } from "../../src/adapters/claude/plugin-files.ts";
 
-const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "adapters", "claude", "plugin");
+function file(p: string) {
+  const f = PLUGIN_FILES.find((f) => f.path === p);
+  if (!f) throw new Error(`plugin file missing: ${p}`);
+  return f;
+}
 
-test("plugin.json declares the agmux plugin manifest", () => {
-  const p = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "plugin.json"), "utf8"));
-  expect(p.name).toBe("agmux");
-  expect(typeof p.version).toBe("string");
+test("plugin payload declares the agmux plugin manifest", () => {
+  const m = JSON.parse(file(".claude-plugin/plugin.json").content);
+  expect(m.name).toBe("agmux");
+  expect(m.version).toBe(PLUGIN_VERSION);
 });
 
 test("hooks.json wires every capture point to `agmux emit`", () => {
-  const h = JSON.parse(fs.readFileSync(path.join(ROOT, "hooks", "hooks.json"), "utf8"));
-  const flat = JSON.stringify(h);
+  const h = JSON.parse(file("hooks/hooks.json").content);
+  const flat = file("hooks/hooks.json").content;
   for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "PostToolUse"]) expect(h.hooks[ev]).toBeDefined();
   for (const point of ["session.linked", "turn.started", "turn.ended", "input.required", "usage.reported", "tool.used"]) {
     expect(flat).toContain(`--point=${point}`);
@@ -22,7 +24,16 @@ test("hooks.json wires every capture point to `agmux emit`", () => {
   expect(flat).toContain("--source=transcript-delta");
 });
 
-test("the emit shim resolves the agmux binary with a PATH fallback", () => {
-  const shim = fs.readFileSync(path.join(ROOT, "bin", "agmux-emit"), "utf8");
-  expect(shim).toContain("${AGMUX_BIN:-agmux}");
+test("every hook is async so it never delays Claude", () => {
+  const h = JSON.parse(file("hooks/hooks.json").content);
+  for (const groups of Object.values<any>(h.hooks)) {
+    for (const g of groups) for (const hook of g.hooks) expect(hook.async).toBe(true);
+  }
+});
+
+test("the emit shim resolves the agmux binary with a PATH fallback and is executable", () => {
+  const shim = file("bin/agmux-emit");
+  expect(shim.content).toContain("${AGMUX_BIN:-agmux}");
+  expect(shim.content.startsWith("#!/usr/bin/env bash")).toBe(true);
+  expect(shim.mode & 0o111).not.toBe(0);
 });

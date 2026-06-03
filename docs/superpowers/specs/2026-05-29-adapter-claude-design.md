@@ -214,11 +214,13 @@ diverged from this spec's §2.2, **§11 wins** (the implementation follows it):
    note 1 above).** Current Claude Code auto-loads a plugin placed at
    `<configDir>/skills/<name>/` as `<name>@skills-dir` — official (scaffolded by
    `claude plugin init`), persistent, no marketplace, no install step. The adapter
-   now installs by **pure file copy** of the static in-repo plugin
-   (`packages/adapters/src/adapters/claude/plugin/`) into
+   now installs by **writing the plugin payload** — embedded as code in
+   `packages/adapters/src/adapters/claude/plugin-files.ts` (manifest, hooks.json,
+   emit shim), not shipped as on-disk data files, so it works identically from a
+   `bun build --compile` binary (where `import.meta.dir` is virtual) — into
    `<configDir>/skills/agmux/`:
-   - `install()` = recursive copy (idempotent refresh; preserves the shim's
-     executable bit); the `InstallRecord` artifact is the copied directory →
+   - `install()` = write the embedded files (idempotent refresh; shim written
+     0755); the `InstallRecord` artifact is the written directory →
      `uninstall()` is an exact `rm -rf` of recorded artifacts.
    - `status()` = manifest stat + **version-drift detection** (installed
      `plugin.json` version vs source).
