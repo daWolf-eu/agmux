@@ -210,13 +210,30 @@ diverged from this spec's §2.2, **§11 wins** (the implementation follows it):
    non-interactively. Any trust/enable gating moves to session start;
    `status().runtimeGate = "hook-trust"` is kept until a live wrapped session
    proves hooks fire ungated.
-6. **Marketplace-less alternative noted, not adopted:** current Claude Code also
-   auto-loads "skills-directory plugins" (`<configDir>/skills/<name>/`, loaded as
-   `<name>@skills-dir`) and per-session `--plugin-dir`. The marketplace flow
-   stays our install path — it is explicit, versioned, and ledger-shaped
-   (install/uninstall/list as discrete reversible operations); whether skills-dir
-   plugins execute `hooks/hooks.json` is not clearly documented.
+6. **Install model revised: skills-directory plugin (ADOPTED, supersedes §2.2 and
+   note 1 above).** Current Claude Code auto-loads a plugin placed at
+   `<configDir>/skills/<name>/` as `<name>@skills-dir` — official (scaffolded by
+   `claude plugin init`), persistent, no marketplace, no install step. The adapter
+   now installs by **pure file copy** of the static in-repo plugin
+   (`packages/adapters/src/adapters/claude/plugin/`) into
+   `<configDir>/skills/agmux/`:
+   - `install()` = recursive copy (idempotent refresh; preserves the shim's
+     executable bit); the `InstallRecord` artifact is the copied directory →
+     `uninstall()` is an exact `rm -rf` of recorded artifacts.
+   - `status()` = manifest stat + **version-drift detection** (installed
+     `plugin.json` version vs source).
+   - **No `claude` binary, no auth, no tokens, no version coupling at install
+     time.** The `PluginRunner` and the marketplace manifest were removed; the
+     plugin payload (`hooks.json`, `bin/agmux-emit`) is unchanged.
+   - The CLI gained `agmux adapter install|status|uninstall … --config-dir <path>`
+     (an additive `InstallContext.configDirOverride`, highest-priority config-dir
+     source; resolution stays inside the adapter).
+   - The marketplace + `claude plugin` CLI flow (notes 1–5) remains documented as
+     the fallback path if skills-dir plugins turn out not to execute hooks.
 
-**Still pending live verification** (needs a wrapped interactive session): hooks
-actually firing end-to-end (`turn.*`/usage flowing into `agmux inspect`) and the
-exact `Notification` stdin fields for permission-vs-idle (§5, §10).
+**Still pending live verification** (needs a wrapped interactive session): that a
+skills-dir plugin's `hooks/hooks.json` actually executes (the docs imply it via
+`/reload-plugins` coverage but don't state it outright — **if it doesn't, revert
+to the note-1 marketplace flow**, which is install-mechanics-verified); hooks
+firing end-to-end (`turn.*`/usage flowing into `agmux inspect`); and the exact
+`Notification` stdin fields for permission-vs-idle (§5, §10).

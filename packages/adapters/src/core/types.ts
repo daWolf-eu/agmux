@@ -39,6 +39,8 @@ export interface InstallContext {
   profileEnv: Record<string, string>; // the env the target launches with (gating, $CODEX_HOME, etc.)
   agmuxEmitPath: string;             // absolute command to bake into hooks, e.g. "/usr/local/bin/agmux emit"
   stateDir: string;                  // ~/.agmux
+  configDirOverride?: string | null; // explicit --config-dir from the CLI; the adapter
+                                     // interprets it (highest-priority config-dir source)
 }
 
 // Everything an adapter needs to compute a native resume invocation (spec §6.4).

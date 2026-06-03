@@ -87,75 +87,81 @@ test("resumePlan is not resumable without a native session id", () => {
   expect(claudeResumePlan(resumeCtx(null))).toEqual({ resumable: false });
 });
 
-import { claudePluginRunner, type Spawner } from "../../src/adapters/claude/runner.ts";
+import { resolveConfigDir, skillsPluginDir, claudeInstall, claudeUninstall, claudeStatus, ADAPTER_VERSION } from "../../src/adapters/claude/install.ts";
+import * as os from "node:os";
+import * as fs from "node:fs";
 
-function recordingSpawner(out = "[]") {
-  const calls: { args: string[]; configDir: string }[] = [];
-  const spawn: Spawner = (_bin, args, configDir) => { calls.push({ args, configDir }); return { code: 0, out }; };
-  return { calls, spawn };
+const PLUGIN_SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "src", "adapters", "claude", "plugin");
+
+function tmpCfg(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-claude-cfg-"));
 }
 
-test("runner issues the official `claude plugin` CLI commands scoped to the config dir", () => {
-  const { calls, spawn } = recordingSpawner();
-  const r = claudePluginRunner("claude", spawn);
-  r.marketplaceAdd("/cfg", "/repo/marketplace");
-  r.install("/cfg", "agmux@agmux");
-  r.uninstall("/cfg", "agmux@agmux");
-  expect(calls.map((c) => c.args.join(" "))).toEqual([
-    "plugin marketplace add /repo/marketplace",
-    "plugin install agmux@agmux",
-    "plugin uninstall agmux@agmux",
-  ]);
-  expect(calls.every((c) => c.configDir === "/cfg")).toBe(true);
-});
-
-test("isInstalled parses the `claude plugin list --json` output (id-based, live-verified shape)", () => {
-  // Real shape verified against claude 2.1.156: [{ id, version, scope, enabled, installPath, ... }]
-  const installed = recordingSpawner(JSON.stringify([{ id: "agmux@agmux", version: "1.0.0", scope: "user", enabled: true }]));
-  expect(claudePluginRunner("claude", installed.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(true);
-  const disabled = recordingSpawner(JSON.stringify([{ id: "agmux@agmux", enabled: false }]));
-  expect(claudePluginRunner("claude", disabled.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(false);
-  const empty = recordingSpawner("[]");
-  expect(claudePluginRunner("claude", empty.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(false);
-});
-
-import { resolveConfigDir, claudeInstall, claudeUninstall, claudeStatus, PLUGIN_REF, ADAPTER_VERSION } from "../../src/adapters/claude/install.ts";
-import { fakePluginRunner } from "./fixtures/fake-plugin-runner.ts";
-
-const ictx = (configDir: string | undefined, profile: string | null = null) => ({
+const ictx = (configDir: string | undefined, profile: string | null = null, override: string | null = null) => ({
   agentKind: "claude" as const, profile,
   profileEnv: (configDir ? { CLAUDE_CONFIG_DIR: configDir } : {}) as Record<string, string>,
   agmuxEmitPath: "/abs/agmux emit", stateDir: "/tmp/state",
+  ...(override ? { configDirOverride: override } : {}),
 });
 
-test("resolveConfigDir prefers CLAUDE_CONFIG_DIR from profileEnv, else default ~/.claude", () => {
+test("resolveConfigDir: explicit override > profileEnv CLAUDE_CONFIG_DIR > default ~/.claude", () => {
   expect(resolveConfigDir(ictx("/cfg"))).toBe("/cfg");
+  expect(resolveConfigDir(ictx("/cfg", null, "/override"))).toBe("/override");
   expect(resolveConfigDir(ictx(undefined)).endsWith("/.claude")).toBe(true);
 });
 
-test("install records the plugin + marketplace artifacts and flips status", () => {
-  const runner = fakePluginRunner();
-  const ctx = ictx("/cfg", "work");
-  const rec = claudeInstall(ctx, runner, "/repo/marketplace");
-  expect(rec).toMatchObject({ agentKind: "claude", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
-  expect(rec.artifacts.some((a) => a.detail === `plugin ${PLUGIN_REF}`)).toBe(true);
-  expect(claudeStatus(ctx, runner)).toMatchObject({ installed: true, version: ADAPTER_VERSION, runtimeGate: "hook-trust" });
+test("install copies the plugin into <configDir>/skills/agmux and flips status; uninstall reverses", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg, "work");
 
-  claudeUninstall(ctx, runner);
-  expect(claudeStatus(ctx, runner).installed).toBe(false);
+  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(false);
+  const rec = claudeInstall(ctx, PLUGIN_SRC);
+  expect(rec).toMatchObject({ agentKind: "claude", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
+
+  // The skills-dir plugin is fully materialized: manifest, hooks, executable shim.
+  const dest = skillsPluginDir(cfg);
+  expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
+  expect(fs.existsSync(path.join(dest, "hooks", "hooks.json"))).toBe(true);
+  const shimMode = fs.statSync(path.join(dest, "bin", "agmux-emit")).mode & 0o111;
+  expect(shimMode).not.toBe(0); // executable bit preserved
+  expect(rec.artifacts.some((a) => a.kind === "file" && a.path === dest)).toBe(true);
+
+  expect(claudeStatus(ctx, PLUGIN_SRC)).toMatchObject({ installed: true, version: ADAPTER_VERSION, drift: false });
+
+  claudeUninstall(ctx, rec);
+  expect(fs.existsSync(dest)).toBe(false);
+  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(false);
+});
+
+test("install is idempotent (re-install refreshes the copy)", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg);
+  claudeInstall(ctx, PLUGIN_SRC);
+  const rec = claudeInstall(ctx, PLUGIN_SRC);
+  expect(claudeStatus(ctx, PLUGIN_SRC).installed).toBe(true);
+  claudeUninstall(ctx, rec);
+});
+
+test("status reports drift when the installed plugin.json version differs from source", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg);
+  claudeInstall(ctx, PLUGIN_SRC);
+  const manifest = path.join(skillsPluginDir(cfg), ".claude-plugin", "plugin.json");
+  const p = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  fs.writeFileSync(manifest, JSON.stringify({ ...p, version: "0.0.1-stale" }));
+  expect(claudeStatus(ctx, PLUGIN_SRC).drift).toBe(true);
 });
 
 test("separate config dirs install independently (profile isolation)", () => {
-  const runner = fakePluginRunner();
-  claudeInstall(ictx("/cfg-a"), runner, "/m");
-  expect(claudeStatus(ictx("/cfg-a"), runner).installed).toBe(true);
-  expect(claudeStatus(ictx("/cfg-b"), runner).installed).toBe(false);
+  const cfgA = tmpCfg();
+  const cfgB = tmpCfg();
+  claudeInstall(ictx(cfgA), PLUGIN_SRC);
+  expect(claudeStatus(ictx(cfgA), PLUGIN_SRC).installed).toBe(true);
+  expect(claudeStatus(ictx(cfgB), PLUGIN_SRC).installed).toBe(false);
 });
 
 import { createClaudeAdapter, claudeAdapter } from "../../src/adapters/claude/index.ts";
 import { assertAdapterConformance } from "../../src/core/conformance.ts";
-import * as os from "node:os";
-import * as fs from "node:fs";
 
 test("the default claudeAdapter exposes the expected shape", () => {
   expect(claudeAdapter.agentKind).toBe("claude");
@@ -163,10 +169,9 @@ test("the default claudeAdapter exposes the expected shape", () => {
   expect(Object.keys(claudeAdapter.capabilities({} as any))).toContain("usage.reported");
 });
 
-test("createClaudeAdapter passes the framework conformance battery (with a fake runner)", () => {
-  const cfg = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-claude-conf-"));
-  const adapter = createClaudeAdapter({ runner: fakePluginRunner(), marketplacePath: "/repo/marketplace" });
-  const passed = assertAdapterConformance(adapter, {
+test("claudeAdapter passes the framework conformance battery (real fs install)", () => {
+  const cfg = tmpCfg();
+  const passed = assertAdapterConformance(claudeAdapter, {
     makeContext: () => ({ agentKind: "claude", profile: null, profileEnv: { CLAUDE_CONFIG_DIR: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: cfg }),
     makeResumeContext: (nid) => ({ agentKind: "claude", profile: null, command: "claude", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
   });

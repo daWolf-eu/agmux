@@ -4,7 +4,7 @@ import {
   installAdapter, uninstallAdapter, loadRecord,
   type Registry, type InstallContext,
 } from "@agmux/adapters";
-import { parseConfig, type AgmuxConfig } from "@agmux/wrapper";
+import { parseConfig, expandTilde, type AgmuxConfig } from "@agmux/wrapper";
 
 export interface AdapterCmdDeps {
   registry: Registry;
@@ -36,11 +36,21 @@ function resolveTarget(args: string[], cfg: AgmuxConfig): Target | { error: stri
   return { agentKind: p.agent_kind, profile, profileEnv: p.env };
 }
 
-function ctxFor(t: Target, deps: AdapterCmdDeps): InstallContext {
+function ctxFor(t: Target, deps: AdapterCmdDeps, configDirOverride: string | null): InstallContext {
   return {
     agentKind: t.agentKind, profile: t.profile, profileEnv: t.profileEnv,
     agmuxEmitPath: deps.agmuxEmitPath, stateDir: deps.stateDir,
+    configDirOverride,
   };
+}
+
+// Extract `--config-dir <path>` and return the remaining args; the value must be
+// stripped before target resolution or it would be mistaken for a profile name.
+function takeConfigDir(args: string[]): { rest: string[]; configDir: string | null } {
+  const i = args.indexOf("--config-dir");
+  if (i < 0) return { rest: args, configDir: null };
+  const v = args[i + 1] ?? null;
+  return { rest: [...args.slice(0, i), ...args.slice(i + 2)], configDir: v ? expandTilde(v) : null };
 }
 
 function label(t: { agentKind: AgentKind; profile: string | null }): string {
@@ -71,11 +81,12 @@ export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promi
   }
 
   if (sub === "install" || sub === "uninstall" || sub === "status") {
-    const t = resolveTarget(rest, cfg);
+    const { rest: targetArgs, configDir } = takeConfigDir(rest);
+    const t = resolveTarget(targetArgs, cfg);
     if ("error" in t) { deps.out(t.error); return 2; }
     const adapter = deps.registry.lookup(t.agentKind);
     if (!adapter) { deps.out(`no adapter registered for kind '${t.agentKind}'`); return 1; }
-    const ctx = ctxFor(t, deps);
+    const ctx = ctxFor(t, deps, configDir);
 
     if (sub === "install") {
       const rec = installAdapter(adapter, ctx);
@@ -93,6 +104,6 @@ export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promi
     return 0;
   }
 
-  deps.out("usage: agmux adapter list|install|status|uninstall (<profile> | --kind <agent_kind>)");
+  deps.out("usage: agmux adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]");
   return 2;
 }

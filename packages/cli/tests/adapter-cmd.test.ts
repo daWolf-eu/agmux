@@ -66,3 +66,26 @@ test("adapter list shows registered kinds and install state", async () => {
   expect(text).toMatch(/claude/);
   expect(text).toMatch(/work/);
 });
+
+test("adapter install --config-dir threads the override into the InstallContext", async () => {
+  const s = setup();
+  let seen: any = null;
+  const spy = {
+    ...fakeAdapter,
+    install: (ctx: any) => { seen = ctx; return fakeAdapter.install(ctx); },
+  };
+  const reg = createRegistry(); reg.register(spy);
+  const rc = await runAdapterCmd(["install", "--config-dir", "/custom/cfg", "work"], { ...s.deps, registry: reg });
+  expect(rc).toBe(0);
+  expect(seen.configDirOverride).toBe("/custom/cfg");
+  expect(seen.profile).toBe("work"); // flag value must not be mistaken for the profile name
+});
+
+test("adapter status without --config-dir leaves the override unset", async () => {
+  const s = setup();
+  let seen: any = null;
+  const spy = { ...fakeAdapter, status: (ctx: any) => { seen = ctx; return fakeAdapter.status(ctx); } };
+  const reg = createRegistry(); reg.register(spy);
+  await runAdapterCmd(["status", "work"], { ...s.deps, registry: reg });
+  expect(seen.configDirOverride ?? null).toBeNull();
+});

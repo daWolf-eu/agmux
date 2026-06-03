@@ -29,7 +29,7 @@ function usage(): never {
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
-  adapter list|install|status|uninstall (<profile> | --kind <agent_kind>)
+  adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]
   emit ...   (runtime callback; not user-facing)`);
   process.exit(2);
 }
