@@ -67,3 +67,22 @@ test("usage.reported reads transcript deltas with stable dedup keys and advances
 test("usage.reported with a missing transcript path is a no-op", () => {
   expect(normalizeClaude({ point: "usage.reported", source: "transcript-delta", raw: { session_id: "x", transcript_path: "/no/such/file" }, cursor: null, target }).events).toHaveLength(0);
 });
+
+import { claudeResumePlan } from "../../src/adapters/claude/resume.ts";
+
+const resumeCtx = (nid: string | null) => ({
+  agentKind: "claude" as const, profile: null, command: "claude", args: ["--model", "opus"],
+  cwd: "/work", env: { FOO: "1" }, nativeSessionId: nid,
+});
+
+test("resumePlan builds `claude --resume <id>` preserving original args", () => {
+  const plan = claudeResumePlan(resumeCtx("sess-abc"));
+  expect(plan.resumable).toBe(true);
+  expect(plan.argv).toEqual(["claude", "--resume", "sess-abc", "--model", "opus"]);
+  expect(plan.cwd).toBe("/work");
+  expect(plan.nativeSessionId).toBe("sess-abc");
+});
+
+test("resumePlan is not resumable without a native session id", () => {
+  expect(claudeResumePlan(resumeCtx(null))).toEqual({ resumable: false });
+});
