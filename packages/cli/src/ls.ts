@@ -25,12 +25,15 @@ export async function lsCmd(opts: LsOpts): Promise<number> {
 }
 
 function printTable(rows: SessionRow[]): void {
-  const header = ["ID", "AGENT", "PROFILE", "STATUS", "PID", "TMUX", "START", "LAST_SEEN"];
+  const header = ["ID", "AGENT", "PROFILE", "STATUS", "TURNS", "PID", "TMUX", "START", "LAST_SEEN"];
   const data = rows.map((r) => [
     r.session_id.slice(0, 23),
     r.agent_kind,
     r.profile ?? "-",
     r.status,
+    // "-" = no adapter observation; "0" = adapter watched but no turn happened
+    // (nothing to resume); >0 = a real conversation.
+    r.turn_count == null ? "-" : String(r.turn_count),
     r.pid?.toString() ?? "-",
     r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
     short(r.start_ts),

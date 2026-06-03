@@ -37,3 +37,8 @@ test("the emit shim resolves the agmux binary with a PATH fallback and is execut
   expect(shim.content.startsWith("#!/usr/bin/env bash")).toBe(true);
   expect(shim.mode & 0o111).not.toBe(0);
 });
+
+test("SessionStart re-links on clear/compact (native id rotates mid-process)", () => {
+  const h = JSON.parse(file("hooks/hooks.json").content);
+  expect(h.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
+});

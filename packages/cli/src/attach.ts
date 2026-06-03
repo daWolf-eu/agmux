@@ -15,7 +15,10 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   if (!res.ok) { console.error(res.error); return 2; }
 
   const r = await fetch(`${opts.hubUrl}/sessions/${res.id}`);
-  const { session } = (await r.json()) as { session: SessionRow };
+  const { session, usage } = (await r.json()) as {
+    session: SessionRow;
+    usage: { turn_count: number } | null;
+  };
 
   if (LIVE_STATUSES.includes(session.status) && session.tmux_session && session.tmux_window) {
     if (process.env.TMUX) {
@@ -33,6 +36,12 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     wrapBin: opts.wrapBin,
     registry: opts.registry ?? createDefaultRegistry(),
     baseEnv: process.env,
+    // Zero observed turns (turn_count 0, or no usage row at all) → the adapter
+    // watched the session but no turn ever happened, so no native conversation
+    // was persisted and a resume would fail ("No conversation found"). A
+    // native_session_id can only come from an attached adapter, so a missing
+    // usage row safely means "watched, zero turns" — relaunch fresh.
+    turnCount: usage?.turn_count ?? 0,
   });
   const child = Bun.spawn(spec.wrapArgv, {
     stdio: ["inherit", "inherit", "inherit"],

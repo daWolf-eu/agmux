@@ -26,6 +26,7 @@ function decodeRow(raw: any): SessionRow {
     exit_code: raw.exit_code,
     signal: raw.signal,
     status: raw.status as SessionStatus,
+    turn_count: raw.turn_count ?? null,
   };
 }
 
@@ -52,7 +53,9 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
-  const sql = `SELECT * FROM sessions ${where.length ? "WHERE " + where.join(" AND ") : ""}
+  const sql = `SELECT s.*, u.turn_count FROM sessions s
+               LEFT JOIN session_usage u ON u.session_id = s.session_id
+               ${where.length ? "WHERE " + where.join(" AND ") : ""}
                ORDER BY start_ts DESC
                LIMIT ?`;
   params.push(opts.limit ?? 200);

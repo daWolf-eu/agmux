@@ -28,4 +28,8 @@ export interface SessionRow {
   exit_code: number | null;
   signal: string | null;
   status: SessionStatus;
+  // Joined from the session_usage projection (null = no usage row yet, i.e. the
+  // adapter never observed a turn). Lets consumers tell a real conversation from
+  // an empty session without a second query.
+  turn_count?: number | null;
 }

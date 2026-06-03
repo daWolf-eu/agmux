@@ -52,3 +52,29 @@ test("adapter present but no native_session_id → falls back to normal relaunch
   });
   expect(spec.wrapArgv).toEqual(["agmux-wrap", "work"]); // resumePlan returned resumable:false
 });
+
+test("adapter + native id but zero observed turns → fresh relaunch (empty conversations don't persist)", () => {
+  const spec = buildRelaunchSpec(
+    row({ profile: "work", native_session_id: "native-xyz" }),
+    { hubUrl: "http://hub", wrapBin: "agmux-wrap", registry: fakeReg(), baseEnv: {}, turnCount: 0 },
+  );
+  expect(spec.wrapArgv).toEqual(["agmux-wrap", "work"]); // no --resume attempted
+});
+
+test("adapter + native id + observed turns → native resume", () => {
+  const spec = buildRelaunchSpec(
+    row({ profile: "work", native_session_id: "native-xyz" }),
+    { hubUrl: "http://hub", wrapBin: "agmux-wrap", registry: fakeReg(), baseEnv: {}, turnCount: 3 },
+  );
+  const inline = JSON.parse(spec.env.AGMUX_INLINE_PROFILE!);
+  expect(inline.args).toEqual(["resume", "native-xyz"]);
+});
+
+test("turnCount omitted (no usage data) keeps today's resume behavior", () => {
+  const spec = buildRelaunchSpec(
+    row({ profile: "work", native_session_id: "native-xyz" }),
+    { hubUrl: "http://hub", wrapBin: "agmux-wrap", registry: fakeReg(), baseEnv: {} },
+  );
+  const inline = JSON.parse(spec.env.AGMUX_INLINE_PROFILE!);
+  expect(inline.args).toEqual(["resume", "native-xyz"]);
+});

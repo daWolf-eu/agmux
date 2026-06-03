@@ -9,6 +9,7 @@ export interface RelaunchOpts {
   wrapBin: string;
   registry: Registry;
   baseEnv: Record<string, string | undefined>;
+  turnCount?: number; // observed turns (session_usage.turn_count); undefined = unknown
 }
 
 // Build the relaunch (command + env) for a dead/lost session. If the adapter can
@@ -26,8 +27,14 @@ export function buildRelaunchSpec(session: SessionRow, opts: RelaunchOpts): Rela
   let extraEnv: Record<string, string> = session.env_overrides ?? {};
   let resumed = false;
 
+  // A session with zero observed turns never persisted a native conversation
+  // (e.g. Claude drops empty sessions), so a native resume is guaranteed to fail
+  // ("No conversation found"). Relaunch fresh instead. Unknown (undefined) keeps
+  // the resume attempt — adapters may track sessions we didn't see turns for.
+  const neverConversed = opts.turnCount === 0;
+
   const adapter = opts.registry.lookup(session.agent_kind);
-  if (adapter && session.native_session_id) {
+  if (adapter && session.native_session_id && !neverConversed) {
     const plan = adapter.resumePlan({
       agentKind: session.agent_kind, profile: session.profile,
       command: session.command, args: session.args, cwd: session.cwd,
