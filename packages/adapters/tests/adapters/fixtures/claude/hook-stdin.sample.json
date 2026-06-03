@@ -1,0 +1,7 @@
+{
+  "SessionStart": { "session_id": "sess-abc", "transcript_path": "/tmp/t.jsonl", "cwd": "/work", "hook_event_name": "SessionStart", "source": "startup" },
+  "UserPromptSubmit": { "session_id": "sess-abc", "transcript_path": "/tmp/t.jsonl", "cwd": "/work", "hook_event_name": "UserPromptSubmit", "prompt": "hello world" },
+  "Stop": { "session_id": "sess-abc", "transcript_path": "/tmp/t.jsonl", "cwd": "/work", "hook_event_name": "Stop" },
+  "Notification": { "session_id": "sess-abc", "transcript_path": "/tmp/t.jsonl", "cwd": "/work", "hook_event_name": "Notification", "notification_type": "permission_prompt" },
+  "PostToolUse": { "session_id": "sess-abc", "transcript_path": "/tmp/t.jsonl", "cwd": "/work", "hook_event_name": "PostToolUse", "tool_name": "Bash" }
+}
