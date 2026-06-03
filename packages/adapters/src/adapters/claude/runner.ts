@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
 
-// The official plugin surface is the `/plugin` slash command, driven headlessly
-// via `claude -p "..."` and scoped by CLAUDE_CONFIG_DIR (spec §2). No standalone
-// `claude plugin` CLI exists. The spawner is injectable so the command wiring is
-// unit-testable without a live Claude.
+// The official plugin surface is the first-class `claude plugin` CLI
+// (marketplace add / install / uninstall / list --json), which runs
+// non-interactively WITHOUT spawning a Claude session, scoped by
+// CLAUDE_CONFIG_DIR (live-verified against claude 2.1.156). The spawner is
+// injectable so the command wiring is unit-testable without a live Claude.
 export type Spawner = (bin: string, args: string[], configDir: string) => { code: number; out: string };
 
 export interface PluginRunner {
@@ -19,18 +20,19 @@ const defaultSpawn: Spawner = (bin, args, configDir) => {
 };
 
 export function claudePluginRunner(claudeBin = "claude", spawn: Spawner = defaultSpawn): PluginRunner {
-  const slash = (configDir: string, command: string) => spawn(claudeBin, ["-p", command], configDir);
+  const cli = (configDir: string, args: string[]) => spawn(claudeBin, ["plugin", ...args], configDir);
   return {
-    marketplaceAdd(configDir, marketplacePath) { slash(configDir, `/plugin marketplace add ${marketplacePath}`); },
-    install(configDir, ref) { slash(configDir, `/plugin install ${ref}`); },
-    uninstall(configDir, ref) { slash(configDir, `/plugin uninstall ${ref}`); },
+    marketplaceAdd(configDir, marketplacePath) { cli(configDir, ["marketplace", "add", marketplacePath]); },
+    install(configDir, ref) { cli(configDir, ["install", ref]); },
+    uninstall(configDir, ref) { cli(configDir, ["uninstall", ref]); },
     isInstalled(configDir, ref) {
-      const { out } = slash(configDir, `/plugin list --json`);
+      const { out } = cli(configDir, ["list", "--json"]);
       try {
+        // Live-verified shape: [{ id: "name@marketplace", version, scope, enabled, installPath, ... }]
         const list = JSON.parse(out);
-        return Array.isArray(list) && list.some((p: any) => `${p.name}@${p.marketplace}` === ref && p.enabled !== false);
+        return Array.isArray(list) && list.some((p: any) => p.id === ref && p.enabled !== false);
       } catch {
-        return out.includes(ref); // read-only fallback if --json is unavailable (spec §7.2)
+        return out.includes(ref); // read-only fallback if --json output is ever non-JSON (spec §7.2)
       }
     },
   };

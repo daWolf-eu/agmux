@@ -95,23 +95,26 @@ function recordingSpawner(out = "[]") {
   return { calls, spawn };
 }
 
-test("runner issues the official /plugin commands scoped to the config dir", () => {
+test("runner issues the official `claude plugin` CLI commands scoped to the config dir", () => {
   const { calls, spawn } = recordingSpawner();
   const r = claudePluginRunner("claude", spawn);
   r.marketplaceAdd("/cfg", "/repo/marketplace");
   r.install("/cfg", "agmux@agmux");
   r.uninstall("/cfg", "agmux@agmux");
   expect(calls.map((c) => c.args.join(" "))).toEqual([
-    "-p /plugin marketplace add /repo/marketplace",
-    "-p /plugin install agmux@agmux",
-    "-p /plugin uninstall agmux@agmux",
+    "plugin marketplace add /repo/marketplace",
+    "plugin install agmux@agmux",
+    "plugin uninstall agmux@agmux",
   ]);
   expect(calls.every((c) => c.configDir === "/cfg")).toBe(true);
 });
 
-test("isInstalled parses the /plugin list --json output", () => {
-  const installed = recordingSpawner(JSON.stringify([{ name: "agmux", marketplace: "agmux", enabled: true }]));
+test("isInstalled parses the `claude plugin list --json` output (id-based, live-verified shape)", () => {
+  // Real shape verified against claude 2.1.156: [{ id, version, scope, enabled, installPath, ... }]
+  const installed = recordingSpawner(JSON.stringify([{ id: "agmux@agmux", version: "1.0.0", scope: "user", enabled: true }]));
   expect(claudePluginRunner("claude", installed.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(true);
+  const disabled = recordingSpawner(JSON.stringify([{ id: "agmux@agmux", enabled: false }]));
+  expect(claudePluginRunner("claude", disabled.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(false);
   const empty = recordingSpawner("[]");
   expect(claudePluginRunner("claude", empty.spawn).isInstalled("/cfg", "agmux@agmux")).toBe(false);
 });

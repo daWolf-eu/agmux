@@ -8,7 +8,9 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..",
 test("marketplace.json declares the local agmux plugin", () => {
   const m = JSON.parse(fs.readFileSync(path.join(ROOT, ".claude-plugin", "marketplace.json"), "utf8"));
   expect(m.name).toBe("agmux");
-  expect(m.plugins[0]).toMatchObject({ name: "agmux", source: { source: "local", path: "./plugins/agmux" } });
+  // Local plugin entries use a relative-path STRING (live-verified against
+  // claude 2.1.156; the older {source:"local",path} object form is rejected).
+  expect(m.plugins[0]).toMatchObject({ name: "agmux", source: "./plugins/agmux" });
 });
 
 test("hooks.json wires every capture point to `agmux emit`", () => {
