@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "agmux",
+  "owner": { "name": "agmux" },
+  "plugins": [
+    {
+      "name": "agmux",
+      "description": "agmux session telemetry integration",
+      "source": { "source": "local", "path": "./plugins/agmux" }
+    }
+  ]
+}

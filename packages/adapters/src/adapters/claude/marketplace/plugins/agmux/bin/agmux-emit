@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Plugin bin/ is on PATH for hook execution; this shim lets hooks call a stable
+# name while resolving the real agmux binary (AGMUX_BIN injected by the wrapper,
+# else PATH lookup).
+exec "${AGMUX_BIN:-agmux}" emit "$@"

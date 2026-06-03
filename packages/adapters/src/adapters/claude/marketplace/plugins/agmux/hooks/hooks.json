@@ -1,0 +1,44 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=session.linked" },
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --attach" }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=turn.started" },
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=prompt.sent" }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=turn.ended" },
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=transcript-delta --point=usage.reported --cursor-file=\"$HOME/.agmux/cursors/claude-$AGMUX_SESSION_ID.cursor\"" }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=input.required" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          { "type": "command", "async": true, "command": "${AGMUX_BIN:-agmux} emit --from=claude --source=hook-command --point=tool.used" }
+        ]
+      }
+    ]
+  }
+}
