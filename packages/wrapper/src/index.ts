@@ -75,6 +75,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
       AGMUX_SESSION_ID_ENV,
       AGMUX_TMUX_SESSION_ENV,
       AGMUX_PROFILE_ENV,
+      "AGMUX_BIN",
     ] as const) {
       const v = process.env[k];
       if (v) innerEnv[k] = v;
