@@ -178,3 +178,45 @@ Acceptance gate: conformance + fixture tests green; `bun run typecheck` and `bun
 - Exact headless trust-acceptance incantation (§7.1) and the precise `/plugin list` JSON shape (§7.2).
 - Whether `prompt.sent` / `tool.used` ship in v1 or are held back (cheap, log-only; default: ship both).
 - The Notification payload field that distinguishes permission vs idle (§5 `input.required.kind`).
+
+---
+
+## 11. Live verification notes (claude 2.1.156, 2026-06-03)
+
+The §7/§10 runtime unknowns were resolved against the live tool; where reality
+diverged from this spec's §2.2, **§11 wins** (the implementation follows it):
+
+1. **A first-class non-interactive `claude plugin` CLI now exists** — no Claude
+   session, no `-p`, no model/auth spin-up: `claude plugin marketplace add <path>`,
+   `claude plugin install <name>@<marketplace> [--scope user|project|local]`,
+   `claude plugin uninstall <ref>`, `claude plugin list --json`,
+   `claude plugin validate <path>`, plus `enable/disable/update/init`. The
+   `claude -p "/plugin …"` route described in §2.2 is obsolete; the runner uses
+   the CLI. §7.3 (install is heavyweight) is void — install is a fast local command.
+2. **`claude plugin list --json` shape:** an array of
+   `{ id: "name@marketplace", version, scope, enabled, installPath, installedAt, lastUpdated }`.
+   `isInstalled` matches on `id` and `enabled !== false`.
+3. **Marketplace local plugin entries are a relative-path STRING**
+   (`"source": "./plugins/agmux"`). The `{ "source": "local", "path": … }` object
+   form is rejected by `claude plugin validate` and install fails with
+   "source type your Claude Code version does not support".
+4. **`CLAUDE_CONFIG_DIR` scoping confirmed:** marketplace registration +
+   `enabledPlugins` land in `<configDir>/settings.json`, plugin cache under
+   `<configDir>/plugins/cache/…`; the default `~/.claude` stays untouched. The
+   full adapter roundtrip (`install` → `status: installed` → `uninstall` →
+   `status: not installed`) was exercised through the adapter's own code path
+   against a scratch config dir.
+5. **No trust prompt at install time** (§7.1): `claude plugin install` succeeded
+   non-interactively. Any trust/enable gating moves to session start;
+   `status().runtimeGate = "hook-trust"` is kept until a live wrapped session
+   proves hooks fire ungated.
+6. **Marketplace-less alternative noted, not adopted:** current Claude Code also
+   auto-loads "skills-directory plugins" (`<configDir>/skills/<name>/`, loaded as
+   `<name>@skills-dir`) and per-session `--plugin-dir`. The marketplace flow
+   stays our install path — it is explicit, versioned, and ledger-shaped
+   (install/uninstall/list as discrete reversible operations); whether skills-dir
+   plugins execute `hooks/hooks.json` is not clearly documented.
+
+**Still pending live verification** (needs a wrapped interactive session): hooks
+actually firing end-to-end (`turn.*`/usage flowing into `agmux inspect`) and the
+exact `Notification` stdin fields for permission-vs-idle (§5, §10).
