@@ -10,6 +10,7 @@ export const EVENT_KINDS_MVP = [
 export type MvpEventKind = (typeof EVENT_KINDS_MVP)[number];
 
 export const EVENT_KINDS_ADAPTER = [
+  "session.registered",
   "session.linked",
   "turn.started",
   "turn.ended",
@@ -31,6 +32,31 @@ export interface EventEnvelope<P = unknown> {
   host: string;         // hostname
   payload: P;
   dedup_key?: string | null; // optional source-idempotency key (§4.4)
+}
+
+// Native identity: how a hook-emitted event names its session when no canonical
+// id exists yet. The hub resolves (agent_kind, native_session_id, host) → a
+// canonical session at ingest (spec §2).
+export interface NativeIdentity {
+  agent_kind: AgentKind;
+  native_session_id: string;
+}
+
+// The wire form accepted by POST /ingest. EXACTLY ONE of `session_id` (canonical)
+// or `identity` (native) must be present (validateIngestEnvelope enforces it).
+// `claim_session_id` is the wrapper bridge hint (from AGMUX_SESSION_ID), set only
+// by the wrapper/launcher. The hub rewrites this into a storage EventEnvelope.
+export interface IngestEnvelope<P = unknown> {
+  event_id: string;
+  ts: string;
+  kind: string;
+  version: number;
+  host: string;
+  payload: P;
+  dedup_key?: string | null;
+  session_id?: string | null;
+  identity?: NativeIdentity | null;
+  claim_session_id?: string | null;
 }
 
 export interface SessionStartedPayload {
@@ -68,6 +94,27 @@ export interface SessionEndedPayload {
 
 export interface SessionLinkedPayload {
   native_session_id: string;
+}
+
+// The native lifecycle root (spec §2.2). Carries the session's own native id plus
+// the row-synthesis fields used when the hub mints. `parent` is a lineage hint in
+// the parent's native identity (spec §5), resolved to parent_session_id at ingest.
+export interface SessionRegisteredPayload {
+  native_session_id: string;
+  agent_kind: AgentKind;
+  pid: number | null;
+  cwd: string | null;
+  tmux_session: string | null;
+  tmux_window: string | null;
+  tmux_pane: string | null;
+  profile: string | null;
+  agent_version: string | null;
+  parent: NativeIdentity | null;
+}
+
+// Hub-emitted (pid-sweep) observation that a native session's pid is gone (spec §3).
+export interface SessionLostPayload {
+  reason: "pid_dead";
 }
 
 export interface TurnStartedPayload {
@@ -113,6 +160,8 @@ export type SessionResumedEvent = EventEnvelope<SessionResumedPayload> & { kind:
 export type SessionEndedEvent = EventEnvelope<SessionEndedPayload> & { kind: "session.ended" };
 
 export type SessionLinkedEvent = EventEnvelope<SessionLinkedPayload> & { kind: "session.linked" };
+export type SessionRegisteredEvent = EventEnvelope<SessionRegisteredPayload> & { kind: "session.registered" };
+export type SessionLostEvent = EventEnvelope<SessionLostPayload> & { kind: "session.lost" };
 export type TurnStartedEvent = EventEnvelope<TurnStartedPayload> & { kind: "turn.started" };
 export type TurnEndedEvent = EventEnvelope<TurnEndedPayload> & { kind: "turn.ended" };
 export type InputRequiredEvent = EventEnvelope<InputRequiredPayload> & { kind: "input.required" };
@@ -128,6 +177,8 @@ export type KnownEvent =
   | SessionResumedEvent
   | SessionEndedEvent
   | SessionLinkedEvent
+  | SessionRegisteredEvent
+  | SessionLostEvent
   | TurnStartedEvent
   | TurnEndedEvent
   | InputRequiredEvent
