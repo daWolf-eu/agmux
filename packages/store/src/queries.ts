@@ -26,6 +26,7 @@ function decodeRow(raw: any): SessionRow {
     exit_code: raw.exit_code,
     signal: raw.signal,
     status: raw.status as SessionStatus,
+    origin: (raw.origin ?? "wrapper") as SessionRow["origin"],
     turn_count: raw.turn_count ?? null,
   };
 }
