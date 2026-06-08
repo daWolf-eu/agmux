@@ -15,6 +15,9 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "session.ended":
       applyEnded(db, ev);
       return;
+    case "session.registered":
+      applyRegistered(db, ev);
+      return;
     case "session.linked":
       applyLinked(db, ev);
       return;
@@ -141,6 +144,75 @@ function applyLinked(db: Database, ev: EventEnvelope): void {
   const p = ev.payload as any;
   db.query(`UPDATE sessions SET native_session_id = ? WHERE session_id = ? AND status NOT IN ('ended')`)
     .run(p.native_session_id, ev.session_id);
+}
+
+// The native lifecycle root (spec §2.3). Keyed by the ALREADY-RESOLVED canonical
+// session_id (resolveIngest picked it). We branch only on the current row state:
+//   absent           → mint a fresh native row from the payload
+//   ended/lost       → reopen (rule 1): back to idle, clear terminal fields
+//   live             → set native_session_id (covers claim, rotate, and re-register)
+// Then resolve the optional parent lineage hint (spec §5); unresolvable → leave null.
+function applyRegistered(db: Database, ev: EventEnvelope): void {
+  const p = ev.payload as any;
+  const existing = db.query<{ status: string }, [string]>(
+    `SELECT status FROM sessions WHERE session_id = ?`,
+  ).get(ev.session_id);
+
+  if (!existing) {
+    db.query(`
+      INSERT INTO sessions (
+        session_id, agent_kind, profile, native_session_id,
+        command, args_json, env_json, cwd, pid,
+        tmux_session, tmux_window, tmux_pane, host,
+        project, parent_session_id, start_ts, last_heartbeat_ts,
+        end_ts, exit_code, signal, status, origin
+      ) VALUES (
+        ?, ?, ?, ?,
+        ?, '[]', '{}', ?, ?,
+        ?, ?, ?, ?,
+        NULL, NULL, ?, NULL,
+        NULL, NULL, NULL, 'idle', 'native'
+      )
+      ON CONFLICT(session_id) DO NOTHING
+    `).run(
+      ev.session_id, p.agent_kind, p.profile ?? null, p.native_session_id,
+      p.command ?? p.agent_kind, p.cwd ?? "", p.pid ?? null,
+      p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.host,
+      ev.ts,
+    );
+  } else if (existing.status === "ended" || existing.status === "lost") {
+    db.query(`
+      UPDATE sessions SET
+        status = 'idle', end_ts = NULL, exit_code = NULL, signal = NULL,
+        native_session_id = ?,
+        pid = COALESCE(?, pid),
+        tmux_session = COALESCE(?, tmux_session),
+        tmux_window  = COALESCE(?, tmux_window),
+        tmux_pane    = COALESCE(?, tmux_pane)
+      WHERE session_id = ?
+    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.session_id);
+  } else {
+    db.query(`
+      UPDATE sessions SET
+        native_session_id = ?,
+        pid = COALESCE(?, pid),
+        tmux_session = COALESCE(?, tmux_session),
+        tmux_window  = COALESCE(?, tmux_window),
+        tmux_pane    = COALESCE(?, tmux_pane)
+      WHERE session_id = ?
+    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.session_id);
+  }
+
+  const par = p.parent;
+  if (par && typeof par.agent_kind === "string" && typeof par.native_session_id === "string") {
+    const pr = db.query<{ session_id: string }, [string, string, string]>(
+      `SELECT session_id FROM sessions WHERE agent_kind = ? AND native_session_id = ? AND host = ?`,
+    ).get(par.agent_kind, par.native_session_id, ev.host);
+    if (pr) {
+      db.query(`UPDATE sessions SET parent_session_id = ? WHERE session_id = ? AND parent_session_id IS NULL`)
+        .run(pr.session_id, ev.session_id);
+    }
+  }
 }
 
 function applyAdapterAttached(db: Database, ev: EventEnvelope): void {
