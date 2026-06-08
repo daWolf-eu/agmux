@@ -123,3 +123,25 @@ test("runEmit drops when neither a native id nor AGMUX_SESSION_ID is available",
   });
   expect(called).toBe(false);
 });
+
+test("runEmit discovers the hub via the port file when AGMUX_HUB_URL is unset", async () => {
+  const stateDir = tmp();
+  fs.writeFileSync(path.join(stateDir, "hub.port"), "54321\n");
+  let postedUrl = "";
+  const posted: any[] = [];
+  const fakeFetch = (async (url: string, init: any) => {
+    postedUrl = String(url);
+    posted.push(...JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+
+  await runEmit(["--from=claude", "--source=hook-command", "--point=turn.started"], {
+    registry: reg(),
+    env: { FAKE_NATIVE_ID: "nat-d" }, // no AGMUX_HUB_URL, no AGMUX_SESSION_ID — must discover
+    stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
+  });
+
+  expect(postedUrl).toBe("http://127.0.0.1:54321/ingest");
+  expect(posted).toHaveLength(1);
+  expect(fs.existsSync(path.join(stateDir, "queue", "nat-d.jsonl"))).toBe(false);
+});

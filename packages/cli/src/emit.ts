@@ -49,6 +49,21 @@ function parseRaw(stdin: string): unknown {
   try { return JSON.parse(s); } catch { return { raw: stdin }; }
 }
 
+// Resolve the hub endpoint. A wrapper-launched session inherits AGMUX_HUB_URL;
+// a NATIVE (ambient) session — claude started directly — does not, so fall back
+// to the hub's port file (<stateDir>/hub.port, written by the running hub). With
+// neither, return undefined and postOrQueue spools to disk for the next drain.
+// Best-effort and silent: a telemetry callback must never throw (spec §4.2).
+function discoverHubUrl(env: Record<string, string | undefined>, stateDir: string): string | undefined {
+  const fromEnv = env[AGMUX_HUB_URL_ENV];
+  if (fromEnv) return fromEnv;
+  try {
+    const port = Number(fs.readFileSync(path.join(stateDir, "hub.port"), "utf8").trim());
+    if (Number.isInteger(port) && port > 0) return `http://127.0.0.1:${port}`;
+  } catch { /* no hub running / unreadable → queue fallback */ }
+  return undefined;
+}
+
 // Hot-path contract (spec §4.2): NEVER throws, NEVER writes stdout, drops on
 // missing identity, falls back to the per-session queue on any post failure.
 export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
@@ -92,7 +107,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
       agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now, newId: deps.newId,
     });
     await postOrQueue(stamped, {
-      hubUrl: deps.env[AGMUX_HUB_URL_ENV], stateDir: deps.stateDir,
+      hubUrl: discoverHubUrl(deps.env, deps.stateDir), stateDir: deps.stateDir,
       queueKey: nativeId ?? claimId!, // one of the two is set (guard above)
       fetchImpl: deps.fetchImpl ?? fetch, timeoutMs: deps.timeoutMs ?? 1500,
     });
