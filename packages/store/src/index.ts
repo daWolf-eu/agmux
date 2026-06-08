@@ -3,6 +3,7 @@ import type { EventEnvelope, SessionRow } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
 import { getSessionRaw, listSessions, listEvents, getSessionUsage, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
   private db: Database;
@@ -35,6 +36,17 @@ export class Store {
       return true;
     });
     return tx();
+  }
+
+  /**
+   * Resolve a wire envelope to a canonical session and append it. Native-form
+   * events are mapped via resolveIngest (spec §2.3); unresolvable telemetry is
+   * dropped. Returns true if an event was appended (false on drop OR dedup).
+   */
+  resolveAndAppend(ing: IngestEnvelopeLike): boolean {
+    const r = resolveIngest(this.db, ing);
+    if (r.action === "drop") return false;
+    return this.append(r.ev);
   }
 
   getSession(sid: string, now: Date = new Date()): SessionRow | null {
@@ -73,3 +85,5 @@ export class Store {
 
   close(): void { this.db.close(); }
 }
+
+export { resolveIngest, type IngestEnvelopeLike, type ResolveResult } from "./resolve.ts";
