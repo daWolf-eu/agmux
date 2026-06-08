@@ -6,6 +6,7 @@ import type {
 // provider can be honest about partial coverage. `session.adapter_attached` is
 // NOT here — it is framework-emitted (Task 6), not a provider hook-point.
 export const MANIFEST_POINTS = [
+  "session.registered",
   "session.linked",
   "turn.started",
   "turn.ended",
@@ -125,4 +126,9 @@ export interface Adapter {
   status(ctx: InstallContext): InstallStatus;
   normalize(input: NormalizeInput): NormalizeOutput;
   resumePlan(ctx: ResumeContext): ResumePlan;
+  // Native-first (spec §5): the agent's OWN native id read from its hook/tool env
+  // (claude: CLAUDE_CODE_SESSION_ID). Used by `emit` to stamp native identity and
+  // by the future spawn path to name a parent. Optional: adapters without a native
+  // env signal omit it and fall back to canonical (claim) identity.
+  nativeIdFromEnv?(env: Record<string, string | undefined>): string | null;
 }

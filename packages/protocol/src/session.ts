@@ -6,6 +6,8 @@ export const TERMINAL_STATUSES: readonly SessionStatus[] = ["ended", "lost"];
 
 export type AgentKind = "claude" | "codex";
 
+export type SessionOrigin = "wrapper" | "native";
+
 export interface SessionRow {
   session_id: string;
   agent_kind: AgentKind;
@@ -28,6 +30,11 @@ export interface SessionRow {
   exit_code: number | null;
   signal: string | null;
   status: SessionStatus;
+  // How the session row was created: "wrapper" = PTY-wrapper-minted (heartbeat
+  // liveness); "native" = self-registered from the agent's own hooks (pid-sweep
+  // liveness). Drives origin-aware status computation. Defaults to "wrapper" for
+  // rows that predate the native-first migration.
+  origin: SessionOrigin;
   // Joined from the session_usage projection (null = no usage row yet, i.e. the
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.

@@ -199,3 +199,37 @@ test("identity match or absent env keeps events flowing", () => {
   });
   expect(absent.events).toHaveLength(1);
 });
+
+test("claude normalize(session.registered) builds the native lifecycle root from stdin + env", () => {
+  const out = claudeAdapter.normalize({
+    point: "session.registered", source: "hook-command",
+    raw: { session_id: "nat-9", cwd: "/work" },
+    target: { agentKind: "claude", profile: null },
+    env: { AGMUX_AGENT_PID: "5151", TMUX_PANE: "%4", AGMUX_PROFILE: "work", CLAUDE_CODE_SESSION_ID: "nat-9" },
+  });
+  expect(out.events).toHaveLength(1);
+  const ev = out.events[0]!;
+  const p = ev.payload as any;
+  expect(ev.kind).toBe("session.registered");
+  expect(p.native_session_id).toBe("nat-9");
+  expect(p.agent_kind).toBe("claude");
+  expect(p.pid).toBe(5151);
+  expect(p.cwd).toBe("/work");
+  expect(p.tmux_pane).toBe("%4");
+  expect(p.profile).toBe("work");
+  expect(p.parent).toBeNull();
+});
+
+test("claude normalize(session.registered) stores null pid when AGMUX_AGENT_PID is absent/garbage", () => {
+  const out = claudeAdapter.normalize({
+    point: "session.registered", source: "hook-command",
+    raw: { session_id: "nat-x" }, target: { agentKind: "claude", profile: null },
+    env: { CLAUDE_CODE_SESSION_ID: "nat-x", AGMUX_AGENT_PID: "notanum" },
+  });
+  expect((out.events[0]!.payload as any).pid).toBeNull();
+});
+
+test("claude nativeIdFromEnv reads CLAUDE_CODE_SESSION_ID", () => {
+  expect(claudeAdapter.nativeIdFromEnv!({ CLAUDE_CODE_SESSION_ID: "abc" })).toBe("abc");
+  expect(claudeAdapter.nativeIdFromEnv!({})).toBeNull();
+});

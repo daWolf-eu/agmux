@@ -7,7 +7,7 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
   {
     type: "hook-command",
     activation: "event-triggered",
-    points: ["session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent"],
+    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent"],
   },
   {
     type: "transcript-delta",
@@ -20,6 +20,7 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
 // Notification hook is coarse (permission AND idle). input.received is omitted:
 // it is fulfilled implicitly by the next turn.started, never emitted.
 export const CLAUDE_CAPABILITIES: CapabilityMap = {
+  "session.registered": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "session.linked": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "turn.started": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "turn.ended": { fulfil: "yes", source: "hook-command", liveness: "live" },

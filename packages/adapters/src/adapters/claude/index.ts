@@ -17,4 +17,5 @@ export const claudeAdapter: Adapter = {
   status: claudeStatus,
   normalize: normalizeClaude,
   resumePlan: claudeResumePlan,
+  nativeIdFromEnv: (env) => env.CLAUDE_CODE_SESSION_ID ?? null,
 };

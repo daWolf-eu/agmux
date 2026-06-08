@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import { SCHEMA_V1, SCHEMA_V2 } from "./schema.ts";
+import { SCHEMA_V1, SCHEMA_V2, SCHEMA_V3 } from "./schema.ts";
 
 interface Migration {
   version: number;
@@ -17,6 +17,12 @@ const MIGRATIONS: Migration[] = [
     version: 2,
     up: (db) => {
       db.exec(SCHEMA_V2);
+    },
+  },
+  {
+    version: 3,
+    up: (db) => {
+      db.exec(SCHEMA_V3);
     },
   },
 ];

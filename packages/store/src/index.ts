@@ -2,7 +2,8 @@ import { Database } from "bun:sqlite";
 import type { EventEnvelope, SessionRow } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
-import { getSessionRaw, listSessions, listEvents, getSessionUsage, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { getSessionRaw, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
   private db: Database;
@@ -28,13 +29,29 @@ export class Store {
         const msg = String(e?.message ?? e);
         // Either a replayed event_id (transport retry) or a repeated dedup_key
         // (source observed the same fact twice) — both mean "already have it".
-        if (msg.includes("UNIQUE")) return false;
+        // Exception: session.registered re-applies its projection even on dedup
+        // because re-registration is idempotent and must reopen a lost session.
+        if (msg.includes("UNIQUE")) {
+          if (ev.kind === "session.registered") applyEventToProjection(this.db, ev);
+          return false;
+        }
         throw e;
       }
       applyEventToProjection(this.db, ev);
       return true;
     });
     return tx();
+  }
+
+  /**
+   * Resolve a wire envelope to a canonical session and append it. Native-form
+   * events are mapped via resolveIngest (spec §2.3); unresolvable telemetry is
+   * dropped. Returns true if an event was appended (false on drop OR dedup).
+   */
+  resolveAndAppend(ing: IngestEnvelopeLike): boolean {
+    const r = resolveIngest(this.db, ing);
+    if (r.action === "drop") return false;
+    return this.append(r.ev);
   }
 
   getSession(sid: string, now: Date = new Date()): SessionRow | null {
@@ -51,6 +68,10 @@ export class Store {
 
   getSessionUsage(sid: string): SessionUsageRow | null {
     return getSessionUsage(this.db, sid);
+  }
+
+  listLiveNativeSessions(host: string): { session_id: string; pid: number }[] {
+    return listLiveNativeSessions(this.db, host);
   }
 
   rebuildProjections(): void {
@@ -73,3 +94,5 @@ export class Store {
 
   close(): void { this.db.close(); }
 }
+
+export { resolveIngest, type IngestEnvelopeLike, type ResolveResult } from "./resolve.ts";

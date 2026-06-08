@@ -12,3 +12,7 @@ test("isManifestPoint narrows valid and rejects invalid", () => {
   expect(isManifestPoint("session.adapter_attached")).toBe(false);
   expect(isManifestPoint("totally.made.up")).toBe(false);
 });
+
+test("session.registered is a manifest point", () => {
+  expect(MANIFEST_POINTS).toContain("session.registered");
+});

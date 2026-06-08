@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { Store } from "@agmux/store";
-import { validateEnvelope } from "@agmux/protocol";
+import { validateIngestEnvelope } from "@agmux/protocol";
 
 export interface DrainResult { filesDrained: number; eventsIngested: number; linesSkipped: number; }
 
@@ -16,10 +16,11 @@ export function drainQueueDir(dir: string, store: Store): DrainResult {
       if (line.trim() === "") continue;
       let parsed: unknown;
       try { parsed = JSON.parse(line); } catch { r.linesSkipped++; continue; }
-      const v = validateEnvelope(parsed);
+      const v = validateIngestEnvelope(parsed);
       if (!v.ok) { r.linesSkipped++; continue; }
-      store.append(parsed as any); // idempotent by event_id
-      r.eventsIngested++;
+      // Resolve native identity against the CURRENT mapping (spec §2.1); idempotent.
+      const appended = store.resolveAndAppend(parsed as any);
+      if (appended) r.eventsIngested++; else r.linesSkipped++;
     }
     fs.unlinkSync(full);
     r.filesDrained++;

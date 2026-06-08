@@ -10,7 +10,7 @@ function row(over: Partial<SessionRow>): SessionRow {
     command: "claude", args: ["--foo"], env_overrides: { A: "1" }, cwd: "/work",
     pid: null, tmux_session: null, tmux_window: null, tmux_pane: null, host: "h",
     project: null, parent_session_id: null, start_ts: "t", last_heartbeat_ts: null,
-    end_ts: null, exit_code: null, signal: null, status: "ended", ...over,
+    end_ts: null, exit_code: null, signal: null, status: "ended", origin: "wrapper", ...over,
   };
 }
 

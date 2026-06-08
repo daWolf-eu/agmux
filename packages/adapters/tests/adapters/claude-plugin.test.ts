@@ -17,7 +17,7 @@ test("hooks.json wires every capture point to `agmux emit`", () => {
   const h = JSON.parse(file("hooks/hooks.json").content);
   const flat = file("hooks/hooks.json").content;
   for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "PostToolUse"]) expect(h.hooks[ev]).toBeDefined();
-  for (const point of ["session.linked", "turn.started", "turn.ended", "input.required", "usage.reported", "tool.used"]) {
+  for (const point of ["session.registered", "turn.started", "turn.ended", "input.required", "usage.reported", "tool.used"]) {
     expect(flat).toContain(`--point=${point}`);
   }
   expect(flat).toContain("--attach");
@@ -41,4 +41,14 @@ test("the emit shim resolves the agmux binary with a PATH fallback and is execut
 test("SessionStart re-links on clear/compact (native id rotates mid-process)", () => {
   const h = JSON.parse(file("hooks/hooks.json").content);
   expect(h.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
+});
+
+test("plugin is v1.2.0 and SessionStart emits session.registered with AGMUX_AGENT_PID, not session.linked", () => {
+  const manifest = JSON.parse(PLUGIN_FILES.find((f) => f.path === ".claude-plugin/plugin.json")!.content);
+  expect(manifest.version).toBe("1.2.0");
+  const hooks = JSON.parse(PLUGIN_FILES.find((f) => f.path === "hooks/hooks.json")!.content);
+  const startCmds = hooks.hooks.SessionStart[0].hooks.map((h: any) => h.command).join("\n");
+  expect(startCmds).toContain("--point=session.registered");
+  expect(startCmds).toContain("AGMUX_AGENT_PID=$PPID");
+  expect(startCmds).not.toContain("--point=session.linked");
 });

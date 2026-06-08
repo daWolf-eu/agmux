@@ -87,3 +87,41 @@ test("validateKnownPayload validates session.adapter_attached", () => {
   });
   expect(r.ok).toBe(false);
 });
+
+import { validateIngestEnvelope } from "../src/validators.ts";
+
+const baseWire = { event_id: "e1", ts: "2026-06-08T00:00:00.000Z", kind: "turn.started", version: 1, host: "h", payload: {} };
+
+test("validateIngestEnvelope accepts the canonical form", () => {
+  expect(validateIngestEnvelope({ ...baseWire, session_id: "sid-1" })).toEqual({ ok: true });
+});
+
+test("validateIngestEnvelope accepts the native form", () => {
+  const r = validateIngestEnvelope({ ...baseWire, identity: { agent_kind: "claude", native_session_id: "n-1" } });
+  expect(r).toEqual({ ok: true });
+});
+
+test("validateIngestEnvelope rejects BOTH forms present", () => {
+  const r = validateIngestEnvelope({ ...baseWire, session_id: "sid-1", identity: { agent_kind: "claude", native_session_id: "n-1" } });
+  expect(r.ok).toBe(false);
+});
+
+test("validateIngestEnvelope rejects NEITHER form present", () => {
+  const r = validateIngestEnvelope(baseWire);
+  expect(r.ok).toBe(false);
+});
+
+test("validateIngestEnvelope rejects a malformed identity", () => {
+  const r = validateIngestEnvelope({ ...baseWire, identity: { agent_kind: "claude" } });
+  expect(r.ok).toBe(false);
+});
+
+test("validateKnownPayload('session.registered') requires native_session_id + agent_kind", () => {
+  expect(validateKnownPayload("session.registered", { native_session_id: "n-1", agent_kind: "claude" }).ok).toBe(true);
+  expect(validateKnownPayload("session.registered", { native_session_id: "", agent_kind: "claude" }).ok).toBe(false);
+  expect(validateKnownPayload("session.registered", { native_session_id: "n-1", agent_kind: "nope" }).ok).toBe(false);
+});
+
+test("validateKnownPayload('session.lost') accepts the pid_dead reason", () => {
+  expect(validateKnownPayload("session.lost", { reason: "pid_dead" }).ok).toBe(true);
+});

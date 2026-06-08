@@ -82,3 +82,25 @@ test("rebuildProjections wipes sessions and replays from events", () => {
   const row = s.getSession(sid);
   expect(row?.command).toBe("ccc");
 });
+
+import { listLiveNativeSessions } from "../src/queries.ts";
+import { Database } from "bun:sqlite";
+import { runMigrations } from "../src/migrations.ts";
+
+test("listLiveNativeSessions returns only live native rows on this host with a pid", () => {
+  const db = new Database(":memory:"); runMigrations(db);
+  const ins = (sid: string, origin: string, status: string, pid: number | null, host: string) =>
+    db.query(`INSERT INTO sessions (session_id, agent_kind, profile, native_session_id, command, args_json, env_json, cwd, pid, host, start_ts, status, origin)
+              VALUES (?, 'claude', NULL, ?, 'claude', '[]', '{}', '/tmp', ?, ?, '2026-06-08T00:00:00.000Z', ?, ?)`)
+      .run(sid, "nat-" + sid, pid, host, status, origin);
+  ins("a", "native", "running", 100, "h");   // included
+  ins("b", "native", "idle", 101, "h");       // included
+  ins("c", "native", "ended", 102, "h");      // excluded: not live
+  ins("d", "wrapper", "running", 103, "h");   // excluded: not native
+  ins("e", "native", "running", null, "h");   // excluded: no pid
+  ins("f", "native", "running", 104, "other");// excluded: other host
+
+  const rows = listLiveNativeSessions(db, "h");
+  expect(rows.map((r) => r.session_id).sort()).toEqual(["a", "b"]);
+  expect(rows.find((r) => r.session_id === "a")!.pid).toBe(100);
+});
