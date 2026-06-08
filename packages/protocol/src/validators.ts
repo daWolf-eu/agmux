@@ -25,6 +25,27 @@ export function validateEnvelope(v: unknown): ValidationResult {
   return { ok: true };
 }
 
+// Wire-envelope validation for POST /ingest (spec §2.1). Like validateEnvelope but
+// session_id is replaced by an exactly-one-of: a non-empty session_id (canonical)
+// XOR an identity{agent_kind, native_session_id} (native). claim_session_id, when
+// present, is just an optional hint and is not validated here.
+export function validateIngestEnvelope(v: unknown): ValidationResult {
+  if (!isPlainObject(v)) return { ok: false, error: "envelope: not an object" };
+  for (const k of ["event_id", "ts", "kind", "host"] as const) {
+    if (!isStringNonEmpty(v[k])) return { ok: false, error: `envelope: ${k} missing or not non-empty string` };
+  }
+  if (!isInt(v.version)) return { ok: false, error: "envelope: version missing or not integer" };
+  if (!("payload" in v)) return { ok: false, error: "envelope: payload missing" };
+
+  const hasCanonical = isStringNonEmpty(v.session_id);
+  const id = v.identity;
+  const hasNative = isPlainObject(id) && isStringNonEmpty(id.agent_kind) && isStringNonEmpty(id.native_session_id);
+  if (id != null && !hasNative) return { ok: false, error: "envelope: identity must have non-empty agent_kind and native_session_id" };
+  if (hasCanonical && hasNative) return { ok: false, error: "envelope: session_id and identity are mutually exclusive" };
+  if (!hasCanonical && !hasNative) return { ok: false, error: "envelope: one of session_id or identity{agent_kind,native_session_id} required" };
+  return { ok: true };
+}
+
 export function validateKnownPayload(kind: string, payload: unknown): ValidationResult {
   if (!isPlainObject(payload)) return { ok: false, error: `${kind}: payload not an object` };
   switch (kind) {
@@ -100,6 +121,19 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "session.adapter_attached: adapter_version missing" };
       if (!isPlainObject(payload.capabilities))
         return { ok: false, error: "session.adapter_attached: capabilities not object" };
+      return { ok: true };
+    }
+    case "session.registered": {
+      const p = payload;
+      if (!isStringNonEmpty(p.native_session_id))
+        return { ok: false, error: "session.registered: native_session_id missing" };
+      if (p.agent_kind !== "claude" && p.agent_kind !== "codex")
+        return { ok: false, error: "session.registered: agent_kind invalid" };
+      return { ok: true };
+    }
+    case "session.lost": {
+      if (payload.reason !== "pid_dead")
+        return { ok: false, error: "session.lost: reason must be pid_dead" };
       return { ok: true };
     }
     default:
