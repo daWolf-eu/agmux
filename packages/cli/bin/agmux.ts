@@ -11,6 +11,7 @@ import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
+import { runHubCmd } from "../src/hub-cmd.ts";
 import { formatVersion } from "../src/version-cmd.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 
@@ -31,6 +32,7 @@ function usage(): never {
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
   adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]
+  hub status|restart       inspect / gracefully roll the background hub
   emit ...   (runtime callback; not user-facing)
   -v, --version            print agmux + adapter versions`);
   process.exit(2);
@@ -66,6 +68,12 @@ async function main(): Promise<number> {
       agmuxEmitPath: `${process.env.AGMUX_BIN ?? "agmux"} emit`,
       out: (s) => console.log(s),
     });
+  }
+
+  // `hub` manages the daemon itself (status must not spawn one) — handle before
+  // the ensureHubRunning gate below.
+  if (verb === "hub") {
+    return runHubCmd(argv.slice(1), { stateDir, hubBin, out: (s) => console.log(s) });
   }
 
   // Hub required for every verb. `run` would also accept a still-spawning hub
