@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 import type { Store } from "@agmux/store";
-import type { EventEnvelope } from "@agmux/protocol";
-import { validateEnvelope, validateKnownPayload } from "@agmux/protocol";
+import type { IngestEnvelope } from "@agmux/protocol";
+import { validateIngestEnvelope, validateKnownPayload } from "@agmux/protocol";
 
 export interface CreateServerOpts {
   store: Store;
@@ -29,12 +29,12 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
         try { body = await req.json(); } catch { return Response.json({ error: "invalid_json" }, { status: 400 }); }
         const events = Array.isArray(body) ? body : [body];
         for (const ev of events) {
-          const env = validateEnvelope(ev);
+          const env = validateIngestEnvelope(ev);
           if (!env.ok) return Response.json({ error: env.error }, { status: 400 });
-          const e = ev as EventEnvelope;
+          const e = ev as IngestEnvelope;
           const pl = validateKnownPayload(e.kind, e.payload);
           if (!pl.ok) return Response.json({ error: pl.error }, { status: 400 });
-          store.append(e); // idempotent
+          store.resolveAndAppend(e); // resolves native identity, idempotent, drops unresolvable telemetry
         }
         return new Response(null, { status: 202 });
       }

@@ -169,3 +169,32 @@ test("GET /sessions/:id includes usage totals", async () => {
   server.stop();
   store.close();
 });
+
+test("POST /ingest mints a session for a native session.registered event", async () => {
+  const { server, url, store } = makeServer();
+  const wire = {
+    event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2Q", ts: new Date().toISOString(),
+    kind: "session.registered", version: 1, host: "macbook.local",
+    identity: { agent_kind: "claude", native_session_id: "nat-xyz" },
+    payload: { agent_kind: "claude", native_session_id: "nat-xyz", pid: 4242, cwd: "/tmp",
+      tmux_session: null, tmux_window: null, tmux_pane: "%1", profile: null, agent_version: null, parent: null },
+  };
+  const r = await fetch(`${url}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(wire),
+  });
+  expect(r.status).toBe(202);
+  const minted = store.listSessions({}).find((s) => s.native_session_id === "nat-xyz");
+  expect(minted).toBeDefined();
+  expect(minted!.origin).toBe("native");
+  server.stop();
+});
+
+test("POST /ingest rejects an envelope with neither session_id nor identity", async () => {
+  const { server, url } = makeServer();
+  const bad = { event_id: "x", ts: new Date().toISOString(), kind: "turn.started", version: 1, host: "h", payload: {} };
+  const r = await fetch(`${url}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(bad),
+  });
+  expect(r.status).toBe(400);
+  server.stop();
+});
