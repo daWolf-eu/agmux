@@ -11,6 +11,7 @@ import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
+import { formatVersion } from "../src/version-cmd.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -30,11 +31,16 @@ function usage(): never {
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
   adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]
-  emit ...   (runtime callback; not user-facing)`);
+  emit ...   (runtime callback; not user-facing)
+  -v, --version            print agmux + adapter versions`);
   process.exit(2);
 }
 
 async function main(): Promise<number> {
+  if (verb === "-v" || verb === "--version" || verb === "version") {
+    console.log(formatVersion());
+    return 0; // no hub needed
+  }
   if (!verb) usage();
 
   if (verb === "emit") {
