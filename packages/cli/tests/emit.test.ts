@@ -82,3 +82,44 @@ test("runEmit never throws on an unknown agent_kind", async () => {
   });
   // No adapter for codex in this registry → returns quietly. (No assertion needed; absence of throw is the test.)
 });
+
+test("runEmit posts the NATIVE identity form when the adapter resolves a native id", async () => {
+  const stateDir = tmp();
+  const posted: any[] = [];
+  const fakeFetch = (async (_url: string, init: any) => {
+    posted.push(...JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+
+  await runEmit(["--from=claude", "--source=hook-command", "--point=turn.started"], {
+    registry: reg(),
+    env: { FAKE_NATIVE_ID: "nat-7", AGMUX_SESSION_ID: "claim-7", AGMUX_HUB_URL: "http://hub" },
+    stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
+  });
+
+  expect(posted).toHaveLength(1);
+  expect(posted[0].session_id).toBeUndefined();
+  expect(posted[0].identity).toEqual({ agent_kind: "claude", native_session_id: "nat-7" });
+  expect(posted[0].claim_session_id).toBe("claim-7");
+});
+
+test("runEmit queues under the native id when the hub POST fails", async () => {
+  const stateDir = tmp();
+  const failing = (async () => { throw new Error("network"); }) as unknown as typeof fetch;
+  await runEmit(["--from=claude", "--source=hook-command", "--point=turn.started"], {
+    registry: reg(),
+    env: { FAKE_NATIVE_ID: "nat-q", AGMUX_HUB_URL: "http://hub" }, // no AGMUX_SESSION_ID at all
+    stdin: "{}", host: "h", stateDir, fetchImpl: failing,
+  });
+  expect(fs.existsSync(path.join(stateDir, "queue", "nat-q.jsonl"))).toBe(true);
+});
+
+test("runEmit drops when neither a native id nor AGMUX_SESSION_ID is available", async () => {
+  const stateDir = tmp();
+  let called = false;
+  const fakeFetch = (async () => { called = true; return new Response(null, { status: 202 }); }) as unknown as typeof fetch;
+  await runEmit(["--from=claude", "--source=hook-command", "--point=turn.started"], {
+    registry: reg(), env: {}, stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
+  });
+  expect(called).toBe(false);
+});
