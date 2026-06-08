@@ -18,6 +18,9 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "session.registered":
       applyRegistered(db, ev);
       return;
+    case "session.lost":
+      applyLost(db, ev);
+      return;
     case "session.linked":
       applyLinked(db, ev);
       return;
@@ -213,6 +216,13 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         .run(pr.session_id, ev.session_id);
     }
   }
+}
+
+// Hub-emitted pid-sweep observation (spec §3). A dead native pid → 'lost'. Never
+// overrides 'ended' (a clean exit already happened); 'lost' is itself terminal.
+function applyLost(db: Database, ev: EventEnvelope): void {
+  db.query(`UPDATE sessions SET status = 'lost' WHERE session_id = ? AND status NOT IN ('ended')`)
+    .run(ev.session_id);
 }
 
 function applyAdapterAttached(db: Database, ev: EventEnvelope): void {
