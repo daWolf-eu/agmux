@@ -34,12 +34,24 @@ In baseline (A) one process runs both roles on one machine. In (B), host-agents 
 
 ## 4. Capture Model (Layered)
 
+> **Superseded (2026-06-08):** The wrapper-primary capture/identity stance below is
+> superseded by the native-first design — see
+> [`docs/superpowers/specs/2026-06-05-native-first-design.md`](superpowers/specs/2026-06-05-native-first-design.md).
+> Sessions now self-register from their own hooks; the hub resolves native identity
+> to a canonical session at ingest. The wrapper remains an opt-in launcher.
+
 Two layers feed the same ingest API:
 
 1. **Wrapper (primary).** `agmux run <preset>` launches the agent. Because it spawns the process it reliably captures the exact command, tmux pane/window/session coordinates, cwd, pid, start/end, and emits lifecycle events + heartbeats. PTY passthrough must be transparent (TTY, signals, resize/`SIGWINCH`, exit code). This is the reliable, agent-agnostic backbone — it even works for agents with no hook system.
 2. **Native hooks / adapters (optional enrichment).** Per-agent (Claude `SessionStart`, Codex/Gemini/opencode/pi equivalents) adding in-session events (prompts, tool calls, token usage) where the agent supports them. Additive per agent; never required.
 
 ## 5. Identity
+
+> **Superseded (2026-06-08):** The wrapper-primary capture/identity stance below is
+> superseded by the native-first design — see
+> [`docs/superpowers/specs/2026-06-05-native-first-design.md`](superpowers/specs/2026-06-05-native-first-design.md).
+> Sessions now self-register from their own hooks; the hub resolves native identity
+> to a canonical session at ingest. The wrapper remains an opt-in launcher.
 
 - agmux **mints a canonical `session_id` (UUID) at spawn** and injects `AGMUX_SESSION_ID` into the child environment.
 - The agent's **native session id is stored as an attribute** (`native_session_id`), never the primary key — agmux is not hostage to whether an agent has a stable id.

@@ -29,7 +29,12 @@ export class Store {
         const msg = String(e?.message ?? e);
         // Either a replayed event_id (transport retry) or a repeated dedup_key
         // (source observed the same fact twice) — both mean "already have it".
-        if (msg.includes("UNIQUE")) return false;
+        // Exception: session.registered re-applies its projection even on dedup
+        // because re-registration is idempotent and must reopen a lost session.
+        if (msg.includes("UNIQUE")) {
+          if (ev.kind === "session.registered") applyEventToProjection(this.db, ev);
+          return false;
+        }
         throw e;
       }
       applyEventToProjection(this.db, ev);
