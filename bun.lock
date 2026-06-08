@@ -43,6 +43,9 @@
         "@agmux/protocol": "workspace:*",
         "@agmux/store": "workspace:*",
       },
+      "devDependencies": {
+        "@agmux/adapters": "workspace:*",
+      },
     },
     "packages/protocol": {
       "name": "@agmux/protocol",
