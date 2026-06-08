@@ -6,6 +6,7 @@ import { Store } from "@agmux/store";
 import { createServer } from "../src/server.ts";
 import { drainQueueDir } from "../src/drain.ts";
 import { atomicWritePortFile, writePidFile, acquireSingletonLock } from "../src/bootstrap.ts";
+import { startNativeLivenessSweep } from "../src/liveness.ts";
 
 const stateDir = path.join(os.homedir(), ".agmux");
 fs.mkdirSync(path.join(stateDir, "queue"), { recursive: true });
@@ -39,11 +40,13 @@ atomicWritePortFile(path.join(stateDir, "hub.port"), server.port!);
 writePidFile(path.join(stateDir, "hub.pid"), process.pid);
 
 console.log(`agmux-hub listening on http://${server.hostname}:${server.port}`);
+const stopSweep = startNativeLivenessSweep(store, os.hostname());
 
 const shutdown = () => {
   try { fs.unlinkSync(path.join(stateDir, "hub.pid")); } catch {}
   try { fs.unlinkSync(path.join(stateDir, "hub.port")); } catch {}
   lock.release();
+  stopSweep();
   server.stop();
   process.exit(0);
 };
