@@ -6,7 +6,7 @@ test("runMigrations on empty db creates schema and stamps version", () => {
   const db = new Database(":memory:");
   const r = runMigrations(db);
   expect(r.from).toBe(0);
-  expect(r.to).toBe(2);
+  expect(r.to).toBe(3);
 
   const tables = db.query<{ name: string }, []>(
     `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
@@ -16,15 +16,15 @@ test("runMigrations on empty db creates schema and stamps version", () => {
   expect(tables).toContain("_meta");
 
   const v = db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key='schema_version'`).get();
-  expect(v?.value).toBe("2");
+  expect(v?.value).toBe("3");
 });
 
 test("runMigrations is idempotent", () => {
   const db = new Database(":memory:");
   runMigrations(db);
   const r2 = runMigrations(db);
-  expect(r2.from).toBe(2);
-  expect(r2.to).toBe(2);
+  expect(r2.from).toBe(3);
+  expect(r2.to).toBe(3);
 });
 
 test("migration v2 creates session_usage, dedup_key column, and adapter_capabilities column", () => {
@@ -45,5 +45,34 @@ test("migration v2 creates session_usage, dedup_key column, and adapter_capabili
   expect(sessionCols).toContain("adapter_capabilities");
 
   const ver = db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key='schema_version'`).get();
-  expect(Number(ver!.value)).toBe(2);
+  expect(Number(ver!.value)).toBe(3);
+});
+
+test("migration v3 adds sessions.origin defaulting to 'wrapper'", () => {
+  const db = new Database(":memory:");
+  const { to } = runMigrations(db);
+  expect(to).toBe(3);
+  const cols = db.query<{ name: string; dflt_value: string | null }, []>(`PRAGMA table_info(sessions)`).all();
+  const origin = cols.find((c) => c.name === "origin");
+  expect(origin).toBeDefined();
+  expect(String(origin!.dflt_value)).toContain("wrapper");
+});
+
+test("migration v3 creates the native-identity resolver index", () => {
+  const db = new Database(":memory:");
+  runMigrations(db);
+  const idx = db.query<{ name: string }, []>(`PRAGMA index_list(sessions)`).all();
+  expect(idx.map((i) => i.name)).toContain("idx_native_identity");
+});
+
+test("resolver index allows many NULL native ids but rejects a duplicate (kind,native,host)", () => {
+  const db = new Database(":memory:");
+  runMigrations(db);
+  const ins = (sid: string, nat: string | null) => db.query(`
+    INSERT INTO sessions (session_id, agent_kind, profile, native_session_id, command, args_json, env_json, cwd, host, start_ts, status, origin)
+    VALUES (?, 'claude', NULL, ?, 'c', '[]', '{}', '/tmp', 'h', '2026-06-08T00:00:00.000Z', 'idle', 'native')
+  `).run(sid, nat);
+  ins("s1", null); ins("s2", null);            // two NULLs: fine
+  ins("s3", "n-1");
+  expect(() => ins("s4", "n-1")).toThrow();     // duplicate (claude, n-1, h): rejected
 });

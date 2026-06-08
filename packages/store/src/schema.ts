@@ -65,3 +65,15 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_dedup ON events(dedup_key) WHERE de
 
 ALTER TABLE sessions ADD COLUMN adapter_capabilities TEXT;
 `;
+
+export const SCHEMA_V3 = `
+ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'wrapper';
+
+-- The native-identity resolver (spec §2.3 / §5). Partial unique index: the many
+-- wrapper rows with a NULL native id never collide, but a non-null
+-- (agent_kind, native_session_id, host) triple may appear at most once — the
+-- invariant that lets the hub resolve a native pointer to one canonical session.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_native_identity
+  ON sessions(agent_kind, native_session_id, host)
+  WHERE native_session_id IS NOT NULL;
+`;
