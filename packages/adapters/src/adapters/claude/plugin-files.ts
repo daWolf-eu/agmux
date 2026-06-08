@@ -3,7 +3,7 @@
 // source and from a `bun build --compile` binary (where import.meta.dir points
 // into the virtual /$bunfs and on-disk data files don't exist).
 
-export const PLUGIN_VERSION = "1.1.0";
+export const PLUGIN_VERSION = "1.2.0";
 
 const EMIT = "${AGMUX_BIN:-agmux} emit --from=claude";
 
@@ -19,13 +19,13 @@ const HOOKS = {
   hooks: {
     SessionStart: [
       {
-        // clear|compact included deliberately: /clear (and a compact) mint a NEW
-        // native session id mid-process; re-linking on every SessionStart keeps
-        // native_session_id current (projection applyLinked is last-write-wins),
-        // so a later `agmux attach` resumes the conversation that actually exists.
+        // startup|resume|clear|compact: /clear and compaction rotate the native
+        // session id mid-process; re-registering on each keeps the mapping current
+        // (resolveIngest rule 3 = pid rotation). AGMUX_AGENT_PID=$PPID captures the
+        // agent pid — the hook shell's parent IS the claude process (spec §8).
         matcher: "startup|resume|clear|compact",
         hooks: [
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=session.linked` },
+          { type: "command", async: true, command: `AGMUX_AGENT_PID=$PPID ${EMIT} --source=hook-command --point=session.registered` },
           { type: "command", async: true, command: `${EMIT} --attach` },
         ],
       },

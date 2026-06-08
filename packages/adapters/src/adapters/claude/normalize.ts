@@ -4,6 +4,7 @@ import type { NormalizeInput, NormalizeOutput, CanonicalEvent } from "../../core
 interface ClaudeHookStdin {
   session_id?: string;
   transcript_path?: string;
+  cwd?: string;
   prompt?: string;
   tool_name?: string;
   notification_type?: string;
@@ -21,6 +22,26 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
   const envSid = input.env?.CLAUDE_CODE_SESSION_ID;
   if (envSid && raw.session_id && envSid !== raw.session_id) return { events: [] };
   switch (input.point) {
+    case "session.registered": {
+      if (!raw.session_id) return { events: [] };
+      const env = input.env ?? {};
+      const pidNum = env.AGMUX_AGENT_PID != null ? Number(env.AGMUX_AGENT_PID) : NaN;
+      return { events: [{
+        kind: "session.registered",
+        payload: {
+          native_session_id: raw.session_id,
+          agent_kind: "claude",
+          pid: Number.isInteger(pidNum) ? pidNum : null,
+          cwd: raw.cwd ?? env.PWD ?? null,
+          tmux_session: null,           // Stage 2 (attach flip) enriches tmux coords
+          tmux_window: null,
+          tmux_pane: env.TMUX_PANE ?? null,
+          profile: env.AGMUX_PROFILE ?? null,
+          agent_version: env.CLAUDE_CODE_VERSION ?? null,
+          parent: null,                 // lineage hint wired by the future spawn path (spec §5)
+        },
+      }] };
+    }
     case "session.linked":
       if (!raw.session_id) return { events: [] };
       return { events: [{ kind: "session.linked", payload: { native_session_id: raw.session_id } }] };
