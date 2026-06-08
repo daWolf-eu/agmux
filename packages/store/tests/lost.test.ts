@@ -34,3 +34,22 @@ test("never-heartbeated row falls back to start_ts for staleness check", () => {
 test("threshold constant matches protocol", () => {
   expect(LOST_THRESHOLD_MS).toBe(60_000);
 });
+
+test("native rows are NOT marked lost by heartbeat staleness", () => {
+  const long_ago = new Date(Date.now() - 10 * 60_000).toISOString();
+  const now = new Date();
+  // A native row with no heartbeat far in the past stays at its stored status.
+  expect(computeEffectiveStatus(
+    { status: "running", start_ts: long_ago, last_heartbeat_ts: null, origin: "native" }, now,
+  )).toBe("running");
+  // A wrapper row with the same staleness still goes lost (unchanged behavior).
+  expect(computeEffectiveStatus(
+    { status: "running", start_ts: long_ago, last_heartbeat_ts: null, origin: "wrapper" }, now,
+  )).toBe("lost");
+});
+
+test("a native row already stored 'lost' stays lost (terminal)", () => {
+  expect(computeEffectiveStatus(
+    { status: "lost", start_ts: new Date().toISOString(), last_heartbeat_ts: null, origin: "native" },
+  )).toBe("lost");
+});
