@@ -1,7 +1,7 @@
 import type { Server } from "bun";
 import type { Store } from "@agmux/store";
 import type { IngestEnvelope } from "@agmux/protocol";
-import { validateIngestEnvelope, validateKnownPayload } from "@agmux/protocol";
+import { validateIngestEnvelope, validateKnownPayload, AGMUX_VERSION } from "@agmux/protocol";
 
 export interface CreateServerOpts {
   store: Store;
@@ -21,7 +21,8 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
       const m = req.method;
 
       if (m === "GET" && url.pathname === "/health") {
-        return Response.json({ ok: true });
+        // version lets `agmux hub status` flag a stale running hub vs the installed binary.
+        return Response.json({ ok: true, version: AGMUX_VERSION });
       }
 
       if (m === "POST" && url.pathname === "/ingest") {

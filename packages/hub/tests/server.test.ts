@@ -24,11 +24,14 @@ const startedEv = {
   },
 };
 
-test("GET /health returns 200 with {ok:true}", async () => {
+test("GET /health returns 200 with ok + version", async () => {
   const { server, url } = makeServer();
   const r = await fetch(`${url}/health`);
   expect(r.status).toBe(200);
-  expect(await r.json()).toEqual({ ok: true });
+  const body = (await r.json()) as { ok: boolean; version: string };
+  expect(body.ok).toBe(true);
+  expect(typeof body.version).toBe("string");
+  expect(body.version.length).toBeGreaterThan(0);
   server.stop();
 });
 
