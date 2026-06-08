@@ -43,3 +43,42 @@ test("drainQueueDir on missing directory is a no-op", () => {
   const r = drainQueueDir(path.join(tmp, "nope"), store);
   expect(r.filesDrained).toBe(0);
 });
+
+function tmpQueue() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-drain-"));
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+test("drain resolves a queued native session.registered into a minted session", () => {
+  const dir = tmpQueue();
+  const store = Store.openInMemory();
+  const wire = {
+    event_id: "qd-1", ts: new Date().toISOString(), kind: "session.registered", version: 1, host: "h",
+    identity: { agent_kind: "claude", native_session_id: "queued-nat" },
+    payload: { agent_kind: "claude", native_session_id: "queued-nat", pid: 7, cwd: "/tmp",
+      tmux_session: null, tmux_window: null, tmux_pane: null, profile: null, agent_version: null, parent: null },
+  };
+  fs.writeFileSync(path.join(dir, "queued-nat.jsonl"), JSON.stringify(wire) + "\n");
+
+  const r = drainQueueDir(dir, store);
+  expect(r.eventsIngested).toBe(1);
+  expect(store.listSessions({}).some((s) => s.native_session_id === "queued-nat")).toBe(true);
+  store.close();
+});
+
+test("drain still ingests a canonical (session_id) queued event", () => {
+  const dir = tmpQueue();
+  const store = Store.openInMemory();
+  const ev = {
+    event_id: "qd-2", ts: new Date().toISOString(), kind: "session.started", version: 1, host: "h",
+    session_id: "0190a3e0-0000-7000-8000-000000000abc",
+    payload: { agent_kind: "claude", profile: null, command: "c", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
+      tmux_session: null, tmux_window: null, tmux_pane: null, project: null },
+  };
+  fs.writeFileSync(path.join(dir, "canon.jsonl"), JSON.stringify(ev) + "\n");
+  const r = drainQueueDir(dir, store);
+  expect(r.eventsIngested).toBe(1);
+  expect(store.getSession("0190a3e0-0000-7000-8000-000000000abc")).toBeTruthy();
+  store.close();
+});
