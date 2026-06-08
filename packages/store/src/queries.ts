@@ -128,3 +128,13 @@ export function getSessionUsage(db: Database, sid: string): SessionUsageRow | nu
     turn_count: raw.turn_count,
   };
 }
+
+// pid-sweep candidates (spec §3): live native rows on a given host that carry a
+// pid. Cross-host native rows are intentionally excluded (never pid-swept).
+export function listLiveNativeSessions(db: Database, host: string): { session_id: string; pid: number }[] {
+  return db.query<{ session_id: string; pid: number }, [string]>(
+    `SELECT session_id, pid FROM sessions
+       WHERE origin = 'native' AND pid IS NOT NULL AND host = ?
+         AND status IN ('idle', 'running', 'waiting')`,
+  ).all(host);
+}

@@ -2,7 +2,7 @@ import { Database } from "bun:sqlite";
 import type { EventEnvelope, SessionRow } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
-import { getSessionRaw, listSessions, listEvents, getSessionUsage, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { getSessionRaw, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
 import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
@@ -63,6 +63,10 @@ export class Store {
 
   getSessionUsage(sid: string): SessionUsageRow | null {
     return getSessionUsage(this.db, sid);
+  }
+
+  listLiveNativeSessions(host: string): { session_id: string; pid: number }[] {
+    return listLiveNativeSessions(this.db, host);
   }
 
   rebuildProjections(): void {
