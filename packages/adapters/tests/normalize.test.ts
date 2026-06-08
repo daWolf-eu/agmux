@@ -30,3 +30,31 @@ test("stampEvents defaults to real ulid + iso timestamp without injection", () =
   expect(out[0]!.event_id).toMatch(/^[0-9A-HJKMNP-TV-Z]{26}$/); // ULID (Crockford base32)
   expect(out[0]!.ts).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 });
+
+import { stampIngestEvents } from "../src/core/normalize.ts";
+
+const ts = () => "2026-06-08T00:00:00.000Z";
+let seq = 0;
+const nid = () => "id-" + (++seq);
+
+test("stampIngestEvents uses the native identity form when a native id is given", () => {
+  seq = 0;
+  const out = stampIngestEvents([{ kind: "turn.started", payload: {}, dedup_key: null }], {
+    agentKind: "claude", nativeId: "nat-1", claimId: "claim-1", host: "h", now: ts, newId: nid,
+  });
+  expect(out).toHaveLength(1);
+  expect(out[0]).toEqual({
+    event_id: "id-1", ts: "2026-06-08T00:00:00.000Z", kind: "turn.started", version: 1, host: "h",
+    payload: {}, dedup_key: null,
+    identity: { agent_kind: "claude", native_session_id: "nat-1" }, claim_session_id: "claim-1",
+  });
+});
+
+test("stampIngestEvents falls back to the canonical form when no native id", () => {
+  seq = 0;
+  const out = stampIngestEvents([{ kind: "turn.started", payload: {}, dedup_key: null }], {
+    agentKind: "claude", nativeId: null, claimId: "claim-9", host: "h", now: ts, newId: nid,
+  });
+  expect(out[0]!.session_id).toBe("claim-9");
+  expect(out[0]!.identity).toBeUndefined();
+});

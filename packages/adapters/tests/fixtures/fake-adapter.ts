@@ -85,4 +85,8 @@ export const fakeAdapter: Adapter = {
       nativeSessionId: ctx.nativeSessionId,
     };
   },
+
+  nativeIdFromEnv(env): string | null {
+    return env.FAKE_NATIVE_ID ?? null;
+  },
 };
