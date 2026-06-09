@@ -131,16 +131,15 @@ function applyLiveStatus(db: Database, ev: EventEnvelope, status: "running" | "i
   `).run(status, ev.session_id);
 }
 
-// An ended session is FROZEN: identity and telemetry refinements arriving after
-// session.ended are dropped. This guards against env leakage into nested agent
-// runs — e.g. a SessionEnd-hook summarizer (`claude -p`) inherits the wrapped
-// session's AGMUX_SESSION_ID and its own hooks would otherwise re-link/poll
-// usage into the dead session. Only session.resumed reopens the row.
-function isEnded(db: Database, sessionId: string): boolean {
-  const row = db.query<{ status: string }, [string]>(
-    `SELECT status FROM sessions WHERE session_id = ?`,
+// A WRAPPER session is FROZEN after session.ended: identity/usage refinements are
+// dropped so a SessionEnd-hook summarizer (`claude -p` inheriting the claim) can't
+// pollute the dead session. NATIVE rows are never frozen — they legitimately
+// reopen on re-registration (applyRegistered) and never receive session.ended.
+function isFrozen(db: Database, sessionId: string): boolean {
+  const row = db.query<{ status: string; origin: string }, [string]>(
+    `SELECT status, origin FROM sessions WHERE session_id = ?`,
   ).get(sessionId);
-  return row?.status === "ended";
+  return row?.status === "ended" && row?.origin === "wrapper";
 }
 
 function applyLinked(db: Database, ev: EventEnvelope): void {
@@ -237,7 +236,7 @@ function ensureUsageRow(db: Database, sessionId: string): void {
 }
 
 function bumpTurnCount(db: Database, ev: EventEnvelope): void {
-  if (isEnded(db, ev.session_id)) return;
+  if (isFrozen(db, ev.session_id)) return;
   ensureUsageRow(db, ev.session_id);
   db.query(`UPDATE session_usage SET turn_count = turn_count + 1 WHERE session_id = ?`)
     .run(ev.session_id);
@@ -246,7 +245,7 @@ function bumpTurnCount(db: Database, ev: EventEnvelope): void {
 function n(v: unknown): number { return typeof v === "number" && Number.isFinite(v) ? v : 0; }
 
 function applyUsage(db: Database, ev: EventEnvelope): void {
-  if (isEnded(db, ev.session_id)) return; // telemetry frozen on death (see isEnded)
+  if (isFrozen(db, ev.session_id)) return; // telemetry frozen on death for wrapper sessions (see isFrozen)
   const p = ev.payload as any;
   ensureUsageRow(db, ev.session_id);
   const rl = p.rate_limit == null ? null : JSON.stringify(p.rate_limit);
