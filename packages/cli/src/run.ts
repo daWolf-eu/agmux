@@ -1,5 +1,15 @@
-import { AGMUX_HUB_URL_ENV, AGMUX_TMUX_SESSION_ENV, AGMUX_TMUX_SESSION_DEFAULT } from "@agmux/protocol";
+import * as os from "node:os";
+import * as path from "node:path";
+import {
+  AGMUX_HUB_URL_ENV,
+  AGMUX_TMUX_SESSION_ENV,
+  AGMUX_TMUX_SESSION_DEFAULT,
+  AGMUX_CONFIG_SUBPATH,
+  AGMUX_PROFILE_ENV,
+} from "@agmux/protocol";
+import { loadProfile } from "@agmux/wrapper";
 import type { Placement } from "./parse-run.ts";
+import type { LaunchMode } from "./launch-mode.ts";
 import {
   readCurrentPane, splitPane, newWindow, newSession, switchClient,
   type PaneCoords,
@@ -13,6 +23,7 @@ export interface RunProfileOpts {
   wrapBin: string;
   placement: Placement;
   detach: boolean;
+  mode?: LaunchMode;
 }
 
 // Ad-hoc mode → CLI builds an inline-profile spec and passes it via env. Wrapper
@@ -26,20 +37,21 @@ export interface RunInlineOpts {
   wrapBin: string;
   placement: Placement;
   detach: boolean;
+  mode?: LaunchMode;
 }
 
 export type RunOpts = RunProfileOpts | RunInlineOpts;
 
-interface WrapperSpawn {
-  argv: string[];                 // argv to pass to the wrapper binary
-  env: Record<string, string>;    // env vars to forward to the wrapper
+export interface WrapperSpawn {
+  argv: string[];                 // complete argv — argv[0] is the executable
+  env: Record<string, string>;    // env vars to forward
   label: string;                  // short label for tmux window/pane names
 }
 
 function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
   const env: Record<string, string> = { [AGMUX_HUB_URL_ENV]: opts.hubUrl };
   if (opts.kind === "profile") {
-    return { argv: [opts.profileName], env, label: opts.profileName };
+    return { argv: [opts.wrapBin, opts.profileName], env, label: opts.profileName };
   }
   const inlineProfile = {
     agent_kind: opts.agent_kind,
@@ -49,12 +61,33 @@ function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
   };
   const label = opts.command.split("/").pop() ?? "agent";
   env.AGMUX_INLINE_PROFILE = JSON.stringify(inlineProfile);
-  return { argv: [label], env, label };
+  return { argv: [opts.wrapBin, label], env, label };
 }
 
-async function runInherit(opts: RunOpts): Promise<number> {
-  const spawn = buildWrapperSpawn(opts);
-  const child = Bun.spawn([opts.wrapBin, ...spawn.argv], {
+export function buildDirectSpawn(opts: RunOpts, agmuxBin: string): WrapperSpawn {
+  const env: Record<string, string> = {
+    [AGMUX_HUB_URL_ENV]: opts.hubUrl,
+    AGMUX_BIN: agmuxBin,
+  };
+  if (opts.kind === "profile") {
+    const cfgPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+    const p = loadProfile(opts.profileName, cfgPath);
+    env[AGMUX_PROFILE_ENV] = opts.profileName;
+    return { argv: [p.command, ...p.args], env, label: opts.profileName };
+  }
+  const label = opts.command.split("/").pop() ?? "agent";
+  return { argv: [opts.command, ...opts.args], env, label };
+}
+
+function spawnFor(opts: RunOpts, agmuxBin: string): WrapperSpawn {
+  return (opts.mode ?? "wrapped") === "direct"
+    ? buildDirectSpawn(opts, agmuxBin)
+    : buildWrapperSpawn(opts);
+}
+
+async function runInherit(opts: RunOpts, agmuxBin: string): Promise<number> {
+  const spawn = spawnFor(opts, agmuxBin);
+  const child = Bun.spawn(spawn.argv, {
     stdio: ["inherit", "inherit", "inherit"],
     env: { ...process.env, ...spawn.env },
   });
@@ -81,8 +114,8 @@ function pickWindowTargetSession(here: PaneCoords | null): string {
   return AGMUX_TMUX_SESSION_DEFAULT;
 }
 
-async function runWithPlacement(opts: RunOpts): Promise<number> {
-  const spawn = buildWrapperSpawn(opts);
+async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number> {
+  const spawn = spawnFor(opts, agmuxBin);
   const here = await readCurrentPane();
   // Forward AGMUX_TMUX_SESSION through so the wrapper inside the new pane sees
   // the same logical agmux session name (only relevant if the wrapper ever
@@ -91,7 +124,7 @@ async function runWithPlacement(opts: RunOpts): Promise<number> {
   const sessionOverride = process.env[AGMUX_TMUX_SESSION_ENV];
   if (sessionOverride) envForward[AGMUX_TMUX_SESSION_ENV] = sessionOverride;
 
-  const cmd = [opts.wrapBin, ...spawn.argv];
+  const cmd = spawn.argv;
   const windowName = `${spawn.label}-${shortRandomTag()}`;
 
   let coords: PaneCoords;
@@ -131,7 +164,14 @@ async function runWithPlacement(opts: RunOpts): Promise<number> {
   return 0;
 }
 
-export async function runCmd(opts: RunOpts): Promise<number> {
-  if (opts.placement === "inherit") return runInherit(opts);
-  return runWithPlacement(opts);
+export async function runCmd(opts: RunOpts, agmuxBin: string = process.env.AGMUX_BIN ?? "agmux"): Promise<number> {
+  if (opts.placement === "inherit") {
+    // Direct + not in tmux → fall back to a fresh agmux session so the agent is
+    // still tmux-tracked; otherwise run inline in the current pane.
+    if ((opts.mode ?? "wrapped") === "direct" && !(await readCurrentPane())) {
+      return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin);
+    }
+    return runInherit(opts, agmuxBin);
+  }
+  return runWithPlacement(opts, agmuxBin);
 }
