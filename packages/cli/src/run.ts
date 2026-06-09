@@ -46,6 +46,7 @@ export interface WrapperSpawn {
   argv: string[];                 // complete argv — argv[0] is the executable
   env: Record<string, string>;    // env vars to forward
   label: string;                  // short label for tmux window/pane names
+  cwd?: string;                   // working dir for the spawned process; profile.cwd in direct mode, else undefined
 }
 
 function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
@@ -73,7 +74,7 @@ export function buildDirectSpawn(opts: RunOpts, agmuxBin: string): WrapperSpawn 
     const cfgPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
     const p = loadProfile(opts.profileName, cfgPath);
     env[AGMUX_PROFILE_ENV] = opts.profileName;
-    return { argv: [p.command, ...p.args], env, label: opts.profileName };
+    return { argv: [p.command, ...p.args], env, label: opts.profileName, cwd: p.cwd };
   }
   const label = opts.command.split("/").pop() ?? "agent";
   return { argv: [opts.command, ...opts.args], env, label };
@@ -90,6 +91,7 @@ async function runInherit(opts: RunOpts, agmuxBin: string): Promise<number> {
   const child = Bun.spawn(spawn.argv, {
     stdio: ["inherit", "inherit", "inherit"],
     env: { ...process.env, ...spawn.env },
+    cwd: spawn.cwd,
   });
   await child.exited;
   return child.exitCode ?? 0;
@@ -139,6 +141,7 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
       targetPane: here.pane,
       cmd, env: envForward,
       detach: opts.detach,
+      cwd: spawn.cwd,
     });
   } else if (opts.placement === "new-window") {
     const targetSession = pickWindowTargetSession(here);
@@ -146,10 +149,11 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
       sessionName: targetSession,
       windowName, cmd, env: envForward,
       detach: opts.detach,
+      cwd: spawn.cwd,
     });
   } else if (opts.placement === "new-session") {
     const sessionName = `${AGMUX_TMUX_SESSION_DEFAULT}-${spawn.label}-${shortRandomTag()}`;
-    coords = await newSession({ sessionName, windowName, cmd, env: envForward });
+    coords = await newSession({ sessionName, windowName, cmd, env: envForward, cwd: spawn.cwd });
     // `tmux new-session -d` ignores -d's "no switch" semantics — there's nothing
     // to switch *to* yet. So we explicitly switch-client when the user wants
     // focus to follow the new session.

@@ -50,12 +50,14 @@ export async function splitPane(args: {
   cmd: string[];
   env: Record<string, string>;
   detach: boolean;
+  cwd?: string;
 }): Promise<PaneCoords> {
   // `tmux split-window -d` creates the new pane without making it the active
   // pane in the caller's client.
   const detachFlag = args.detach ? ["-d"] : [];
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux split-window -t ${args.targetPane} ${detachFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
@@ -66,6 +68,7 @@ export async function newWindow(args: {
   cmd: string[];
   env: Record<string, string>;
   detach: boolean;
+  cwd?: string;
 }): Promise<PaneCoords> {
   await ensureSession(args.sessionName);
   // `tmux new-window -d` creates the window but does not switch the client to it.
@@ -73,9 +76,10 @@ export async function newWindow(args: {
   // index will do); without it tmux interprets `<session>` as "active window of
   // that session" and will refuse if its index is already taken.
   const detachFlag = args.detach ? ["-d"] : [];
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const target = `${args.sessionName}:`;
   const out = (
-    await $`tmux new-window -t ${target} -n ${args.windowName} ${detachFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
@@ -85,13 +89,15 @@ export async function newSession(args: {
   windowName: string;
   cmd: string[];
   env: Record<string, string>;
+  cwd?: string;
 }): Promise<PaneCoords> {
   if (await hasSession(args.sessionName)) {
     throw new Error(`tmux session already exists: ${args.sessionName}`);
   }
   // `tmux new-session -d` returns coords via -P -F just like new-window.
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux new-session -d -s ${args.sessionName} -n ${args.windowName} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
