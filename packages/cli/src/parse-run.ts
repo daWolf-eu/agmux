@@ -20,8 +20,8 @@
 export type Placement = "inherit" | "new-pane" | "new-window" | "new-session";
 
 export type ParsedRun =
-  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean }
-  | { kind: "inline"; agent_kind: "claude" | "codex"; command: string; args: string[]; placement: Placement; detach: boolean }
+  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean }
+  | { kind: "inline"; agent_kind: "claude" | "codex"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean }
   | { kind: "error"; message: string };
 
 function parseKind(v: string): "claude" | "codex" | null {
@@ -33,6 +33,7 @@ export function parseRunArgs(argv: string[]): ParsedRun {
   let kindFlag: "claude" | "codex" | undefined;
   let placement: Placement = "inherit";
   let detach = false;
+  let wrapped = false;
   // Track *explicit* --new-* selection so we can error on collisions; -d's
   // default ("--new-pane unless overridden") never collides on its own.
   let explicitPlacementFlag: string | null = null;
@@ -63,6 +64,7 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       i += 1;
       continue;
     }
+    if (a === "--wrapped") { wrapped = true; i += 1; continue; }
     if (a === "-d" || a === "--detach") {
       detach = true;
       // Soft default: only fills placement if no explicit --new-* was given (yet
@@ -93,7 +95,7 @@ export function parseRunArgs(argv: string[]): ParsedRun {
     if (tail.length > 0) {
       return { kind: "error", message: "cannot combine -p/--profile with a positional command" };
     }
-    return { kind: "profile", profileName, placement, detach };
+    return { kind: "profile", profileName, placement, detach, wrapped };
   }
 
   if (tail.length === 0) {
@@ -114,5 +116,5 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       message: `agmux run: cannot infer agent_kind from '${basename}'. Use --kind=claude or --kind=codex.`,
     };
   }
-  return { kind: "inline", agent_kind, command, args, placement, detach };
+  return { kind: "inline", agent_kind, command, args, placement, detach, wrapped };
 }
