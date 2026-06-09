@@ -35,9 +35,14 @@ This is a pure function of `{ wrapped: boolean, hasAdapter: boolean }` so it is 
 
 **Direct exec** runs the real agent binary in the target tmux location with telemetry env (`AGMUX_BIN`, profile name) but **no** `AGMUX_SESSION_ID` claim — the agent self-registers under its own native id. **Wrapped** is exactly today's `agmux-wrap` path, unchanged.
 
-### D2. Adapter presence is required for direct exec
+### D2. Adapter readiness gates direct exec — but `run` never installs without consent
 
-Native tracking only works if the plugin is installed. Before a direct exec, `run` **ensures the adapter is installed at the current version** (idempotent: a no-op when `status().installed && !status().drift`, otherwise re-runs `install`). This is agmux's own managed plugin (`<configDir>/skills/agmux/`), so refreshing it on launch is acceptable and keeps "it just works" without a manual `agmux adapter install`. The ensure step is best-effort: an install failure logs a one-line warning and the launch still proceeds (the session is simply untracked until the plugin lands).
+Native tracking only works if the plugin is installed, but `agmux run` **must not write to the user's Claude config without explicit consent.** So direct exec only *checks* readiness — it never installs:
+
+- Plugin installed and current (`status().installed && !status().drift`) → proceed direct.
+- Plugin missing or drifted → print a one-line hint naming the install command, and **fall back to the wrapper for this launch.** Wrapped keeps the session tracked (PTY heartbeat) and touches no config.
+
+The documented `agmux adapter install --kind <kind>` command *is* the consent path: the user runs it explicitly when they want native tracking. No in-run prompt — `run` often hands off into a tmux pane or detaches, where an interactive prompt is unreliable; the hint + wrapped fallback is the robust, consent-clean behavior.
 
 ### D3. Nesting guard → scoped to claim (wrapped) sessions
 
@@ -68,7 +73,7 @@ These are **explicitly not** Stage 2. Each gets its own spec → plan → implem
 ## File Structure
 
 - **Create** `packages/cli/src/launch-mode.ts` — pure `decideLaunchMode()` + `LaunchMode` type. One responsibility: the direct-vs-wrapped decision.
-- **Create** `packages/cli/src/ensure-adapter.ts` — `ensureAdapterInstalled()` (idempotent install-if-needed). Keeps install policy out of `run.ts`.
+- **Create** `packages/cli/src/adapter-ready.ts` — `adapterReadyOrHint()` (readiness check + hint; **never installs**). Keeps the consent policy out of `run.ts`.
 - **Modify** `packages/cli/src/parse-run.ts` — add `wrapped: boolean` to the profile and inline `ParsedRun` variants; parse `--wrapped`.
 - **Modify** `packages/cli/src/run.ts` — add the direct-exec spawn path (inline current-pane + reuse placements); resolve profiles for direct mode; `RunOpts` gains `mode`.
 - **Modify** `packages/cli/src/tmux-place.ts` — add injectable `resolvePaneCoords(paneId, exec?)`.
@@ -557,83 +562,94 @@ git commit -m "cli: enrich session.registered with tmux coords"
 
 ---
 
-## Task 7: Ensure-adapter-installed helper
+## Task 7: Adapter-readiness check (consent-clean — never installs)
 
 **Files:**
-- Create: `packages/cli/src/ensure-adapter.ts`
-- Test: `packages/cli/tests/ensure-adapter.test.ts`
+- Create: `packages/cli/src/adapter-ready.ts`
+- Test: `packages/cli/tests/adapter-ready.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
 
 ```typescript
 import { test, expect } from "bun:test";
-import { ensureAdapterInstalled } from "../src/ensure-adapter.ts";
+import { adapterReadyOrHint } from "../src/adapter-ready.ts";
 
 function fakeAdapter(state: { installed: boolean; drift: boolean }) {
   const calls = { install: 0, status: 0 };
   const adapter = {
     status: () => { calls.status++; return { installed: state.installed, version: "1", drift: state.drift, runtimeGate: "none" as const }; },
-    install: () => { calls.install++; state.installed = true; state.drift = false; return {} as any; },
+    install: () => { calls.install++; return {} as any; },
   } as any;
   return { adapter, calls };
 }
 const ctx = {} as any;
 
-test("installs when not installed", () => {
-  const { adapter, calls } = fakeAdapter({ installed: false, drift: false });
-  ensureAdapterInstalled(adapter, ctx);
-  expect(calls.install).toBe(1);
-});
-
-test("re-installs on drift", () => {
-  const { adapter, calls } = fakeAdapter({ installed: true, drift: true });
-  ensureAdapterInstalled(adapter, ctx);
-  expect(calls.install).toBe(1);
-});
-
-test("no-op when installed and current", () => {
+test("ready when installed and current — no hint, never installs", () => {
   const { adapter, calls } = fakeAdapter({ installed: true, drift: false });
-  ensureAdapterInstalled(adapter, ctx);
+  const lines: string[] = [];
+  expect(adapterReadyOrHint(adapter, ctx, "claude", (s) => lines.push(s))).toBe(true);
   expect(calls.install).toBe(0);
+  expect(lines).toHaveLength(0);
 });
 
-test("swallows install failure (returns false, never throws)", () => {
-  const adapter = { status: () => ({ installed: false, drift: false }), install: () => { throw new Error("boom"); } } as any;
-  expect(ensureAdapterInstalled(adapter, ctx)).toBe(false);
+test("not installed → hint, returns false, NEVER installs", () => {
+  const { adapter, calls } = fakeAdapter({ installed: false, drift: false });
+  const lines: string[] = [];
+  expect(adapterReadyOrHint(adapter, ctx, "claude", (s) => lines.push(s))).toBe(false);
+  expect(calls.install).toBe(0);
+  expect(lines.join("\n")).toContain("agmux adapter install --kind claude");
+});
+
+test("drifted → hint, returns false, never installs", () => {
+  const { adapter, calls } = fakeAdapter({ installed: true, drift: true });
+  const lines: string[] = [];
+  expect(adapterReadyOrHint(adapter, ctx, "claude", (s) => lines.push(s))).toBe(false);
+  expect(calls.install).toBe(0);
+  expect(lines.join("\n")).toContain("agmux adapter install --kind claude");
+});
+
+test("status throws → not ready, swallowed (no throw)", () => {
+  const adapter = { status: () => { throw new Error("boom"); } } as any;
+  expect(adapterReadyOrHint(adapter, ctx, "claude", () => {})).toBe(false);
 });
 ```
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `bun test packages/cli/tests/ensure-adapter.test.ts`
+Run: `bun test packages/cli/tests/adapter-ready.test.ts`
 Expected: FAIL — module not found.
 
 - [ ] **Step 3: Implement**
 
 ```typescript
-// packages/cli/src/ensure-adapter.ts
-import type { Adapter, InstallContext } from "@agmux/adapters";
+// packages/cli/src/adapter-ready.ts
+import type { Adapter, InstallContext, AgentKind } from "@agmux/adapters";
 
-// Idempotent: install only when missing or drifted. Best-effort — direct exec
-// proceeds even if install fails (the session is just untracked until fixed).
-// Returns true when the plugin is present after the call. (Stage 2 §D2.)
-export function ensureAdapterInstalled(adapter: Adapter, ctx: InstallContext): boolean {
-  try {
-    const st = adapter.status(ctx);
-    if (st.installed && !st.drift) return true;
-    adapter.install(ctx);
-    return true;
-  } catch {
-    return false;
-  }
+// Direct exec needs the plugin present, but `agmux run` MUST NOT write the user's
+// Claude config without consent (Stage 2 §D2). So we only CHECK: if the plugin is
+// missing/drifted, emit a one-line hint (the documented install command IS the
+// consent path) and report not-ready, so the caller falls back to wrapped. Never
+// installs, never throws.
+export function adapterReadyOrHint(
+  adapter: Adapter,
+  ctx: InstallContext,
+  kind: AgentKind,
+  out: (line: string) => void,
+): boolean {
+  let st;
+  try { st = adapter.status(ctx); } catch { return false; }
+  if (st.installed && !st.drift) return true;
+  const what = st.drift ? "outdated" : "not installed";
+  out(`agmux: ${kind} adapter ${what} — native tracking off. Enable it with: agmux adapter install --kind ${kind}  (launching wrapped for now)`);
+  return false;
 }
 ```
 
-(If `Adapter`/`InstallContext` are not yet re-exported from `@agmux/adapters`, add them to its `index.ts` exports — verify with `grep -n "InstallContext\|export type Adapter" packages/adapters/src/index.ts` and add `export type { Adapter, InstallContext } from "./core/types.ts";` if missing.)
+(If `Adapter`/`InstallContext`/`AgentKind` are not re-exported from `@agmux/adapters`, verify with `grep -n "InstallContext\|export type Adapter\|AgentKind" packages/adapters/src/index.ts`; `AgentKind` is from `@agmux/protocol` and may be imported from there instead. Add `export type { Adapter, InstallContext } from "./core/types.ts";` to the adapters `index.ts` if missing.)
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `bun test packages/cli/tests/ensure-adapter.test.ts`
+Run: `bun test packages/cli/tests/adapter-ready.test.ts`
 Expected: PASS.
 
 - [ ] **Step 5: Typecheck + commit**
@@ -641,8 +657,8 @@ Expected: PASS.
 Run: `bun run --filter '@agmux/cli' typecheck`
 
 ```bash
-git add packages/cli/src/ensure-adapter.ts packages/cli/tests/ensure-adapter.test.ts packages/adapters/src/index.ts
-git commit -m "cli: add idempotent ensureAdapterInstalled"
+git add packages/cli/src/adapter-ready.ts packages/cli/tests/adapter-ready.test.ts packages/adapters/src/index.ts
+git commit -m "cli: add adapterReadyOrHint (no install without consent)"
 ```
 
 ---
@@ -781,7 +797,7 @@ In `bin/agmux.ts`, the `run` case computes `hasAdapter`, decides the mode, ensur
 
 ```typescript
 import { decideLaunchMode } from "../src/launch-mode.ts";
-import { ensureAdapterInstalled } from "../src/ensure-adapter.ts";
+import { adapterReadyOrHint } from "../src/adapter-ready.ts";
 ```
 
 ```typescript
@@ -795,18 +811,21 @@ import { ensureAdapterInstalled } from "../src/ensure-adapter.ts";
       // For profile mode the agent_kind is in the profile; resolve adapter presence
       // by kind when known, else assume present (profile implies a known provider).
       const adapter = kind ? registry.lookup(kind) : registry.lookup("claude");
-      const mode = decideLaunchMode({ wrapped: parsed.wrapped, hasAdapter: !!adapter });
+      let mode = decideLaunchMode({ wrapped: parsed.wrapped, hasAdapter: !!adapter });
 
+      // Direct exec needs the plugin present; we NEVER install without consent.
+      // If it isn't ready, adapterReadyOrHint prints the install hint and we fall
+      // back to wrapped (tracked, no config writes). (§D2.)
       if (mode === "direct" && adapter) {
-        const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
-        ensureAdapterInstalled(adapter, {
+        const ready = adapterReadyOrHint(adapter, {
           agentKind: (kind ?? "claude"),
           profile: parsed.kind === "profile" ? parsed.profileName : null,
           profileEnv: {},
           agmuxEmitPath: `${agmuxBin} emit`,
           stateDir,
           configDirOverride: null,
-        });
+        }, (kind ?? "claude"), (s) => console.error(s));
+        if (!ready) mode = "wrapped";
       }
 
       const common = { placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode } as const;
@@ -893,8 +912,7 @@ git commit -m "docs: note Stage 2 launcher flip in foundation"
 
 **Out-of-scope honored:** No Codex/provider work; no synthetic `session.resumed`; wrapper retained. Codex appears only as a *fallback* test case (no adapter → auto-wrap), not as new adapter code.
 
-**Type consistency:** `decideLaunchMode({wrapped,hasAdapter})→LaunchMode`; `RunOpts` gains `mode: LaunchMode`; `WrapperSpawn.argv` becomes executable-first for both modes (Task 8 refactor — verify all `buildWrapperSpawn`/`runCmd` callers updated); `resolvePaneCoords(paneId, exec?)→{session,window}|null`; `enrichTmuxCoords(events,env,resolve)`; `isFrozen(db,sid)` replaces `isEnded` at both call sites; `ensureAdapterInstalled(adapter,ctx)→boolean`.
+**Type consistency:** `decideLaunchMode({wrapped,hasAdapter})→LaunchMode`; `RunOpts` gains `mode: LaunchMode`; `WrapperSpawn.argv` becomes executable-first for both modes (Task 8 refactor — verify all `buildWrapperSpawn`/`runCmd` callers updated); `resolvePaneCoords(paneId, exec?)→{session,window}|null`; `enrichTmuxCoords(events,env,resolve)`; `isFrozen(db,sid)` replaces `isEnded` at both call sites; `adapterReadyOrHint(adapter,ctx,kind,out)→boolean` (never installs).
 
-**Open decisions surfaced for review:**
-1. **Auto-install on direct run (D2):** `run` refreshes agmux's own Claude plugin when missing/drifted. Alternative: never touch config on run, fall back to wrapped if not installed. Chosen auto-install for "just works"; flag if you prefer fallback.
-2. **Profile-mode adapter presence (Task 9):** profile mode assumes a known provider (looks up `claude`) since the kind lives in the profile config. If profiles can name adapter-less kinds, Task 9 should load the profile to read `agent_kind` first.
+**Open decision surfaced for review:**
+1. **Profile-mode adapter presence (Task 9):** profile mode assumes a known provider (looks up `claude`) since the kind lives in the profile config. If profiles can name adapter-less kinds, Task 9 should load the profile to read `agent_kind` first.
