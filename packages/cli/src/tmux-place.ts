@@ -101,3 +101,33 @@ export async function newSession(args: {
 export async function switchClient(target: string): Promise<void> {
   await $`tmux switch-client -t ${target}`.quiet();
 }
+
+// Best-effort lookup of a pane's session+window for session.registered enrichment.
+// Injectable exec keeps it unit-testable; the default shells out to tmux. Returns
+// null on any failure — callers must treat coords as optional.
+export type TmuxExec = (args: string[]) => Promise<string>;
+
+const defaultTmuxExec: TmuxExec = async (args) => {
+  // Use Bun.spawn for dynamic args (Bun.$ requires static template literals).
+  const proc = Bun.spawn(["tmux", ...args], { stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(proc.stdout).text();
+  await proc.exited;
+  if (proc.exitCode !== 0) throw new Error(`tmux exit ${proc.exitCode}`);
+  return out;
+};
+
+export async function resolvePaneCoords(
+  paneId: string,
+  exec: TmuxExec = defaultTmuxExec,
+): Promise<{ session: string; window: string } | null> {
+  try {
+    const out = await exec(["display-message", "-p", "-t", paneId, "#{session_name}\t#{window_id}"]);
+    const parts = out.trim().split("\t");
+    const session = parts[0];
+    const window = parts[1];
+    if (!session || !window) return null;
+    return { session, window };
+  } catch {
+    return null;
+  }
+}
