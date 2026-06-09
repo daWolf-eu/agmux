@@ -6,6 +6,7 @@ import {
 } from "@agmux/adapters";
 import type { AgentKind, CapabilitySourceType, IngestEnvelope } from "@agmux/protocol";
 import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV } from "@agmux/protocol";
+import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
 
 export interface ParsedEmit {
   from: string;
@@ -41,6 +42,7 @@ export interface EmitDeps {
   newId?: () => string;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  resolveTmux?: TmuxExec;
 }
 
 function parseRaw(stdin: string): unknown {
@@ -62,6 +64,22 @@ function discoverHubUrl(env: Record<string, string | undefined>, stateDir: strin
     if (Number.isInteger(port) && port > 0) return `http://127.0.0.1:${port}`;
   } catch { /* no hub running / unreadable → queue fallback */ }
   return undefined;
+}
+
+// Fill tmux_session/window on session.registered payloads (best effort: fires once
+// per registration, never throws, leaves coords null on miss).
+export async function enrichTmuxCoords(
+  events: Array<{ kind: string; payload: any }>,
+  env: Record<string, string | undefined>,
+  resolve: (paneId: string) => Promise<{ session: string; window: string } | null>,
+): Promise<void> {
+  const pane = env.TMUX_PANE;
+  if (!pane) return;
+  const reg = events.filter((e) => e.kind === "session.registered" && e.payload && e.payload.tmux_session == null);
+  if (reg.length === 0) return;
+  const coords = await resolve(pane);
+  if (!coords) return;
+  for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
 }
 
 // Hot-path contract (spec §4.2): NEVER throws, NEVER writes stdout, drops on
@@ -106,6 +124,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     const stamped = stampIngestEvents(events, {
       agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now, newId: deps.newId,
     });
+    await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux));
     await postOrQueue(stamped, {
       hubUrl: discoverHubUrl(deps.env, deps.stateDir), stateDir: deps.stateDir,
       queueKey: nativeId ?? claimId!, // one of the two is set (guard above)
