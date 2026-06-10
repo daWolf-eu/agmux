@@ -7,6 +7,28 @@ import { resolvePrefix } from "./id-resolve.ts";
 
 export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
+export interface AttachCoords { tmux_session: string; tmux_window: string; tmux_pane: string | null; }
+
+// Build the tmux invocation(s) that focus a session's pane.
+//   inTmux  → switch the current client's window, then select the pane (two
+//             independent commands; switch-client returns immediately).
+//   !inTmux → one foreground `attach-session` that also selects window + pane,
+//             chained with literal `;` separators (each its own argv element so
+//             tmux treats it as a command separator — no shell escaping).
+// Pane ids (`%N`) are server-global, so `select-pane -t %N` needs no qualifier.
+// Without a stored pane we fall back to window-only (prior behavior).
+export function buildAttachCommands(c: AttachCoords, inTmux: boolean): string[][] {
+  const winTarget = `${c.tmux_session}:${c.tmux_window}`;
+  if (inTmux) {
+    const cmds: string[][] = [["switch-client", "-t", winTarget]];
+    if (c.tmux_pane) cmds.push(["select-pane", "-t", c.tmux_pane]);
+    return cmds;
+  }
+  const argv = ["attach-session", "-t", c.tmux_session, ";", "select-window", "-t", winTarget];
+  if (c.tmux_pane) argv.push(";", "select-pane", "-t", c.tmux_pane);
+  return [argv];
+}
+
 export async function attachCmd(opts: AttachOpts): Promise<number> {
   const listR = await fetch(`${opts.hubUrl}/sessions?all=1&limit=1000`);
   if (!listR.ok) { console.error(`hub error ${listR.status}`); return 1; }
@@ -21,10 +43,16 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   };
 
   if (LIVE_STATUSES.includes(session.status) && session.tmux_session && session.tmux_window) {
-    if (process.env.TMUX) {
-      await $`tmux switch-client -t ${session.tmux_session}:${session.tmux_window}`;
-    } else {
-      await $`tmux attach -t ${session.tmux_session} \\; select-window -t ${session.tmux_session}:${session.tmux_window}`;
+    const inTmux = !!process.env.TMUX;
+    const cmds = buildAttachCommands(
+      { tmux_session: session.tmux_session, tmux_window: session.tmux_window, tmux_pane: session.tmux_pane },
+      inTmux,
+    );
+    // !inTmux yields a single foreground attach (inherit stdio so it takes the
+    // terminal); inTmux yields quick non-blocking switch/select commands.
+    for (const args of cmds) {
+      if (inTmux) await $`tmux ${args}`.quiet();
+      else await $`tmux ${args}`;
     }
     return 0;
   }
