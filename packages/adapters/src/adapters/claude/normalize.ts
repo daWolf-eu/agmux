@@ -13,14 +13,14 @@ interface ClaudeHookStdin {
 
 export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
   const raw = (input.raw ?? {}) as ClaudeHookStdin & Record<string, unknown>;
-  // Nesting guard: Claude exports CLAUDE_CODE_SESSION_ID into hook environments.
-  // When a nested claude run (e.g. a hook script spawning `claude -p`) inherits
-  // the wrapped session's AGMUX_SESSION_ID, its hook stdin carries the NESTED
-  // native id while the env may still carry the OUTER one. Any disagreement
-  // means the event's identity is suspect — drop everything rather than pollute
-  // the wrapped session. Absent env or matching ids pass through untouched.
+  // Nesting guard (Stage 2): only meaningful when a wrapper CLAIM is in play.
+  // With a claim, an env-vs-stdin mismatch means a nested `claude` inherited our
+  // AGMUX_SESSION_ID — drop it rather than pollute the claimed session. Without a
+  // claim (direct/native exec) every run self-registers under its own native id,
+  // so the mismatch is a legitimate sub-agent and must pass through.
+  const claim = input.env?.AGMUX_SESSION_ID;
   const envSid = input.env?.CLAUDE_CODE_SESSION_ID;
-  if (envSid && raw.session_id && envSid !== raw.session_id) return { events: [] };
+  if (claim && envSid && raw.session_id && envSid !== raw.session_id) return { events: [] };
   switch (input.point) {
     case "session.registered": {
       if (!raw.session_id) return { events: [] };

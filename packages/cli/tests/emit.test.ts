@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseEmitArgs, runEmit } from "../src/emit.ts";
+import { parseEmitArgs, runEmit, enrichTmuxCoords } from "../src/emit.ts";
 import { createRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 import * as fs from "node:fs";
@@ -122,6 +122,24 @@ test("runEmit drops when neither a native id nor AGMUX_SESSION_ID is available",
     registry: reg(), env: {}, stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
   });
   expect(called).toBe(false);
+});
+
+test("fills tmux_session/window on session.registered when pane resolves", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
+  expect(events[0].payload).toMatchObject({ tmux_session: "agmux", tmux_window: "@4" });
+});
+
+test("leaves coords null when resolver returns null", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => null);
+  expect(events[0].payload).toMatchObject({ tmux_session: null, tmux_window: null });
+});
+
+test("no-ops when not in tmux (no TMUX_PANE)", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: null } }] as any;
+  await enrichTmuxCoords(events, {}, async () => ({ session: "x", window: "@1" }));
+  expect(events[0].payload).toMatchObject({ tmux_session: null, tmux_window: null });
 });
 
 test("runEmit discovers the hub via the port file when AGMUX_HUB_URL is unset", async () => {

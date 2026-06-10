@@ -39,6 +39,12 @@ In baseline (A) one process runs both roles on one machine. In (B), host-agents 
 > [`docs/superpowers/specs/2026-06-05-native-first-design.md`](superpowers/specs/2026-06-05-native-first-design.md).
 > Sessions now self-register from their own hooks; the hub resolves native identity
 > to a canonical session at ingest. The wrapper remains an opt-in launcher.
+>
+> **Stage 2 (2026-06-09):** the launcher flip is realized — `agmux run` direct-execs an
+> adapter-backed agent (it self-registers via its plugin); the PTY wrapper is the
+> `--wrapped`/auto fallback (used for adapter-less kinds, or when the plugin isn't
+> installed — `run` never installs without consent, it hints and falls back). The
+> normalize nesting guard and the projection freeze are now wrapped/claim-scoped.
 
 Two layers feed the same ingest API:
 

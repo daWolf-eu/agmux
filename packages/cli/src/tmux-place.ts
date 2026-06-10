@@ -50,12 +50,14 @@ export async function splitPane(args: {
   cmd: string[];
   env: Record<string, string>;
   detach: boolean;
+  cwd?: string;
 }): Promise<PaneCoords> {
   // `tmux split-window -d` creates the new pane without making it the active
   // pane in the caller's client.
   const detachFlag = args.detach ? ["-d"] : [];
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux split-window -t ${args.targetPane} ${detachFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
@@ -66,6 +68,7 @@ export async function newWindow(args: {
   cmd: string[];
   env: Record<string, string>;
   detach: boolean;
+  cwd?: string;
 }): Promise<PaneCoords> {
   await ensureSession(args.sessionName);
   // `tmux new-window -d` creates the window but does not switch the client to it.
@@ -73,9 +76,10 @@ export async function newWindow(args: {
   // index will do); without it tmux interprets `<session>` as "active window of
   // that session" and will refuse if its index is already taken.
   const detachFlag = args.detach ? ["-d"] : [];
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const target = `${args.sessionName}:`;
   const out = (
-    await $`tmux new-window -t ${target} -n ${args.windowName} ${detachFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
@@ -85,13 +89,15 @@ export async function newSession(args: {
   windowName: string;
   cmd: string[];
   env: Record<string, string>;
+  cwd?: string;
 }): Promise<PaneCoords> {
   if (await hasSession(args.sessionName)) {
     throw new Error(`tmux session already exists: ${args.sessionName}`);
   }
   // `tmux new-session -d` returns coords via -P -F just like new-window.
+  const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux new-session -d -s ${args.sessionName} -n ${args.windowName} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
   return parseCoords(out);
 }
@@ -100,4 +106,34 @@ export async function newSession(args: {
 // new-session creation, since `new-session -d` doesn't switch on its own.
 export async function switchClient(target: string): Promise<void> {
   await $`tmux switch-client -t ${target}`.quiet();
+}
+
+// Best-effort lookup of a pane's session+window for session.registered enrichment.
+// Injectable exec keeps it unit-testable; the default shells out to tmux. Returns
+// null on any failure — callers must treat coords as optional.
+export type TmuxExec = (args: string[]) => Promise<string>;
+
+const defaultTmuxExec: TmuxExec = async (args) => {
+  // Use Bun.spawn for dynamic args (Bun.$ requires static template literals).
+  const proc = Bun.spawn(["tmux", ...args], { stdout: "pipe", stderr: "ignore" });
+  const out = await new Response(proc.stdout).text();
+  await proc.exited;
+  if (proc.exitCode !== 0) throw new Error(`tmux exit ${proc.exitCode}`);
+  return out;
+};
+
+export async function resolvePaneCoords(
+  paneId: string,
+  exec: TmuxExec = defaultTmuxExec,
+): Promise<{ session: string; window: string } | null> {
+  try {
+    const out = await exec(["display-message", "-p", "-t", paneId, "#{session_name}\t#{window_id}"]);
+    const parts = out.trim().split("\t");
+    const session = parts[0];
+    const window = parts[1];
+    if (!session || !window) return null;
+    return { session, window };
+  } catch {
+    return null;
+  }
 }

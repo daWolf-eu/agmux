@@ -177,12 +177,12 @@ test("claudeAdapter passes the framework conformance battery (real fs install)",
 });
 
 test("identity mismatch (nested claude run) drops all events", () => {
-  // env CLAUDE_CODE_SESSION_ID comes from the OUTER claude; stdin session_id is
-  // the nested one's. Disagreement = leaked AGMUX_SESSION_ID — drop everything.
+  // Under a wrapper CLAIM (AGMUX_SESSION_ID set), env CLAUDE_CODE_SESSION_ID is the
+  // OUTER claude's while stdin session_id is the nested one's — leaked claim, drop all.
   const out = normalizeClaude({
     point: "session.linked", source: "hook-command",
     raw: { session_id: "nested-xyz" }, target,
-    env: { CLAUDE_CODE_SESSION_ID: "outer-abc" },
+    env: { AGMUX_SESSION_ID: "claimed", CLAUDE_CODE_SESSION_ID: "outer-abc" },
   });
   expect(out.events).toHaveLength(0);
 });
