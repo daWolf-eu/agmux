@@ -40,3 +40,25 @@ export interface SessionRow {
   // an empty session without a second query.
   turn_count?: number | null;
 }
+
+// `agmux ls --status` vocabulary: group aliases over the raw statuses.
+export const STATUS_GROUPS: Record<string, readonly SessionStatus[]> = {
+  active: ["running", "waiting"],
+  open: LIVE_STATUSES,
+  closed: TERMINAL_STATUSES,
+};
+
+// "active" | "open" | "closed" | comma-separated raw statuses → status list.
+// Returns null for anything else (caller decides how to error).
+export function expandStatusFilter(value: string): SessionStatus[] | null {
+  const group = STATUS_GROUPS[value];
+  if (group) return [...group];
+  const parts = value.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+  if (parts.length === 0) return null;
+  const out: SessionStatus[] = [];
+  for (const p of parts) {
+    if (!(SESSION_STATUSES as readonly string[]).includes(p)) return null;
+    out.push(p as SessionStatus);
+  }
+  return out;
+}

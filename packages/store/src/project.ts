@@ -124,11 +124,16 @@ function applyEnded(db: Database, ev: EventEnvelope): void {
 // an out-of-order or stray adapter event can never resurrect a dead session.
 // (`lost` is computed at read time in lost.ts, not stored, so the stored status
 // here is only idle/running/waiting/ended; excluding 'ended' == "still live".)
+// We also bump last_heartbeat_ts: the column means "last proof of life", and an
+// adapter activity event is exactly that. Native rows never heartbeat (pid-sweep
+// liveness), so this is what makes their LAST_SEEN / activity-sort meaningful;
+// for wrapper rows it only adds evidence (the process clearly ran a turn), so
+// staleness-based lost detection gets more accurate, never less.
 function applyLiveStatus(db: Database, ev: EventEnvelope, status: "running" | "idle" | "waiting"): void {
   db.query(`
-    UPDATE sessions SET status = ?
+    UPDATE sessions SET status = ?, last_heartbeat_ts = ?
      WHERE session_id = ? AND status NOT IN ('ended')
-  `).run(status, ev.session_id);
+  `).run(status, ev.ts, ev.session_id);
 }
 
 // A WRAPPER session is FROZEN after session.ended: identity/usage refinements are

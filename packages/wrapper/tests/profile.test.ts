@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { loadProfile, parseConfig } from "../src/profile.ts";
+import { loadLsConfig, parseLsSection } from "../src/profile.ts";
 
 const sampleToml = `
 [profiles.claude-work]
@@ -71,5 +72,31 @@ env = { CLAUDE_CONFIG_DIR = "~/.claude-alt", PLAIN = "no-tilde", EMBEDDED = "/op
   // Non-prefix tildes are left alone (matches shell semantics).
   expect(p.env.PLAIN).toBe("no-tilde");
   expect(p.env.EMBEDDED).toBe("/opt/~tilde");
+});
+
+test("parseLsSection reads all keys", () => {
+  expect(parseLsSection({ limit: 5, sort: "activity", asc: true, reverse: true, status: "open" }))
+    .toEqual({ limit: 5, sort: "activity", asc: true, reverse: true, status: "open" });
+});
+
+test("parseLsSection: absent section and absent keys → empty defaults", () => {
+  expect(parseLsSection(undefined)).toEqual({});
+  expect(parseLsSection({})).toEqual({});
+});
+
+test("parseLsSection rejects invalid values loudly", () => {
+  expect(() => parseLsSection({ sort: "foo" })).toThrow(/sort/);
+  expect(() => parseLsSection({ limit: 0 })).toThrow(/limit/);
+  expect(() => parseLsSection({ limit: "5" })).toThrow(/limit/);
+  expect(() => parseLsSection({ asc: "yes" })).toThrow(/asc/);
+  expect(() => parseLsSection({ reverse: 1 })).toThrow(/reverse/);
+  expect(() => parseLsSection({ status: "bogus" })).toThrow(/status/);
+});
+
+test("loadLsConfig: missing file → {}; [ls] section parsed; broken profiles ignored", () => {
+  expect(loadLsConfig(path.join(tmp, "nope.toml"))).toEqual({});
+  const f = path.join(tmp, "config.toml");
+  fs.writeFileSync(f, `[profiles.broken]\nagent_kind = "magic"\n\n[ls]\nlimit = 5\nsort = "activity"\n`);
+  expect(loadLsConfig(f)).toEqual({ limit: 5, sort: "activity" });
 });
 
