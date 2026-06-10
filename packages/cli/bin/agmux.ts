@@ -16,7 +16,8 @@ import { formatVersion } from "../src/version-cmd.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
 import { adapterReadyOrHint } from "../src/adapter-ready.ts";
-import { loadProfile } from "@agmux/wrapper";
+import { loadProfile, loadLsConfig, type LsConfig } from "@agmux/wrapper";
+import { parseLsArgs } from "../src/parse-ls.ts";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
 const hubBin = process.env.AGMUX_HUB_BIN ?? "agmux-hub";
@@ -31,7 +32,9 @@ function usage(): never {
   run [placement] [--wrapped] -p <profile>
     placement: -d/--detach (default --new-pane) | --new-pane | --new-window | --new-session
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
-  ls [--live] [--all] [--agent <kind>] [--profile <name>]
+  ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
+     [--status <active|open|closed|s1,s2,...>] [--live] [--agent <kind>] [--profile <name>]
+     defaults configurable in ~/.config/agmux/config.toml under [ls]
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
@@ -136,15 +139,13 @@ async function main(): Promise<number> {
       }, agmuxBin);
     }
     case "ls": {
-      const live = argv.includes("--live");
-      const all = argv.includes("--all");
-      const agentIdx = argv.indexOf("--agent");
-      const profileIdx = argv.indexOf("--profile");
-      return lsCmd({
-        live, all, hubUrl,
-        agent: agentIdx >= 0 ? argv[agentIdx + 1] : undefined,
-        profile: profileIdx >= 0 ? argv[profileIdx + 1] : undefined,
-      });
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      let lsDefaults: LsConfig;
+      try { lsDefaults = loadLsConfig(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+      const parsed = parseLsArgs(argv.slice(1), lsDefaults);
+      if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      return lsCmd({ ...parsed.opts, hubUrl });
     }
     case "attach": {
       const id = argv[1]; if (!id) usage();
