@@ -40,11 +40,14 @@ export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow 
 }
 
 export interface ListSessionsOpts {
-  live?: boolean;
+  live?: boolean;                       // alias for statuses=LIVE_STATUSES
+  statuses?: readonly SessionStatus[];  // post-computation filter; wins over `live`
   agent_kind?: string;
   profile?: string;
   since?: string;
   limit?: number;
+  sort?: "started" | "activity";
+  order?: "asc" | "desc";
   now?: Date;
 }
 
@@ -54,19 +57,30 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
+
+  // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
+  const sortCol = opts.sort === "activity" ? "COALESCE(last_heartbeat_ts, start_ts)" : "start_ts";
+  const dir = opts.order === "asc" ? "ASC" : "DESC";
+
+  // Status is computed in JS (lost = heartbeat staleness), so with a status
+  // filter the row cap must apply AFTER filtering — a SQL LIMIT would starve
+  // the result when newer rows fail the filter.
+  const statuses = opts.statuses ?? (opts.live ? LIVE_STATUSES : undefined);
+  const limit = opts.limit ?? 200;
+
   const sql = `SELECT s.*, u.turn_count FROM sessions s
                LEFT JOIN session_usage u ON u.session_id = s.session_id
                ${where.length ? "WHERE " + where.join(" AND ") : ""}
-               ORDER BY start_ts DESC
-               LIMIT ?`;
-  params.push(opts.limit ?? 200);
+               ORDER BY ${sortCol} ${dir}
+               ${statuses ? "" : "LIMIT ?"}`;
+  if (!statuses) params.push(limit);
   const raws = db.query<any, any[]>(sql).all(...(params as any[]));
   const now = opts.now ?? new Date();
   let rows = raws.map(decodeRow).map((r) => {
     r.status = computeEffectiveStatus(r, now);
     return r;
   });
-  if (opts.live) rows = rows.filter((r) => LIVE_STATUSES.includes(r.status));
+  if (statuses) rows = rows.filter((r) => statuses.includes(r.status)).slice(0, limit);
   return rows;
 }
 
