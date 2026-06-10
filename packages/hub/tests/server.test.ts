@@ -201,3 +201,44 @@ test("POST /ingest rejects an envelope with neither session_id nor identity", as
   expect(r.status).toBe(400);
   server.stop();
 });
+
+test("GET /sessions?status=closed returns only ended/lost", async () => {
+  const { server, url } = makeServer();
+  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(startedEv) });
+  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      event_id: "01HZ7P0K8WVQH8WGS8X9DC9F40",
+      ts: new Date(Date.now() + 1000).toISOString(),
+      session_id: startedEv.session_id,
+      kind: "session.ended", version: 1, host: "macbook.local",
+      payload: { exit_code: 0, signal: null, reason: "normal" } }) });
+  const closed = await (await fetch(`${url}/sessions?status=closed`)).json() as any;
+  expect(closed.sessions).toHaveLength(1);
+  expect(closed.sessions[0].status).toBe("ended");
+  const active = await (await fetch(`${url}/sessions?status=active`)).json() as any;
+  expect(active.sessions).toHaveLength(0);
+  server.stop();
+});
+
+test("GET /sessions?sort=started&order=asc orders oldest first", async () => {
+  const { server, url } = makeServer();
+  const older = { ...startedEv, event_id: "01HZ7P0K8WVQH8WGS8X9DC9F41",
+    session_id: "0190a3e0-0000-7000-8000-00000000000a",
+    ts: new Date(Date.now() - 60_000).toISOString() };
+  await fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify([older, startedEv]) });
+  const asc = await (await fetch(`${url}/sessions?sort=started&order=asc`)).json() as any;
+  expect(asc.sessions.map((s: any) => s.session_id)).toEqual([older.session_id, startedEv.session_id]);
+  const desc = await (await fetch(`${url}/sessions?sort=started&order=desc`)).json() as any;
+  expect(desc.sessions.map((s: any) => s.session_id)).toEqual([startedEv.session_id, older.session_id]);
+  server.stop();
+});
+
+test("GET /sessions rejects invalid sort/order/status with 400", async () => {
+  const { server, url } = makeServer();
+  expect((await fetch(`${url}/sessions?sort=bogus`)).status).toBe(400);
+  expect((await fetch(`${url}/sessions?order=sideways`)).status).toBe(400);
+  expect((await fetch(`${url}/sessions?status=bogus`)).status).toBe(400);
+  server.stop();
+});

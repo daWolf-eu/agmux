@@ -1,7 +1,8 @@
 import type { Server } from "bun";
 import type { Store } from "@agmux/store";
 import type { IngestEnvelope } from "@agmux/protocol";
-import { validateIngestEnvelope, validateKnownPayload, AGMUX_VERSION } from "@agmux/protocol";
+import { validateIngestEnvelope, validateKnownPayload, AGMUX_VERSION, expandStatusFilter } from "@agmux/protocol";
+import type { SessionStatus } from "@agmux/protocol";
 
 export interface CreateServerOpts {
   store: Store;
@@ -41,18 +42,35 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
       }
 
       if (m === "GET" && url.pathname === "/sessions") {
-        // Live filter is opt-in via ?live=1. Default returns all statuses so
-        // recently-ended sessions remain discoverable for `agmux attach`.
+        // Status filter is opt-in (?status=<group|csv>; ?live=1 is the legacy
+        // alias for status=open). Default returns all statuses so recently-ended
+        // sessions remain discoverable for `agmux attach`.
         const live = url.searchParams.get("live") === "1";
         const agent_kind = url.searchParams.get("agent_kind") ?? undefined;
         const profile = url.searchParams.get("profile") ?? undefined;
         const since = url.searchParams.get("since") ?? undefined;
         const limit = url.searchParams.get("limit");
+        const sort = url.searchParams.get("sort") ?? undefined;
+        const order = url.searchParams.get("order") ?? undefined;
+        const status = url.searchParams.get("status") ?? undefined;
+        if (sort !== undefined && sort !== "started" && sort !== "activity")
+          return Response.json({ error: "invalid_sort" }, { status: 400 });
+        if (order !== undefined && order !== "asc" && order !== "desc")
+          return Response.json({ error: "invalid_order" }, { status: 400 });
+        let statuses: SessionStatus[] | undefined;
+        if (status !== undefined) {
+          const expanded = expandStatusFilter(status);
+          if (!expanded) return Response.json({ error: "invalid_status" }, { status: 400 });
+          statuses = expanded;
+        }
         const sessions = store.listSessions({
           live,
+          statuses,
           agent_kind,
           profile,
           since,
+          sort,
+          order,
           limit: limit ? Number(limit) : undefined,
         });
         return Response.json({ sessions });
