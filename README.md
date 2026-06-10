@@ -65,11 +65,24 @@ agmux run --kind=codex /opt/codex-rc1    # explicit --kind for unknown binary na
 agmux run -p claude-work                 # profile from ~/.config/agmux/config.toml
 
 agmux ls                     # recent 50 sessions (any status) — newest first
-agmux ls --live              # only live sessions (idle/running/waiting)
-agmux ls --all               # uncapped
+agmux ls -n 5 -r             # 5 most recent, newest at the bottom (above your prompt)
+agmux ls --sort activity     # order by last activity instead of start time (--asc to flip)
+agmux ls --status active     # active (running|waiting), open (+idle), closed (ended|lost), or raw statuses
+agmux ls --all               # uncapped   (--live = alias for --status open)
 agmux attach <prefix>        # live → tmux switch; ended/lost → relaunch w/ same session_id
 agmux kill   <prefix>        # signal it (default SIGTERM)
 agmux inspect <prefix>       # full row + recent events as JSON
+```
+
+`ls` defaults are configurable in `~/.config/agmux/config.toml` (CLI flags win):
+
+```toml
+[ls]
+limit = 10
+sort = "activity"   # started | activity
+asc = false
+reverse = true      # newest at the bottom
+status = "open"     # active | open | closed | comma-separated statuses
 ```
 
 State lives in `~/.agmux/` — `agmux.sqlite` (event log + projection), `hub.pid` / `hub.port`, and a `queue/` directory for write-through fallback when the hub is briefly unreachable. The hub auto-spawns on first invocation; binds 127.0.0.1 only.
