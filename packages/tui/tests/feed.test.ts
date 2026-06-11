@@ -89,3 +89,15 @@ test("unsubscribe clears the interval and silences late results", async () => {
   await Bun.sleep(0);
   expect(updates).toEqual([]); // in-flight result after stop is dropped
 });
+
+test("unsubscribe silences a late rejection too", async () => {
+  let reject!: (e: Error) => void;
+  const gated = new Promise<Response>((_res, rej) => { reject = rej; });
+  const h = harness([() => gated]);
+  const errors: string[] = [];
+  const stop = h.feed.subscribe(() => {}, (e) => errors.push(e.message));
+  stop();
+  reject(new Error("late ECONNREFUSED"));
+  await Bun.sleep(0);
+  expect(errors).toEqual([]);
+});

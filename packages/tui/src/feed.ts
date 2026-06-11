@@ -4,7 +4,10 @@ import type { SessionRow } from "@agmux/protocol";
 // adds real streaming to the hub, an SSE-backed implementation replaces this
 // without any UI change (polling stays as the reconnect fallback).
 export interface SessionFeed {
-  /** Starts delivery; returns an unsubscribe function. onUpdate fires only when rows changed. */
+  /**
+   * Starts delivery; returns an unsubscribe function. onUpdate fires only when rows changed.
+   * Call subscribe at most once per feed instance; create a new feed for a new subscription.
+   */
   subscribe(onUpdate: (rows: SessionRow[]) => void, onError: (e: Error) => void): () => void;
 }
 
