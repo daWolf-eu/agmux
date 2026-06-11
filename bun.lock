@@ -27,6 +27,7 @@
         "@agmux/adapters": "workspace:*",
         "@agmux/hub": "workspace:*",
         "@agmux/protocol": "workspace:*",
+        "@agmux/tui": "workspace:*",
         "@agmux/wrapper": "workspace:*",
       },
       "devDependencies": {
