@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@agmux/protocol": "workspace:*",
+    "@agmux/tui": "workspace:*",
     "@agmux/hub": "workspace:*",
     "@agmux/adapters": "workspace:*",
     "@agmux/wrapper": "workspace:*"

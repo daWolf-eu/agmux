@@ -6,6 +6,8 @@ import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { parseRunArgs } from "../src/parse-run.ts";
 import { lsCmd } from "../src/ls.ts";
+import { watchCmd } from "../src/watch.ts";
+import { parseWatchArgs } from "../src/parse-watch.ts";
 import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
@@ -35,6 +37,8 @@ function usage(): never {
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
      [--status <active|open|closed|s1,s2,...>] [--live] [--agent <kind>] [--profile <name>]
      defaults configurable in ~/.config/agmux/config.toml under [ls]
+  watch [ls flags] [-i/--interval <seconds>]
+     fullscreen live view of ls (defaults: --status open --sort started); q quits
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
@@ -146,6 +150,11 @@ async function main(): Promise<number> {
       const parsed = parseLsArgs(argv.slice(1), lsDefaults);
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
       return lsCmd({ ...parsed.opts, hubUrl });
+    }
+    case "watch": {
+      const parsed = parseWatchArgs(argv.slice(1));
+      if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      return watchCmd({ ...parsed.opts, hubUrl });
     }
     case "attach": {
       const id = argv[1]; if (!id) usage();

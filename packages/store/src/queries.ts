@@ -28,11 +28,20 @@ function decodeRow(raw: any): SessionRow {
     status: raw.status as SessionStatus,
     origin: (raw.origin ?? "wrapper") as SessionRow["origin"],
     turn_count: raw.turn_count ?? null,
+    last_tool: raw.last_tool ?? null,
+    last_tool_detail: raw.last_tool_detail ?? null,
+    last_input_kind: raw.last_input_kind ?? null,
+    activity_ts: raw.activity_ts ?? null,
   };
 }
 
 export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow | null {
-  const raw = db.query<any, [string]>(`SELECT * FROM sessions WHERE session_id = ?`).get(sid);
+  const raw = db.query<any, [string]>(
+    `SELECT s.*, a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts
+       FROM sessions s
+       LEFT JOIN session_activity a ON a.session_id = s.session_id
+      WHERE s.session_id = ?`,
+  ).get(sid);
   if (!raw) return null;
   const r = decodeRow(raw);
   r.status = computeEffectiveStatus(r, now);
@@ -59,7 +68,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
 
   // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
-  const sortCol = opts.sort === "activity" ? "COALESCE(last_heartbeat_ts, start_ts)" : "start_ts";
+  const sortCol = opts.sort === "activity" ? "COALESCE(s.last_heartbeat_ts, s.start_ts)" : "s.start_ts";
   const dir = opts.order === "asc" ? "ASC" : "DESC";
 
   // Status is computed in JS (lost = heartbeat staleness), so with a status
@@ -68,8 +77,11 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   const statuses = opts.statuses ?? (opts.live ? LIVE_STATUSES : undefined);
   const limit = opts.limit ?? 200;
 
-  const sql = `SELECT s.*, u.turn_count FROM sessions s
+  const sql = `SELECT s.*, u.turn_count,
+                      a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts
+               FROM sessions s
                LEFT JOIN session_usage u ON u.session_id = s.session_id
+               LEFT JOIN session_activity a ON a.session_id = s.session_id
                ${where.length ? "WHERE " + where.join(" AND ") : ""}
                ORDER BY ${sortCol} ${dir}
                ${statuses ? "" : "LIMIT ?"}`;

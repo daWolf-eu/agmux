@@ -77,3 +77,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_native_identity
   ON sessions(agent_kind, native_session_id, host)
   WHERE native_session_id IS NOT NULL;
 `;
+
+export const SCHEMA_V4 = `
+-- Live-activity projection (what is the agent doing right now). The
+-- working/waiting/idle state machine already lives in sessions.status; this
+-- table only captures what events would otherwise drop: the current tool
+-- (tool.used is log-only without it) and the awaited input kind. No FK,
+-- matching session_usage. Null fields = nothing observed (yet).
+CREATE TABLE IF NOT EXISTS session_activity (
+  session_id       TEXT PRIMARY KEY,
+  last_tool        TEXT,
+  last_tool_detail TEXT,
+  last_input_kind  TEXT,
+  activity_ts      TEXT
+);
+`;

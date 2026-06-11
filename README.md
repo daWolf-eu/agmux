@@ -69,6 +69,9 @@ agmux ls -n 5 -r             # 5 most recent, newest at the bottom (above your p
 agmux ls --sort activity     # order by last activity instead of start time (--asc to flip)
 agmux ls --status active     # active (running|waiting), open (+idle), closed (ended|lost), or raw statuses
 agmux ls --all               # uncapped   (--live = alias for --status open)
+# ls/watch show an ACTIVITY column: current tool while running, awaited input kind while waiting
+agmux watch                  # fullscreen live view of ls (status open, sorted by start); q quits
+agmux watch -i 2 --agent claude   # accepts ls filter flags + -i/--interval seconds
 agmux attach <prefix>        # live → tmux switch; ended/lost → relaunch w/ same session_id
 agmux kill   <prefix>        # signal it (default SIGTERM)
 agmux inspect <prefix>       # full row + recent events as JSON

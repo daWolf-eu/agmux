@@ -6,7 +6,7 @@ test("runMigrations on empty db creates schema and stamps version", () => {
   const db = new Database(":memory:");
   const r = runMigrations(db);
   expect(r.from).toBe(0);
-  expect(r.to).toBe(3);
+  expect(r.to).toBe(4);
 
   const tables = db.query<{ name: string }, []>(
     `SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`
@@ -16,15 +16,15 @@ test("runMigrations on empty db creates schema and stamps version", () => {
   expect(tables).toContain("_meta");
 
   const v = db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key='schema_version'`).get();
-  expect(v?.value).toBe("3");
+  expect(v?.value).toBe("4");
 });
 
 test("runMigrations is idempotent", () => {
   const db = new Database(":memory:");
   runMigrations(db);
   const r2 = runMigrations(db);
-  expect(r2.from).toBe(3);
-  expect(r2.to).toBe(3);
+  expect(r2.from).toBe(4);
+  expect(r2.to).toBe(4);
 });
 
 test("migration v2 creates session_usage, dedup_key column, and adapter_capabilities column", () => {
@@ -45,13 +45,13 @@ test("migration v2 creates session_usage, dedup_key column, and adapter_capabili
   expect(sessionCols).toContain("adapter_capabilities");
 
   const ver = db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key='schema_version'`).get();
-  expect(Number(ver!.value)).toBe(3);
+  expect(Number(ver!.value)).toBe(4);
 });
 
 test("migration v3 adds sessions.origin defaulting to 'wrapper'", () => {
   const db = new Database(":memory:");
   const { to } = runMigrations(db);
-  expect(to).toBe(3);
+  expect(to).toBe(4);
   const cols = db.query<{ name: string; dflt_value: string | null }, []>(`PRAGMA table_info(sessions)`).all();
   const origin = cols.find((c) => c.name === "origin");
   expect(origin).toBeDefined();
@@ -75,4 +75,16 @@ test("resolver index allows many NULL native ids but rejects a duplicate (kind,n
   ins("s1", null); ins("s2", null);            // two NULLs: fine
   ins("s3", "n-1");
   expect(() => ins("s4", "n-1")).toThrow();     // duplicate (claude, n-1, h): rejected
+});
+
+test("v4 creates session_activity and bumps schema_version", () => {
+  const db = new Database(":memory:");
+  runMigrations(db);
+  const version = db
+    .query<{ value: string }, []>(`SELECT value FROM _meta WHERE key = 'schema_version'`)
+    .get();
+  expect(version?.value).toBe("4");
+  const cols = db.query<{ name: string }, []>(`PRAGMA table_info(session_activity)`).all()
+    .map((c) => c.name);
+  expect(cols).toEqual(["session_id", "last_tool", "last_tool_detail", "last_input_kind", "activity_ts"]);
 });

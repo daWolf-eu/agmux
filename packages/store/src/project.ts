@@ -27,15 +27,22 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "turn.started":
       applyLiveStatus(db, ev, "running");
       bumpTurnCount(db, ev);
+      clearActivityTool(db, ev);
       return;
     case "turn.ended":
       applyLiveStatus(db, ev, "idle");
+      clearActivityAll(db, ev);
       return;
     case "input.required":
       applyLiveStatus(db, ev, "waiting");
+      applyActivityInputRequired(db, ev);
       return;
     case "input.received":
       applyLiveStatus(db, ev, "running");
+      clearActivityInputKind(db, ev);
+      return;
+    case "tool.used":
+      applyActivityToolUsed(db, ev);
       return;
     case "usage.reported":
       applyUsage(db, ev);
@@ -43,7 +50,7 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "session.adapter_attached":
       applyAdapterAttached(db, ev);
       return;
-    // tool.used / prompt.sent are known but log-only: no projection effect.
+    // prompt.sent is known but log-only: no projection effect.
     default:
       // Unknown kinds are stored in events but do not touch the projection.
       return;
@@ -285,4 +292,59 @@ function applyUsage(db: Database, ev: EventEnvelope): void {
       p.model ?? null, rl, ev.session_id,
     );
   }
+}
+
+// --- session_activity projection ---------------------------------------------
+// Mirrors the applyLiveStatus guard: writes apply only to a session row that
+// exists and is not ended, so a stray post-death adapter event is inert and a
+// telemetry event for an unknown session can't mint an orphan activity row.
+function activityWritable(db: Database, sessionId: string): boolean {
+  const row = db.query<{ status: string }, [string]>(
+    `SELECT status FROM sessions WHERE session_id = ?`,
+  ).get(sessionId);
+  return row != null && row.status !== "ended";
+}
+
+function applyActivityToolUsed(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  const p = ev.payload as any;
+  db.query(`
+    INSERT INTO session_activity (session_id, last_tool, last_tool_detail, activity_ts)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      last_tool = excluded.last_tool,
+      last_tool_detail = excluded.last_tool_detail,
+      activity_ts = excluded.activity_ts
+  `).run(ev.session_id, p.tool, p.detail ?? null, ev.ts);
+}
+
+function applyActivityInputRequired(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  const p = ev.payload as any;
+  db.query(`
+    INSERT INTO session_activity (session_id, last_input_kind, activity_ts)
+    VALUES (?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      last_input_kind = excluded.last_input_kind,
+      activity_ts = excluded.activity_ts
+  `).run(ev.session_id, p.kind ?? null, ev.ts);
+}
+
+function clearActivityInputKind(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  db.query(`UPDATE session_activity SET last_input_kind = NULL, activity_ts = ? WHERE session_id = ?`)
+    .run(ev.ts, ev.session_id);
+}
+
+// turn.started: a tool from the previous turn must not show as current.
+function clearActivityTool(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  db.query(`UPDATE session_activity SET last_tool = NULL, last_tool_detail = NULL, activity_ts = ? WHERE session_id = ?`)
+    .run(ev.ts, ev.session_id);
+}
+
+function clearActivityAll(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  db.query(`UPDATE session_activity SET last_tool = NULL, last_tool_detail = NULL, last_input_kind = NULL, activity_ts = ? WHERE session_id = ?`)
+    .run(ev.ts, ev.session_id);
 }

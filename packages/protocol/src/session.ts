@@ -39,6 +39,13 @@ export interface SessionRow {
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.
   turn_count?: number | null;
+  // Joined from the session_activity projection (null/absent = nothing
+  // observed). last_tool/_detail are only meaningful while status=running;
+  // last_input_kind ("prompt" | "permission" | "confirm") while status=waiting.
+  last_tool?: string | null;
+  last_tool_detail?: string | null;
+  last_input_kind?: string | null;
+  activity_ts?: string | null;
 }
 
 // `agmux ls --status` vocabulary: group aliases over the raw statuses.
