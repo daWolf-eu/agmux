@@ -1,5 +1,6 @@
 export * from "./run.ts";
 export * from "./ls.ts";
+export * from "./watch.ts";
 export * from "./inspect.ts";
 export * from "./kill.ts";
 export * from "./attach.ts";
