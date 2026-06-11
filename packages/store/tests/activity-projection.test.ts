@@ -105,3 +105,11 @@ test("rebuildProjections clears and replays session_activity", () => {
   s.rebuildProjections();
   expect(activity(s)?.last_tool).toBe("Edit");
 });
+
+test("lost guard parity: a lost session is still activity-writable (like applyLiveStatus)", () => {
+  const s = Store.openInMemory();
+  startSession(s);
+  s.append(ev("session.lost", "2026-06-11T12:00:01.000Z", { reason: "pid_dead" }));
+  s.append(ev("tool.used", "2026-06-11T12:00:02.000Z", { tool: "Edit", detail: "a.ts" }));
+  expect(activity(s)?.last_tool).toBe("Edit");
+});
