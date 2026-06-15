@@ -294,3 +294,30 @@ test("status surfaces stderr detail when `codex plugin list` errors", () => {
     setCodexRunner(null);
   }
 });
+
+import { codexAdapter } from "../../src/adapters/codex/index.ts";
+import { assertAdapterConformance } from "../../src/core/conformance.ts";
+
+test("the codexAdapter exposes the expected shape", () => {
+  expect(codexAdapter.agentKind).toBe("codex");
+  expect(codexAdapter.sources({} as any).length).toBe(2);
+  expect(Object.keys(codexAdapter.capabilities({} as any))).toContain("usage.reported");
+  // Codex has no native session-id env var → nativeIdFromEnv is intentionally omitted.
+  expect(codexAdapter.nativeIdFromEnv).toBeUndefined();
+});
+
+test("codexAdapter passes the framework conformance battery (fake codex runner)", () => {
+  const fake = makeFakeCodex();
+  setCodexRunner(fake.run);
+  try {
+    const cfg = tmpCfg();
+    const state = tmpState();
+    const passed = assertAdapterConformance(codexAdapter, {
+      makeContext: () => ({ agentKind: "codex", profile: null, profileEnv: { CODEX_HOME: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state }),
+      makeResumeContext: (nid) => ({ agentKind: "codex", profile: null, command: "codex", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
+    });
+    expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+  } finally {
+    setCodexRunner(null);
+  }
+});
