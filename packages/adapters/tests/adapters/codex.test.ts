@@ -138,3 +138,33 @@ test("usage.reported reads token_count deltas (last_token_usage) and advances th
 test("usage.reported with a missing transcript path is a no-op", () => {
   expect(normalizeCodex({ point: "usage.reported", source: "transcript-delta", raw: { session_id: "x", transcript_path: "/no/such/file" }, cursor: null, target }).events).toHaveLength(0);
 });
+
+import { MARKETPLACE_FILES, PLUGIN_VERSION, MARKETPLACE_NAME, PLUGIN_NAME } from "../../src/adapters/codex/plugin-files.ts";
+
+test("marketplace payload contains manifest, plugin manifest, hooks, and an executable shim", () => {
+  const byPath = new Map(MARKETPLACE_FILES.map((f) => [f.path, f]));
+  expect(byPath.has(".agents/plugins/marketplace.json")).toBe(true);
+  expect(byPath.has("plugins/agmux/.codex-plugin/plugin.json")).toBe(true);
+  expect(byPath.has("plugins/agmux/hooks/hooks.json")).toBe(true);
+  expect(byPath.get("plugins/agmux/bin/agmux-emit")!.mode & 0o111).not.toBe(0); // executable
+});
+
+test("marketplace manifest references the local plugin; plugin manifest carries the version", () => {
+  const mkt = JSON.parse(MARKETPLACE_FILES.find((f) => f.path === ".agents/plugins/marketplace.json")!.content);
+  expect(mkt.name).toBe(MARKETPLACE_NAME);
+  expect(mkt.plugins[0]).toMatchObject({ name: PLUGIN_NAME, source: { source: "local", path: "./plugins/agmux" } });
+  const plugin = JSON.parse(MARKETPLACE_FILES.find((f) => f.path === "plugins/agmux/.codex-plugin/plugin.json")!.content);
+  expect(plugin).toMatchObject({ name: PLUGIN_NAME, version: PLUGIN_VERSION });
+});
+
+test("hooks wire every manifest point to `agmux emit --from=codex`", () => {
+  const hooks = JSON.parse(MARKETPLACE_FILES.find((f) => f.path === "plugins/agmux/hooks/hooks.json")!.content).hooks;
+  const all = JSON.stringify(hooks);
+  for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "PermissionRequest", "PostToolUse"]) {
+    expect(Object.keys(hooks)).toContain(ev);
+  }
+  expect(all).toContain("--from=codex");
+  expect(all).toContain("--point=session.registered");
+  expect(all).toContain("--point=usage.reported");
+  expect(all).toContain("--point=input.required");
+});
