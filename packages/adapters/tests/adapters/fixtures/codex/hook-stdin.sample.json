@@ -1,0 +1,7 @@
+{
+  "SessionStart": { "session_id": "019e7396-de62-7f91-9a3d-df4b0a99aaaf", "transcript_path": "/Users/me/.codex/sessions/2026/05/29/rollout-2026-05-29T13-55-27-019e7396-de62-7f91-9a3d-df4b0a99aaaf.jsonl", "cwd": "/work", "hook_event_name": "SessionStart", "model": "gpt-5.5", "permission_mode": "default", "source": "startup" },
+  "UserPromptSubmit": { "session_id": "019e7396-de62-7f91-9a3d-df4b0a99aaaf", "cwd": "/work", "hook_event_name": "UserPromptSubmit", "model": "gpt-5.5", "permission_mode": "default", "turn_id": "t-1", "prompt": "refactor the parser" },
+  "Stop": { "session_id": "019e7396-de62-7f91-9a3d-df4b0a99aaaf", "transcript_path": "/Users/me/.codex/sessions/2026/05/29/rollout-2026-05-29T13-55-27-019e7396-de62-7f91-9a3d-df4b0a99aaaf.jsonl", "cwd": "/work", "hook_event_name": "Stop", "model": "gpt-5.5", "permission_mode": "default", "turn_id": "t-1", "stop_hook_active": false, "last_assistant_message": "done" },
+  "PermissionRequest": { "session_id": "019e7396-de62-7f91-9a3d-df4b0a99aaaf", "cwd": "/work", "hook_event_name": "PermissionRequest", "model": "gpt-5.5", "permission_mode": "default", "turn_id": "t-1", "tool_name": "Bash", "tool_input": { "command": "rm -rf build" } },
+  "PostToolUse": { "session_id": "019e7396-de62-7f91-9a3d-df4b0a99aaaf", "cwd": "/work", "hook_event_name": "PostToolUse", "model": "gpt-5.5", "permission_mode": "default", "turn_id": "t-1", "tool_name": "Bash", "tool_use_id": "tu-1", "tool_input": { "command": "ls" }, "tool_response": { "exit_code": 0 } }
+}

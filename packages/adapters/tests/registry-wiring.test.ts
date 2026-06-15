@@ -6,3 +6,9 @@ test("the default registry has the claude adapter wired in", () => {
   expect(r.kinds()).toContain("claude");
   expect(r.lookup("claude")!.agentKind).toBe("claude");
 });
+
+test("the default registry has the codex adapter wired in", () => {
+  const r = createDefaultRegistry();
+  expect(r.kinds()).toContain("codex");
+  expect(r.lookup("codex")!.agentKind).toBe("codex");
+});
