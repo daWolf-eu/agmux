@@ -93,3 +93,48 @@ test("prompt.sent is redacted (chars only); tool.used carries the tool name", ()
   expect(normalizeCodex({ point: "prompt.sent", source: "hook-command", raw: { prompt: "hello" }, target }).events[0]?.payload).toEqual({ chars: 5, redacted: true });
   expect(normalizeCodex({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash" }, target }).events[0]?.payload).toEqual({ tool: "Bash", ok: true });
 });
+
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const FX = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "codex");
+const transcript = path.join(FX, "transcript.sample.jsonl");
+
+test("usage.reported reads token_count deltas (last_token_usage) and advances the cursor", () => {
+  const out = normalizeCodex({
+    point: "usage.reported", source: "transcript-delta",
+    raw: { session_id: "sess-x", transcript_path: transcript, model: "gpt-5.5", turn_id: "t-1" },
+    cursor: null, target,
+  });
+  expect(out.events).toHaveLength(2); // two token_count records; response_item skipped
+  expect(out.events[0]).toMatchObject({
+    kind: "usage.reported",
+    payload: {
+      cumulative: false, source: "transcript-delta", model: "gpt-5.5",
+      input_tokens: 10768, output_tokens: 270, cache_read_tokens: 1920, cache_write_tokens: null,
+      reasoning_output_tokens: 82, total_tokens: 11038, model_context_window: 258400, turn_id: "t-1",
+    },
+  });
+  expect((out.events[0]!.payload as any).rate_limit).toMatchObject({ used_percent: 5.0 });
+  // Second record carries its own per-turn delta (last_token_usage, not the cumulative total).
+  expect(out.events[1]!.payload).toMatchObject({ input_tokens: 15029, output_tokens: 381, cache_read_tokens: 10624 });
+
+  // dedup keys are byte-offset based, distinct, and monotonic.
+  const k0 = out.events[0]!.dedup_key!;
+  const k1 = out.events[1]!.dedup_key!;
+  expect(k0).toMatch(/^codex:transcript-delta:sess-x:\d+$/);
+  expect(k1).toMatch(/^codex:transcript-delta:sess-x:\d+$/);
+  expect(Number(k1.split(":").pop())).toBeGreaterThan(Number(k0.split(":").pop()));
+  expect(Number(out.cursor)).toBeGreaterThan(0);
+
+  // Re-reading from the advanced cursor yields nothing new.
+  const again = normalizeCodex({
+    point: "usage.reported", source: "transcript-delta",
+    raw: { session_id: "sess-x", transcript_path: transcript }, cursor: out.cursor, target,
+  });
+  expect(again.events).toHaveLength(0);
+});
+
+test("usage.reported with a missing transcript path is a no-op", () => {
+  expect(normalizeCodex({ point: "usage.reported", source: "transcript-delta", raw: { session_id: "x", transcript_path: "/no/such/file" }, cursor: null, target }).events).toHaveLength(0);
+});

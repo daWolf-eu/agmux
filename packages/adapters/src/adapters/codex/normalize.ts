@@ -60,8 +60,61 @@ export function normalizeCodex(input: NormalizeInput): NormalizeOutput {
   }
 }
 
-// Filled in Task 4.
-function normalizeUsage(_input: NormalizeInput, _raw: CodexHookStdin): NormalizeOutput {
-  const _events: CanonicalEvent[] = [];
-  return { events: _events };
+// Read NEW rollout records since the byte cursor. Codex writes token_count as an
+// `event_msg` whose payload.type === "token_count"; info.last_token_usage is the
+// per-turn delta (info.total_token_usage is the session total — we want the delta
+// so session_usage accumulates). Codex records have no stable per-record uuid, so
+// the dedup key uses the record's byte offset (monotonic, stable across re-reads).
+function normalizeUsage(input: NormalizeInput, raw: CodexHookStdin): NormalizeOutput {
+  const transcriptPath = raw.transcript_path;
+  if (!transcriptPath || !fs.existsSync(transcriptPath)) return { events: [] };
+
+  const start = input.cursor ? Number(input.cursor) : 0;
+  const size = fs.statSync(transcriptPath).size;
+  if (!Number.isFinite(start) || start < 0 || start >= size) return { events: [], cursor: String(size) };
+
+  const buf = fs.readFileSync(transcriptPath);
+  const slice = buf.subarray(start).toString("utf8");
+  // Only consume whole lines; leave a trailing partial line for the next read.
+  const lastNl = slice.lastIndexOf("\n");
+  const consumable = lastNl < 0 ? "" : slice.slice(0, lastNl + 1);
+  const newCursor = start + Buffer.byteLength(consumable, "utf8");
+
+  const nativeId = raw.session_id ?? "unknown";
+  const model = raw.model ?? null;
+  const events: CanonicalEvent[] = [];
+  let offset = start;
+  for (const line of consumable.split("\n")) {
+    const recOffset = offset;
+    offset += Buffer.byteLength(line, "utf8") + 1; // +1 for the consumed "\n"
+    if (line.trim() === "") continue;
+    let rec: any;
+    try { rec = JSON.parse(line); } catch { continue; }
+    let tc: any = null;
+    if (rec?.type === "event_msg" && rec.payload?.type === "token_count") tc = rec.payload;
+    else if (rec?.type === "token_count") tc = rec; // defensive: future flattened shape
+    if (!tc) continue;
+    const u = tc.info?.last_token_usage;
+    if (!u) continue;
+    events.push({
+      kind: "usage.reported",
+      payload: {
+        cumulative: false,
+        source: "transcript-delta",
+        model,
+        input_tokens: u.input_tokens ?? null,
+        output_tokens: u.output_tokens ?? null,
+        cache_read_tokens: u.cached_input_tokens ?? null,
+        cache_write_tokens: null, // Codex exposes no write-cache figure
+        reasoning_output_tokens: u.reasoning_output_tokens ?? null,
+        total_tokens: u.total_tokens ?? null,
+        model_context_window: tc.info?.model_context_window ?? null,
+        rate_limit: tc.rate_limits?.primary ?? null,
+        turn_id: raw.turn_id ?? null,
+        as_of: rec.timestamp ?? null,
+      },
+      dedup_key: `codex:transcript-delta:${nativeId}:${recOffset}`,
+    });
+  }
+  return { events, cursor: String(newCursor) };
 }
