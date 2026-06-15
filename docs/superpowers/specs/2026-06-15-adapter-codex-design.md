@@ -213,3 +213,34 @@ Use `last_token_usage` (the per-turn delta, `cumulative:false`) so `session_usag
 | Resume | `claude --resume <id>` | `codex resume <id>` |
 
 Everything else — source/capability shape, hook→point wiring, normalize control flow, `isolationMode: "config-dir"`, `runtimeGate: "hook-trust"`, projection behavior — is identical.
+
+---
+
+## 11. Live verification notes (codex 0.135.0, 2026-06-15)
+
+The §7 install/CLI unknowns were exercised against the real `codex` binary via the
+adapter's own `codexInstall`/`codexStatus`/`codexUninstall` (default runner) against a
+scratch `CODEX_HOME`. Where reality diverged from the §7 assumptions, the
+implementation follows the findings below:
+
+1. **Install flow confirmed.** `codex plugin marketplace add <abs local dir>` +
+   `codex plugin add agmux@agmux` (the `<plugin>@<marketplace>` ref form) succeed
+   non-interactively, no auth/model spin-up. A local marketplace at a materialized
+   `<stateDir>/codex/marketplace/` with `.agents/plugins/marketplace.json` +
+   `plugins/agmux/{.codex-plugin/plugin.json,hooks/hooks.json,bin/agmux-emit}` is
+   accepted and snapshotted into `<CODEX_HOME>/plugins/cache/`.
+2. **`codex plugin list` STATUS is a PHRASE, not a token (§7.2 corrected).** The real
+   row is `agmux@agmux  installed, enabled  1.0.0  /path` — STATUS = `installed, enabled`
+   (also `installed, disabled` / `not installed`), VERSION a separate column. The
+   parser splits on runs of 2+ spaces (`/\s{2,}/`) into `[PLUGIN, STATUS, VERSION, PATH]`;
+   `installed` ⇔ `STATUS.startsWith("installed")`, version = column 3. (An earlier
+   single-token assumption produced a false `drift:true`; fixed + regression-tested.)
+3. **Full round-trip verified.** `status` → not installed; `install` → `status`
+   `{installed:true, version:"1", drift:false}`; `uninstall` → `status` not installed,
+   and the raw `codex plugin list` shows no `agmux` row.
+4. **Still pending live verification** (needs a wrapped interactive session, as for
+   Claude): that the plugin's `hooks/hooks.json` actually fires end-to-end; the hook
+   trust gate (`/hooks`) behavior at session start; the exact `SessionStart` matcher
+   support; the `PermissionRequest` stdin field for `input.required.kind`; and whether
+   `CODEX_VERSION` is present in the hook env for `agent_version`. These remain as
+   declared assumptions until a live wrapped session confirms them.
