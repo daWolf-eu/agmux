@@ -168,3 +168,104 @@ test("hooks wire every manifest point to `agmux emit --from=codex`", () => {
   expect(all).toContain("--point=usage.reported");
   expect(all).toContain("--point=input.required");
 });
+
+import { resolveConfigDir, marketplaceDir, codexInstall, codexUninstall, codexStatus, setCodexRunner, ADAPTER_VERSION, type CodexRunner } from "../../src/adapters/codex/install.ts";
+import * as os from "node:os";
+import * as fs from "node:fs";
+
+// Stateful fake `codex` CLI: tracks install state per CODEX_HOME and renders a
+// realistic `codex plugin list` table. `versionOverride` lets a test force drift.
+function makeFakeCodex(versionOverride?: string) {
+  const installed = new Set<string>();
+  const calls: string[][] = [];
+  const run: CodexRunner = (args, env) => {
+    calls.push(args);
+    const home = env.CODEX_HOME ?? "";
+    const sub = args.join(" ");
+    if (sub === "plugin add agmux@agmux") { installed.add(home); return { code: 0, stdout: "", stderr: "" }; }
+    if (sub === "plugin remove agmux@agmux") { installed.delete(home); return { code: 0, stdout: "", stderr: "" }; }
+    if (sub === "plugin list") {
+      const ver = versionOverride ?? PLUGIN_VERSION;
+      const row = installed.has(home)
+        ? `agmux@agmux   installed      ${ver}  /x`
+        : `agmux@agmux   not installed          /x`;
+      return { code: 0, stdout: `PLUGIN        STATUS         VERSION  PATH\n${row}\n`, stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" }; // marketplace add/remove
+  };
+  return { run, calls, installed };
+}
+
+function tmpCfg(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-codex-cfg-")); }
+function tmpState(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-codex-state-")); }
+
+const ictx = (configDir: string | undefined, stateDir: string, profile: string | null = null, override: string | null = null) => ({
+  agentKind: "codex" as const, profile,
+  profileEnv: (configDir ? { CODEX_HOME: configDir } : {}) as Record<string, string>,
+  agmuxEmitPath: "/abs/agmux emit", stateDir,
+  ...(override ? { configDirOverride: override } : {}),
+});
+
+test("resolveConfigDir: explicit override > profileEnv CODEX_HOME > default ~/.codex", () => {
+  expect(resolveConfigDir(ictx("/cfg", "/s"))).toBe("/cfg");
+  expect(resolveConfigDir(ictx("/cfg", "/s", null, "/override"))).toBe("/override");
+  expect(resolveConfigDir(ictx(undefined, "/s")).endsWith("/.codex")).toBe(true);
+});
+
+test("install materializes the marketplace, runs codex plugin add, and flips status; uninstall reverses", () => {
+  const fake = makeFakeCodex();
+  setCodexRunner(fake.run);
+  try {
+    const cfg = tmpCfg();
+    const state = tmpState();
+    const ctx = ictx(cfg, state, "work");
+
+    expect(codexStatus(ctx).installed).toBe(false);
+    const rec = codexInstall(ctx);
+    expect(rec).toMatchObject({ agentKind: "codex", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
+
+    // Marketplace fully materialized on disk.
+    const mkt = marketplaceDir(state);
+    expect(fs.existsSync(path.join(mkt, ".agents/plugins/marketplace.json"))).toBe(true);
+    expect(fs.existsSync(path.join(mkt, "plugins/agmux/hooks/hooks.json"))).toBe(true);
+    expect(fs.statSync(path.join(mkt, "plugins/agmux/bin/agmux-emit")).mode & 0o111).not.toBe(0);
+
+    // The official commands were invoked, CODEX_HOME-scoped.
+    expect(fake.calls.some((c) => c[0] === "plugin" && c[1] === "marketplace" && c[2] === "add")).toBe(true);
+    expect(fake.calls.some((c) => c.join(" ") === "plugin add agmux@agmux")).toBe(true);
+
+    expect(codexStatus(ctx)).toMatchObject({ installed: true, version: ADAPTER_VERSION, drift: false, runtimeGate: "hook-trust" });
+
+    codexUninstall(ctx, rec);
+    expect(codexStatus(ctx).installed).toBe(false);
+  } finally {
+    setCodexRunner(null);
+  }
+});
+
+test("status reports drift when the installed plugin version differs from the embedded payload", () => {
+  const fake = makeFakeCodex("0.0.1-stale");
+  setCodexRunner(fake.run);
+  try {
+    const ctx = ictx(tmpCfg(), tmpState());
+    codexInstall(ctx);
+    expect(codexStatus(ctx).drift).toBe(true);
+  } finally {
+    setCodexRunner(null);
+  }
+});
+
+test("separate CODEX_HOME dirs install independently (profile isolation)", () => {
+  const fake = makeFakeCodex();
+  setCodexRunner(fake.run);
+  try {
+    const state = tmpState();
+    const cfgA = tmpCfg();
+    const cfgB = tmpCfg();
+    codexInstall(ictx(cfgA, state));
+    expect(codexStatus(ictx(cfgA, state)).installed).toBe(true);
+    expect(codexStatus(ictx(cfgB, state)).installed).toBe(false);
+  } finally {
+    setCodexRunner(null);
+  }
+});
