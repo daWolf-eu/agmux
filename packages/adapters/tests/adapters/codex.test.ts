@@ -187,7 +187,7 @@ function makeFakeCodex(versionOverride?: string) {
     if (sub === "plugin list") {
       const ver = versionOverride ?? PLUGIN_VERSION;
       const row = installed.has(home)
-        ? `agmux@agmux   installed      ${ver}  /x`
+        ? `agmux@agmux  installed, enabled  ${ver}  /x`
         : `agmux@agmux   not installed          /x`;
       return { code: 0, stdout: `PLUGIN        STATUS         VERSION  PATH\n${row}\n`, stderr: "" };
     }
@@ -317,6 +317,21 @@ test("codexAdapter passes the framework conformance battery (fake codex runner)"
       makeResumeContext: (nid) => ({ agentKind: "codex", profile: null, command: "codex", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
     });
     expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+  } finally {
+    setCodexRunner(null);
+  }
+});
+
+test("status parses the real `installed, enabled` STATUS phrase without false drift", () => {
+  const realish: CodexRunner = (args) =>
+    args.join(" ") === "plugin list"
+      ? { code: 0, stdout: `PLUGIN       STATUS              VERSION  PATH\nagmux@agmux  installed, enabled  ${PLUGIN_VERSION}  /p/plugins/agmux\n`, stderr: "" }
+      : { code: 0, stdout: "", stderr: "" };
+  setCodexRunner(realish);
+  try {
+    const st = codexStatus(ictx(tmpCfg(), tmpState()));
+    expect(st.installed).toBe(true);
+    expect(st.drift).toBe(false); // version 1.0.0 parsed correctly, not ","
   } finally {
     setCodexRunner(null);
   }
