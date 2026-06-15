@@ -269,3 +269,28 @@ test("separate CODEX_HOME dirs install independently (profile isolation)", () =>
     setCodexRunner(null);
   }
 });
+
+test("install throws when `codex plugin add` exits non-zero (no silent success)", () => {
+  const failing: CodexRunner = (args) =>
+    args.join(" ") === "plugin add agmux@agmux"
+      ? { code: 1, stdout: "", stderr: "trust required" }
+      : { code: 0, stdout: "", stderr: "" };
+  setCodexRunner(failing);
+  try {
+    expect(() => codexInstall(ictx(tmpCfg(), tmpState()))).toThrow(/codex plugin add agmux@agmux failed \(exit 1\): trust required/);
+  } finally {
+    setCodexRunner(null);
+  }
+});
+
+test("status surfaces stderr detail when `codex plugin list` errors", () => {
+  const failing: CodexRunner = () => ({ code: 1, stdout: "", stderr: "codex not found" });
+  setCodexRunner(failing);
+  try {
+    const st = codexStatus(ictx(tmpCfg(), tmpState()));
+    expect(st.installed).toBe(false);
+    expect(st.detail).toBe("codex not found");
+  } finally {
+    setCodexRunner(null);
+  }
+});

@@ -26,6 +26,17 @@ let runner: CodexRunner = defaultRunner;
 // Test seam: inject a fake `codex` runner; pass null to restore the real one.
 export function setCodexRunner(r: CodexRunner | null): void { runner = r ?? defaultRunner; }
 
+// Run a codex command and fail loudly on a non-zero exit — install must never
+// report success when the official CLI actually failed (missing binary, trust
+// gate, network). status()/uninstall() stay tolerant (they read state, not mutate).
+function runCodex(args: string[], env: Record<string, string>): CodexRunResult {
+  const r = runner(args, env);
+  if (r.code !== 0) {
+    throw new Error(`codex ${args.join(" ")} failed (exit ${r.code}): ${r.stderr.trim() || "no stderr"}`);
+  }
+  return r;
+}
+
 // config-dir isolation (spec §6): explicit CLI override wins, then the profile's
 // own CODEX_HOME, then the default. Mirrors Claude's CLAUDE_CONFIG_DIR resolution.
 export function resolveConfigDir(ctx: InstallContext): string {
@@ -51,8 +62,8 @@ export function codexInstall(ctx: InstallContext): InstallRecord {
   const configDir = resolveConfigDir(ctx);
   const env = { CODEX_HOME: configDir };
   const mkt = materialize(ctx.stateDir);
-  runner(["plugin", "marketplace", "add", mkt], env);
-  runner(["plugin", "add", PLUGIN_REF], env);
+  runCodex(["plugin", "marketplace", "add", mkt], env);
+  runCodex(["plugin", "add", PLUGIN_REF], env);
   const configToml = path.join(configDir, "config.toml");
   return {
     agentKind: "codex",
@@ -75,9 +86,12 @@ export function codexUninstall(ctx: InstallContext, _record: InstallRecord): voi
 
 export function codexStatus(ctx: InstallContext): InstallStatus {
   const env = { CODEX_HOME: resolveConfigDir(ctx) };
-  const { stdout } = runner(["plugin", "list"], env);
-  const line = stdout.split("\n").find((l) => l.trim().startsWith(PLUGIN_REF));
-  if (!line) return { installed: false, version: null, drift: false, runtimeGate: "hook-trust" };
+  const res = runner(["plugin", "list"], env);
+  const line = res.stdout.split("\n").find((l) => l.trim().startsWith(PLUGIN_REF));
+  if (!line) {
+    const detail = res.code !== 0 ? (res.stderr.trim() || `codex plugin list exited ${res.code}`) : undefined;
+    return { installed: false, version: null, drift: false, runtimeGate: "hook-trust", ...(detail ? { detail } : {}) };
+  }
   // Columns: `PLUGIN STATUS VERSION PATH`. After the ref, STATUS is "installed" or
   // "not installed" — test "not " first since it contains "installed" as a substring.
   const after = line.trim().slice(PLUGIN_REF.length).trim();
