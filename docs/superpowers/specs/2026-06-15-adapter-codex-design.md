@@ -33,7 +33,7 @@ This doc fills in the framework's deliberately-open per-provider seams for Codex
 
 ## 2. Decision: official plugin via local marketplace
 
-`install()` does **not** hand-edit `hooks.json` or `config.toml`. agmux ships a **static, embedded plugin behind a local marketplace**; install/add/remove/status are driven through Codex's official `codex plugin` commands, scoped to the target `CODEX_HOME`. This mirrors Claude's documented marketplace fallback flow (claude-design §11 note 1). The skills-dir-style filesystem-only install Claude ultimately adopted has no documented Codex equivalent for hooks, so the marketplace flow is the committed baseline; a filesystem-only shortcut is an impl-session optimization to probe (§7), not assumed.
+`install()` does **not** hand-edit `hooks.json` or `config.toml`. agmux ships a **static, embedded plugin behind a local marketplace**; install/add/remove/status are driven through Codex's official `codex plugin` commands, scoped to the target `CODEX_HOME`. **No published package or network is involved** — the plugin ships inside the agmux binary and installs from a materialized local dir; the only externality is the `codex` binary on PATH. This mirrors Claude's documented marketplace fallback flow (claude-design §11 note 1). The skills-dir-style filesystem-only install Claude ultimately adopted has no documented Codex equivalent for hooks, so the marketplace flow is the committed baseline; a filesystem-only shortcut is an impl-session optimization to probe (§7), not assumed.
 
 ### 2.1 The shipped artifacts (static, embedded as code)
 
