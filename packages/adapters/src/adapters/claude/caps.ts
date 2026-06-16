@@ -17,7 +17,9 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
 ];
 
 // Finest-grain descriptors (spec §4). input.required is "partial" — Claude's
-// Notification hook is coarse (permission AND idle). input.received is omitted:
+// Notification hook is multi-purpose; the adapter discriminates by notification_type:
+// permission_prompt → permission, elicitation_dialog → prompt; idle_prompt, auth_success,
+// and other ack types are dropped (not blocks). input.received is omitted:
 // it is fulfilled implicitly by the next turn.started, never emitted.
 export const CLAUDE_CAPABILITIES: CapabilityMap = {
   "session.registered": { fulfil: "yes", source: "hook-command", liveness: "live" },

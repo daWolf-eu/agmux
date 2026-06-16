@@ -40,7 +40,7 @@ export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
   return [fmt(header), ...data.map(fmt)];
 }
 
-function short(iso: string): string {
+export function short(iso: string): string {
   // 2026-05-28T12:00:00.000Z → 05-28 12:00
   return iso.slice(5, 16).replace("T", " ");
 }

@@ -38,9 +38,16 @@ test("turn.started / turn.ended map to canonical events", () => {
   expect(ended.events[0]).toEqual({ kind: "turn.ended", payload: { reason: "end_turn" } });
 });
 
-test("input.required distinguishes permission vs prompt", () => {
+test("input.required only fires for genuine blocks; idle is a no-op", () => {
+  // permission dialog → waiting (permission)
   expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: { notification_type: "permission_prompt" }, target }).events[0]?.payload).toEqual({ kind: "permission" });
-  expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: { notification_type: "idle" }, target }).events[0]?.payload).toEqual({ kind: "prompt" });
+  // MCP elicitation (server requesting user input) → waiting (prompt)
+  expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: { notification_type: "elicitation_dialog" }, target }).events[0]?.payload).toEqual({ kind: "prompt" });
+  // idle_prompt = turn finished, awaiting the next message → NOT a block; no event (Stop→turn.ended governs "idle")
+  expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: { notification_type: "idle_prompt" }, target }).events).toHaveLength(0);
+  // auth/ack/unknown notification types → no event
+  expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: { notification_type: "auth_success" }, target }).events).toHaveLength(0);
+  expect(normalizeClaude({ point: "input.required", source: "hook-command", raw: {}, target }).events).toHaveLength(0);
 });
 
 test("prompt.sent is redacted (chars only); tool.used carries the tool name", () => {

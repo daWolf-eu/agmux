@@ -110,3 +110,45 @@ export function loadLsConfig(configPath: string): LsConfig {
   const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
   return parseLsSection(raw.ls);
 }
+
+export interface DashConfig {
+  preview?: "mirror" | "events" | "detail";
+  interval?: number; // seconds
+  status?: string;   // group alias or comma-separated statuses (pre-validated)
+  sort?: "started" | "activity";
+}
+
+export function parseDashSection(raw: unknown): DashConfig {
+  if (raw === undefined) return {};
+  if (typeof raw !== "object" || raw === null) throw new Error("[dash] must be a table");
+  const r = raw as Record<string, unknown>;
+  const out: DashConfig = {};
+  if (r.preview !== undefined) {
+    if (r.preview !== "mirror" && r.preview !== "events" && r.preview !== "detail")
+      throw new Error(`[dash] preview must be 'mirror', 'events' or 'detail', got ${JSON.stringify(r.preview)}`);
+    out.preview = r.preview;
+  }
+  if (r.interval !== undefined) {
+    if (typeof r.interval !== "number" || !(r.interval > 0))
+      throw new Error(`[dash] interval must be a positive number, got ${JSON.stringify(r.interval)}`);
+    out.interval = r.interval;
+  }
+  if (r.status !== undefined) {
+    if (typeof r.status !== "string" || expandStatusFilter(r.status) === null)
+      throw new Error(`[dash] status must be active|open|closed or comma-separated statuses, got ${JSON.stringify(r.status)}`);
+    out.status = r.status;
+  }
+  if (r.sort !== undefined) {
+    if (r.sort !== "started" && r.sort !== "activity")
+      throw new Error(`[dash] sort must be 'started' or 'activity', got ${JSON.stringify(r.sort)}`);
+    out.sort = r.sort;
+  }
+  return out;
+}
+
+// Parses ONLY the [dash] table. Missing file or section → {} (built-in defaults). Invalid values throw.
+export function loadDashConfig(configPath: string): DashConfig {
+  if (!fs.existsSync(configPath)) return {};
+  const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  return parseDashSection(raw.dash);
+}

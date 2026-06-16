@@ -50,8 +50,16 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
     case "turn.ended":
       return { events: [{ kind: "turn.ended", payload: { reason: raw.reason ?? null } }] };
     case "input.required": {
-      const kind = raw.notification_type === "permission_prompt" ? "permission" : "prompt";
-      return { events: [{ kind: "input.required", payload: { kind } }] };
+      // Claude's Notification hook is multi-purpose (https://code.claude.com/docs/en/hooks):
+      // classify by notification_type. Only genuine blocks become input.required → status
+      // "waiting": permission_prompt → permission; elicitation_dialog (MCP requesting input)
+      // → prompt. idle_prompt (turn finished, awaiting the next message), auth_success, and
+      // the elicitation_complete/response acks are NOT blocks — emit nothing so the reliable
+      // Stop → turn.ended transition leaves the session "idle".
+      const nt = raw.notification_type;
+      if (nt === "permission_prompt") return { events: [{ kind: "input.required", payload: { kind: "permission" } }] };
+      if (nt === "elicitation_dialog") return { events: [{ kind: "input.required", payload: { kind: "prompt" } }] };
+      return { events: [] };
     }
     case "prompt.sent":
       return { events: [{ kind: "prompt.sent", payload: { chars: typeof raw.prompt === "string" ? raw.prompt.length : null, redacted: true } }] };

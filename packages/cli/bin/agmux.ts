@@ -8,6 +8,8 @@ import { parseRunArgs } from "../src/parse-run.ts";
 import { lsCmd } from "../src/ls.ts";
 import { watchCmd } from "../src/watch.ts";
 import { parseWatchArgs } from "../src/parse-watch.ts";
+import { dashCmd } from "../src/dash.ts";
+import { parseDashArgs } from "../src/parse-dash.ts";
 import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
@@ -18,7 +20,7 @@ import { formatVersion } from "../src/version-cmd.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
 import { adapterReadyOrHint } from "../src/adapter-ready.ts";
-import { loadProfile, loadLsConfig, type LsConfig } from "@agmux/wrapper";
+import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig } from "@agmux/wrapper";
 import { parseLsArgs } from "../src/parse-ls.ts";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -39,6 +41,8 @@ function usage(): never {
      defaults configurable in ~/.config/agmux/config.toml under [ls]
   watch [ls flags] [-i/--interval <seconds>]
      fullscreen live view of ls (defaults: --status open --sort started); q quits
+  dash [ls flags] [-i/--interval <seconds>] [--preview <mirror|events|detail>]
+     interactive TUI: grouped sessions + preview; ⏎ attach, x kill, r resume, q quit
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
@@ -155,6 +159,15 @@ async function main(): Promise<number> {
       const parsed = parseWatchArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
       return watchCmd({ ...parsed.opts, hubUrl });
+    }
+    case "dash": {
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      let dashDefaults: DashConfig;
+      try { dashDefaults = loadDashConfig(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+      const parsed = parseDashArgs(argv.slice(1), dashDefaults);
+      if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      return dashCmd({ ...parsed.opts, hubUrl, wrapBin });
     }
     case "attach": {
       const id = argv[1]; if (!id) usage();

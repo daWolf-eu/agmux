@@ -38,3 +38,4 @@ docs/spikes/*/*.bun-build
 # TypeScript / Bun workspace
 *.tsbuildinfo
 bun.lock.bak
+.superpowers/
