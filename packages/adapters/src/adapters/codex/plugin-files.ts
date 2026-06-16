@@ -4,13 +4,21 @@
 // `bun build --compile` binary (where import.meta.dir is virtual). No published
 // package, no network — the only externality is the `codex` binary on PATH.
 
-export const PLUGIN_VERSION = "1.0.0";
+export const PLUGIN_VERSION = "1.0.1";
 export const MARKETPLACE_NAME = "agmux";
 export const PLUGIN_NAME = "agmux";
 
 // Hooks run via shell so ${AGMUX_BIN:-agmux} and $AGMUX_SESSION_ID expand at fire
 // time; --from=codex selects this adapter's normalize() inside `agmux emit`.
 const EMIT = "${AGMUX_BIN:-agmux} emit --from=codex";
+
+// codex 0.135 does NOT support `async:true` hooks — it warns "async hooks are not
+// supported yet" and SKIPS them, so an async hook silently never fires. To keep
+// the non-blocking intent we use SYNCHRONOUS command hooks that fork the work into
+// a subshell and return immediately: `( <cmd> & )` exits as soon as the job is
+// backgrounded. Safe for every point here — these emits are fire-and-forget
+// telemetry that return no decision to Codex.
+const bg = (cmd: string) => `( ${cmd} & )`;
 
 const MARKETPLACE_MANIFEST = {
   name: MARKETPLACE_NAME,
@@ -31,39 +39,40 @@ const PLUGIN_MANIFEST = {
   hooks: "./hooks/hooks.json",
 };
 
-// Hook wiring (spec §3.1): all async so they never delay Codex. session.registered
-// captures the agent pid via $PPID (the hook shell's parent is the codex process).
+// Hook wiring (spec §3.1): non-blocking via bg() self-fork (see above; codex has
+// no async-hook support). session.registered captures the agent pid via $PPID (the
+// hook shell's parent is the codex process).
 const HOOKS = {
   hooks: {
     SessionStart: [
       {
         matcher: "startup|resume|clear|compact",
         hooks: [
-          { type: "command", async: true, command: `AGMUX_AGENT_PID=$PPID ${EMIT} --source=hook-command --point=session.registered` },
-          { type: "command", async: true, command: `${EMIT} --attach` },
+          { type: "command", command: bg(`AGMUX_AGENT_PID=$PPID ${EMIT} --source=hook-command --point=session.registered`) },
+          { type: "command", command: bg(`${EMIT} --attach`) },
         ],
       },
     ],
     UserPromptSubmit: [
       {
         hooks: [
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=turn.started` },
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=prompt.sent` },
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=turn.started`) },
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=prompt.sent`) },
         ],
       },
     ],
     Stop: [
       {
         hooks: [
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=turn.ended` },
-          { type: "command", async: true, command: `${EMIT} --source=transcript-delta --point=usage.reported --cursor-file="$HOME/.agmux/cursors/codex-$AGMUX_SESSION_ID.cursor"` },
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=turn.ended`) },
+          { type: "command", command: bg(`${EMIT} --source=transcript-delta --point=usage.reported --cursor-file="$HOME/.agmux/cursors/codex-$AGMUX_SESSION_ID.cursor"`) },
         ],
       },
     ],
     PermissionRequest: [
       {
         hooks: [
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=input.required` },
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=input.required`) },
         ],
       },
     ],
@@ -71,7 +80,7 @@ const HOOKS = {
       {
         matcher: "*",
         hooks: [
-          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=tool.used` },
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=tool.used`) },
         ],
       },
     ],
