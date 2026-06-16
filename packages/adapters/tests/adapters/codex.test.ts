@@ -169,6 +169,19 @@ test("hooks wire every manifest point to `agmux emit --from=codex`", () => {
   expect(all).toContain("--point=input.required");
 });
 
+test("hooks are synchronous + self-backgrounding (codex 0.135 skips async:true)", () => {
+  // Regression: codex 0.135 warns "async hooks are not supported yet" and SKIPS
+  // any hook with `async:true`, so every agmux hook silently never fires. The
+  // non-blocking intent must instead be carried by forking inside the command.
+  const hooks = JSON.parse(MARKETPLACE_FILES.find((f) => f.path === "plugins/agmux/hooks/hooks.json")!.content).hooks;
+  const cmds = (Object.values(hooks) as any[]).flatMap((entries) => entries.flatMap((e: any) => e.hooks));
+  expect(cmds.length).toBeGreaterThan(0);
+  for (const h of cmds) {
+    expect(h.async).toBeUndefined();                 // no unsupported async field
+    expect(h.command).toMatch(/^\(\s.*\s&\s\)$/);     // sync hook that forks + returns
+  }
+});
+
 import { resolveConfigDir, marketplaceDir, codexInstall, codexUninstall, codexStatus, setCodexRunner, ADAPTER_VERSION, type CodexRunner } from "../../src/adapters/codex/install.ts";
 import * as os from "node:os";
 import * as fs from "node:fs";
@@ -331,7 +344,7 @@ test("status parses the real `installed, enabled` STATUS phrase without false dr
   try {
     const st = codexStatus(ictx(tmpCfg(), tmpState()));
     expect(st.installed).toBe(true);
-    expect(st.drift).toBe(false); // version 1.0.0 parsed correctly, not ","
+    expect(st.drift).toBe(false); // VERSION column parsed correctly, not ","
   } finally {
     setCodexRunner(null);
   }

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { parseEmitArgs, runEmit, enrichTmuxCoords } from "../src/emit.ts";
-import { createRegistry } from "@agmux/adapters";
+import { createRegistry, createDefaultRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -122,6 +122,27 @@ test("runEmit drops when neither a native id nor AGMUX_SESSION_ID is available",
     registry: reg(), env: {}, stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
   });
   expect(called).toBe(false);
+});
+
+test("ambient codex self-registers from the stdin session_id (no AGMUX_SESSION_ID)", async () => {
+  // Regression: codex exposes its session id only in hook STDIN, not env. A bare
+  // `codex` launch (no wrapper, no AGMUX_SESSION_ID) must still register under its
+  // native id — previously the identity guard dropped it before stdin was parsed.
+  const stateDir = tmp();
+  const posted: any[] = [];
+  const fakeFetch = (async (_u: string, init: any) => { posted.push(...JSON.parse(init.body)); return new Response(null, { status: 202 }); }) as unknown as typeof fetch;
+
+  await runEmit(["--from=codex", "--source=hook-command", "--point=session.registered"], {
+    registry: createDefaultRegistry(),
+    env: { AGMUX_HUB_URL: "http://hub" }, // no AGMUX_SESSION_ID — ambient launch
+    stdin: JSON.stringify({ session_id: "cdx-1", cwd: "/work", hook_event_name: "SessionStart", source: "startup" }),
+    host: "h", stateDir, fetchImpl: fakeFetch,
+  });
+
+  expect(posted).toHaveLength(1);
+  expect(posted[0].session_id).toBeUndefined();
+  expect(posted[0].identity).toEqual({ agent_kind: "codex", native_session_id: "cdx-1" });
+  expect(posted[0].payload.native_session_id).toBe("cdx-1");
 });
 
 test("fills tmux_session/window on session.registered when pane resolves", async () => {

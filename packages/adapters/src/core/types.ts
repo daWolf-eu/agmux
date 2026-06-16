@@ -131,4 +131,9 @@ export interface Adapter {
   // by the future spawn path to name a parent. Optional: adapters without a native
   // env signal omit it and fall back to canonical (claim) identity.
   nativeIdFromEnv?(env: Record<string, string | undefined>): string | null;
+  // Same purpose as nativeIdFromEnv, but for agents that surface their native id in
+  // hook STDIN rather than env (codex: stdin.session_id). `emit` parses stdin once
+  // and tries env first, then this — so ambient (directly-launched) sessions can
+  // still self-register. `raw` is the parsed stdin JSON (unknown shape).
+  nativeIdFromStdin?(raw: unknown): string | null;
 }
