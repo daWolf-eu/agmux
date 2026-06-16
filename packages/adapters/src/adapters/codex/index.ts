@@ -6,8 +6,9 @@ import { codexInstall, codexUninstall, codexStatus, ADAPTER_VERSION } from "./in
 
 // The plugin payload is embedded code (plugin-files.ts) materialized at install
 // time — no on-disk data files, so the adapter behaves identically from source and
-// from a compiled agmux binary. nativeIdFromEnv is omitted: Codex exposes no native
-// session-id env var, so identity is taken from hook stdin (spec §5.3).
+// from a compiled agmux binary. Codex exposes no native session-id env var, so its
+// identity comes from hook STDIN (spec §5.3) via nativeIdFromStdin — this lets a
+// bare `codex` launch self-register without the wrapper's AGMUX_SESSION_ID claim.
 export const codexAdapter: Adapter = {
   agentKind: "codex",
   adapterVersion: ADAPTER_VERSION,
@@ -18,4 +19,8 @@ export const codexAdapter: Adapter = {
   status: codexStatus,
   normalize: normalizeCodex,
   resumePlan: codexResumePlan,
+  nativeIdFromStdin: (raw) => {
+    const id = (raw as { session_id?: unknown } | null)?.session_id;
+    return typeof id === "string" && id !== "" ? id : null;
+  },
 };

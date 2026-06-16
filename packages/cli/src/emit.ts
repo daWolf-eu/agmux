@@ -91,10 +91,13 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     const adapter = deps.registry.lookup(a.from as AgentKind);
     if (!adapter) return;
 
-    // Identity (spec §2): the agent's OWN native id (from its hook env), plus the
-    // optional wrapper bridge claim (AGMUX_SESSION_ID). Native id is preferred;
-    // claim is the fallback / bridge. With neither, we cannot name a session — drop.
-    const nativeId = adapter.nativeIdFromEnv?.(deps.env) ?? null;
+    // Identity (spec §2): the agent's OWN native id, plus the optional wrapper bridge
+    // claim (AGMUX_SESSION_ID). The native id may live in the hook env (claude) or in
+    // hook STDIN (codex) — try env first, then stdin, so ambient (directly-launched)
+    // sessions self-register. Native id is preferred; claim is the fallback / bridge.
+    // With neither, we cannot name a session — drop.
+    const raw = parseRaw(deps.stdin);
+    const nativeId = adapter.nativeIdFromEnv?.(deps.env) ?? adapter.nativeIdFromStdin?.(raw) ?? null;
     const claimId = deps.env[AGMUX_SESSION_ID_ENV] ?? null;
     if (!nativeId && !claimId) return;
 
@@ -110,7 +113,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
       if (!a.point || !a.source) return;
       const cursor = a.cursorFile && fs.existsSync(a.cursorFile) ? fs.readFileSync(a.cursorFile, "utf8") : null;
       const out = adapter.normalize({
-        point: a.point, source: a.source, raw: parseRaw(deps.stdin), cursor,
+        point: a.point, source: a.source, raw, cursor,
         target: { agentKind: a.from as AgentKind, profile: a.profile },
         env: deps.env,
       });
