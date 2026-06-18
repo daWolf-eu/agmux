@@ -51,8 +51,13 @@ test("extension source carries the version marker, a default export, and emits -
   expect(src).toContain(`agmux-pi-extension v${PLUGIN_VERSION}`);
   expect(src).toContain("export default function");
   expect(src).toContain("--from=pi");
-  for (const p of ["session.registered", "session.linked", "turn.started", "turn.ended", "tool.used", "prompt.sent", "usage.reported"]) {
-    expect(src).toContain(`--point=${p}`);
+  // session.registered / session.linked are emitted via direct emit([...]) with a literal flag.
+  for (const p of ["session.registered", "session.linked"]) {
+    expect(src).toContain(`"--point=${p}"`);
+  }
+  // The remaining points are emitted via emitPoint("<p>", ...) — the flag is built as "--point=" + point.
+  for (const p of ["turn.started", "turn.ended", "tool.used", "prompt.sent", "usage.reported"]) {
+    expect(src).toContain(`emitPoint("${p}"`);
   }
   // Registers a handler for every PI event we consume.
   for (const ev of ["session_start", "input", "agent_start", "tool_result", "message_end", "agent_end"]) {

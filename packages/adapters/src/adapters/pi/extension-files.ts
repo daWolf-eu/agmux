@@ -64,29 +64,24 @@ export default function (pi) {
     var text = event && typeof event.text === "string" ? event.text
       : (event && typeof event.input === "string" ? event.input : "");
     emitPoint("prompt.sent", ctx, { prompt: text });
-    // --point=prompt.sent
   });
 
   pi.on("agent_start", function (_event, ctx) {
     emitPoint("turn.started", ctx, {});
-    // --point=turn.started
   });
 
   pi.on("tool_result", function (event, ctx) {
     emitPoint("tool.used", ctx, { tool_name: (event && event.toolName) || null, is_error: !!(event && event.isError) });
-    // --point=tool.used
   });
 
   pi.on("message_end", function (event, ctx) {
     var msg = event && event.message;
     if (!msg || !msg.usage) return;
     emitPoint("usage.reported", ctx, { usage: msg.usage, model: msg.model || null, message_id: msg.id || null });
-    // --point=usage.reported
   });
 
   pi.on("agent_end", function (_event, ctx) {
     emitPoint("turn.ended", ctx, {});
-    // --point=turn.ended
   });
 }
 `;
