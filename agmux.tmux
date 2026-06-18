@@ -25,11 +25,13 @@ main() {
   extra="$(tmux_get "@agmux-dash-args" "")"
 
   # Non-blocking warning if the key is already bound under the prefix table.
-  if tmux list-keys -T prefix 2>/dev/null | grep -qE -- "-T prefix[[:space:]]+${key}([[:space:]]|$)"; then
+  # `list-keys -T prefix <key>` matches the exact key (no regex), so keys with
+  # special characters are handled correctly.
+  if [ -n "$(tmux list-keys -T prefix "$key" 2>/dev/null)" ]; then
     tmux display-message "agmux: prefix+${key} was already bound; overriding (set @agmux-key to change)"
   fi
 
-  tmux bind-key "$key" display-popup -E -w "$width" -h "$height" "$bin dash --popup $extra"
+  tmux bind-key "$key" display-popup -E -w "$width" -h "$height" "$bin dash --popup${extra:+ $extra}"
 }
 
 main
