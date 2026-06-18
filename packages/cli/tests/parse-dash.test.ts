@@ -38,3 +38,16 @@ test("-i overrides interval; ls flags still parse", () => {
   expect(p.opts.intervalMs).toBe(3000);
   expect(p.opts.agent).toBe("claude");
 });
+
+test("--popup sets popup true and is not treated as an ls flag", () => {
+  const p = parseDashArgs(["--popup", "--agent", "claude"], {});
+  expect(p.kind).toBe("ok");
+  if (p.kind !== "ok") return;
+  expect(p.opts.popup).toBe(true);
+  expect(p.opts.agent).toBe("claude");
+});
+
+test("popup defaults to false", () => {
+  const p = parseDashArgs([], {});
+  expect(p.kind === "ok" && p.opts.popup).toBe(false);
+});

@@ -5,6 +5,7 @@ import { parseLsArgs, type LsQueryOpts } from "./parse-ls.ts";
 export interface DashOpts extends LsQueryOpts {
   intervalMs: number;
   preview: PreviewMode;
+  popup: boolean;
 }
 
 export type ParsedDash =
@@ -19,6 +20,7 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
   const rest: string[] = [];
   let intervalSec: number | undefined;
   let preview: PreviewMode | undefined;
+  let popup = false;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -35,6 +37,8 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
       if (!v || !isPreview(v))
         return { kind: "error", message: "dash: --preview must be 'mirror', 'events' or 'detail'" };
       preview = v;
+    } else if (name === "--popup") {
+      popup = true;
     } else {
       rest.push(a);
     }
@@ -52,6 +56,7 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
       ...parsed.opts,
       intervalMs: Math.round((intervalSec ?? cfg.interval ?? 1) * 1000),
       preview: preview ?? cfg.preview ?? "events",
+      popup,
     },
   };
 }
