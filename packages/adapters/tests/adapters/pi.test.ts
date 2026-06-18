@@ -143,3 +143,56 @@ test("usage.reported tolerates camelCase token field variants (defensive mapping
     raw: { session_id: "s", message_id: "m2", usage: { inputTokens: 5, outputTokens: 7 } }, target });
   expect(out.events[0]!.payload).toMatchObject({ input_tokens: 5, output_tokens: 7, total_tokens: null });
 });
+
+import { resolveConfigDir, extensionsDir, piInstall, piUninstall, piStatus, ADAPTER_VERSION } from "../../src/adapters/pi/install.ts";
+import * as os from "node:os";
+
+function tmpCfg(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-pi-cfg-")); }
+function tmpState(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "agmux-pi-state-")); }
+
+const ictx = (configDir: string | undefined, stateDir: string, profile: string | null = null, override: string | null = null) => ({
+  agentKind: "pi" as const, profile,
+  profileEnv: (configDir ? { PI_CODING_AGENT_DIR: configDir } : {}) as Record<string, string>,
+  agmuxEmitPath: "/abs/agmux emit", stateDir,
+  ...(override ? { configDirOverride: override } : {}),
+});
+
+test("resolveConfigDir: explicit override > profileEnv PI_CODING_AGENT_DIR > default ~/.pi/agent", () => {
+  expect(resolveConfigDir(ictx("/cfg", "/s"))).toBe("/cfg");
+  expect(resolveConfigDir(ictx("/cfg", "/s", null, "/override"))).toBe("/override");
+  expect(resolveConfigDir(ictx(undefined, "/s")).endsWith("/.pi/agent")).toBe(true);
+});
+
+test("install writes agmux.ts into <configDir>/extensions; status flips; uninstall reverses", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg, tmpState(), "work");
+  expect(piStatus(ctx).installed).toBe(false);
+
+  const rec = piInstall(ctx);
+  expect(rec).toMatchObject({ agentKind: "pi", profile: "work", adapterVersion: ADAPTER_VERSION, isolationMode: "config-dir" });
+  expect(fs.existsSync(path.join(extensionsDir(cfg), "agmux.ts"))).toBe(true);
+  expect(piStatus(ctx)).toMatchObject({ installed: true, version: ADAPTER_VERSION, drift: false, runtimeGate: "hook-trust" });
+
+  piUninstall(ctx, rec);
+  expect(piStatus(ctx).installed).toBe(false);
+  // Uninstall removes only the file, not the extensions dir (may hold others).
+  expect(fs.existsSync(extensionsDir(cfg))).toBe(true);
+});
+
+test("status reports drift when the installed marker version differs from the payload", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg, tmpState());
+  piInstall(ctx);
+  const file = path.join(extensionsDir(cfg), "agmux.ts");
+  fs.writeFileSync(file, "// agmux-pi-extension v0.0.1-stale\n");
+  expect(piStatus(ctx).drift).toBe(true);
+});
+
+test("separate PI_CODING_AGENT_DIR dirs install independently (profile isolation)", () => {
+  const state = tmpState();
+  const cfgA = tmpCfg();
+  const cfgB = tmpCfg();
+  piInstall(ictx(cfgA, state));
+  expect(piStatus(ictx(cfgA, state)).installed).toBe(true);
+  expect(piStatus(ictx(cfgB, state)).installed).toBe(false);
+});
