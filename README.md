@@ -122,6 +122,8 @@ Options (set before the `run` line):
 | `@agmux-popup-height` | `80%`   | popup height                                         |
 | `@agmux-dash-args`    | (empty) | extra args appended to `agmux dash` (e.g. `--agent claude`) |
 
+`@agmux-dash-args` is run through the popup's shell — keep it to plain flags.
+
 State lives in `~/.agmux/` — `agmux.sqlite` (event log + projection), `hub.pid` / `hub.port`, and a `queue/` directory for write-through fallback when the hub is briefly unreachable. The hub auto-spawns on first invocation; binds 127.0.0.1 only.
 
 Environment overrides:
