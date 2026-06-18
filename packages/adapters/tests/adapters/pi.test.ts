@@ -37,3 +37,28 @@ test("pi resumePlan builds `pi --session <id>` preserving original args", () => 
 test("pi resumePlan is not resumable without a native session id", () => {
   expect(piResumePlan(resumeCtx(null))).toEqual({ resumable: false });
 });
+
+import { EXTENSION_FILES, EXTENSION_FILENAME, PLUGIN_VERSION } from "../../src/adapters/pi/extension-files.ts";
+
+test("extension payload is a single auto-discoverable agmux.ts", () => {
+  expect(EXTENSION_FILES).toHaveLength(1);
+  expect(EXTENSION_FILES[0]!.path).toBe(EXTENSION_FILENAME);
+  expect(EXTENSION_FILENAME).toBe("agmux.ts");
+});
+
+test("extension source carries the version marker, a default export, and emits --from=pi for each point", () => {
+  const src = EXTENSION_FILES[0]!.content;
+  expect(src).toContain(`agmux-pi-extension v${PLUGIN_VERSION}`);
+  expect(src).toContain("export default function");
+  expect(src).toContain("--from=pi");
+  for (const p of ["session.registered", "session.linked", "turn.started", "turn.ended", "tool.used", "prompt.sent", "usage.reported"]) {
+    expect(src).toContain(`--point=${p}`);
+  }
+  // Registers a handler for every PI event we consume.
+  for (const ev of ["session_start", "input", "agent_start", "tool_result", "message_end", "agent_end"]) {
+    expect(src).toContain(`pi.on("${ev}"`);
+  }
+  // Fire-and-forget: detached spawn, unref, never awaited.
+  expect(src).toContain("detached: true");
+  expect(src).toContain(".unref()");
+});
