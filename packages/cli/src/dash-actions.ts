@@ -1,21 +1,33 @@
 import { $ } from "bun";
 import type { SessionRow } from "@agmux/protocol";
-import { LIVE_STATUSES } from "@agmux/protocol";
+import {
+  LIVE_STATUSES,
+  AGMUX_HUB_URL_ENV, AGMUX_SESSION_ID_ENV, AGMUX_PROFILE_ENV, AGMUX_TMUX_SESSION_ENV,
+} from "@agmux/protocol";
 import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
 import { newWindow, readCurrentPane } from "./tmux-place.ts";
 
-// The env keys a relaunch adds on top of the inherited environment. A new tmux
-// window already inherits the parent env, so we only inject these via `-e`.
-export function deltaEnv(
-  specEnv: Record<string, string>,
-  baseEnv: Record<string, string | undefined>,
-): Record<string, string> {
+// The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
+// new tmux window inherits only the tmux SERVER env, so agmux-specific vars
+// (esp. the hub URL and session id) must be forwarded, not assumed inherited.
+// Mirrors the allowlist in packages/wrapper/src/index.ts.
+const RELAUNCH_ENV_KEYS = [
+  "AGMUX_INLINE_PROFILE",
+  AGMUX_HUB_URL_ENV,
+  AGMUX_SESSION_ID_ENV,
+  AGMUX_TMUX_SESSION_ENV,
+  AGMUX_PROFILE_ENV,
+  "AGMUX_BIN",
+] as const;
+
+export function relaunchEnv(specEnv: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(specEnv)) {
-    if (baseEnv[k] !== v) out[k] = v;
+  for (const k of RELAUNCH_ENV_KEYS) {
+    const v = specEnv[k];
+    if (v) out[k] = v;
   }
   return out;
 }
@@ -31,20 +43,19 @@ export async function attachInPopup(
 }
 
 // Popup-mode resume: relaunch the agent in a NEW tmux window (non-detached, so the
-// parent client switches to it), inject only the env delta, then exit dash (empty
-// argv) so the popup closes onto the freshly relaunched agent.
+// parent client switches to it), forwarding only the agmux env keys explicitly,
+// then exit dash (empty argv) so the popup closes onto the freshly relaunched agent.
 export async function resumeIntoNewWindow(
   spec: RelaunchSpec,
   sessionName: string,
   label: string,
-  baseEnv: Record<string, string | undefined>,
   newWindowFn: typeof newWindow = newWindow,
 ): Promise<Handoff> {
   await newWindowFn({
     sessionName,
     windowName: `agmux:${label}`,
     cmd: spec.wrapArgv,
-    env: deltaEnv(spec.env, baseEnv),
+    env: relaunchEnv(spec.env),
     detach: false,
   });
   return { argv: [] };
@@ -91,9 +102,9 @@ export function makeActions(
         turnCount: usage?.turn_count ?? 0,
       });
       if (!popup) return { argv: spec.wrapArgv, env: spec.env };
-      const coords = await readCurrentPane();
+      const coords = await readCurrentPane().catch(() => null);
       const sessionName = coords?.session ?? session.tmux_session ?? "agmux";
-      return resumeIntoNewWindow(spec, sessionName, row.session_id.slice(0, 8), process.env);
+      return resumeIntoNewWindow(spec, sessionName, row.session_id.slice(0, 8));
     },
   };
 }
