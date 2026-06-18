@@ -27,6 +27,16 @@ test("inline: basename 'codex' detects kind", () => {
     .toEqual({ kind: "inline", agent_kind: "codex", command: "codex", args: [], placement: "inherit", detach: false, wrapped: false });
 });
 
+test("inline: basename 'pi' detects kind", () => {
+  expect(parseRunArgs(["pi", "--session", "abc"]))
+    .toEqual({ kind: "inline", agent_kind: "pi", command: "pi", args: ["--session", "abc"], placement: "inherit", detach: false, wrapped: false });
+});
+
+test("inline: --kind=pi override", () => {
+  expect(parseRunArgs(["--kind=pi", "/opt/pi-rc1"]))
+    .toEqual({ kind: "inline", agent_kind: "pi", command: "/opt/pi-rc1", args: [], placement: "inherit", detach: false, wrapped: false });
+});
+
 test("inline: absolute path basename detection", () => {
   expect(parseRunArgs(["/opt/bin/claude", "--foo"]))
     .toEqual({ kind: "inline", agent_kind: "claude", command: "/opt/bin/claude", args: ["--foo"], placement: "inherit", detach: false, wrapped: false });

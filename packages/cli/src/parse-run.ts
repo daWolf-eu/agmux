@@ -21,16 +21,16 @@ export type Placement = "inherit" | "new-pane" | "new-window" | "new-session";
 
 export type ParsedRun =
   | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean }
-  | { kind: "inline"; agent_kind: "claude" | "codex"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean }
+  | { kind: "inline"; agent_kind: "claude" | "codex" | "pi"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean }
   | { kind: "error"; message: string };
 
-function parseKind(v: string): "claude" | "codex" | null {
-  return v === "claude" || v === "codex" ? v : null;
+function parseKind(v: string): "claude" | "codex" | "pi" | null {
+  return v === "claude" || v === "codex" || v === "pi" ? v : null;
 }
 
 export function parseRunArgs(argv: string[]): ParsedRun {
   let profileName: string | undefined;
-  let kindFlag: "claude" | "codex" | undefined;
+  let kindFlag: "claude" | "codex" | "pi" | undefined;
   let placement: Placement = "inherit";
   let detach = false;
   let wrapped = false;
@@ -52,14 +52,14 @@ export function parseRunArgs(argv: string[]): ParsedRun {
     if (a === "--kind") {
       const v = argv[i + 1];
       const k = v ? parseKind(v) : null;
-      if (!k) return { kind: "error", message: `--kind must be 'claude' or 'codex'` };
+      if (!k) return { kind: "error", message: `--kind must be 'claude', 'codex', or 'pi'` };
       kindFlag = k;
       i += 2;
       continue;
     }
     if (a.startsWith("--kind=")) {
       const k = parseKind(a.slice("--kind=".length));
-      if (!k) return { kind: "error", message: `--kind must be 'claude' or 'codex'` };
+      if (!k) return { kind: "error", message: `--kind must be 'claude', 'codex', or 'pi'` };
       kindFlag = k;
       i += 1;
       continue;
@@ -105,15 +105,16 @@ export function parseRunArgs(argv: string[]): ParsedRun {
   const command = tail[0]!;
   const args = tail.slice(1);
   const basename = command.split("/").pop() ?? command;
-  const detected: "claude" | "codex" | undefined =
+  const detected: "claude" | "codex" | "pi" | undefined =
     basename === "claude" ? "claude" :
     basename === "codex" ? "codex" :
+    basename === "pi" ? "pi" :
     undefined;
   const agent_kind = kindFlag ?? detected;
   if (!agent_kind) {
     return {
       kind: "error",
-      message: `agmux run: cannot infer agent_kind from '${basename}'. Use --kind=claude or --kind=codex.`,
+      message: `agmux run: cannot infer agent_kind from '${basename}'. Use --kind=claude, --kind=codex, or --kind=pi.`,
     };
   }
   return { kind: "inline", agent_kind, command, args, placement, detach, wrapped };
