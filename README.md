@@ -96,6 +96,32 @@ status = "open"     # active | open | closed | comma-separated statuses
 Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `status`, `sort`.
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
 
+## tmux plugin (TPM)
+
+Requires tmux ≥ 3.2 (`display-popup`) and `agmux` on tmux's PATH (or set `@agmux-bin`).
+
+```tmux
+# ~/.tmux.conf
+set -g @plugin 'daWolf-eu/agmux'
+run '~/.tmux/plugins/tpm/tpm'
+```
+
+Then `prefix + I` to install. `prefix + g` opens a popup running `agmux dash`:
+
+- `q` closes the popup.
+- `⏎` on a live session switches the parent client to the agent's window and closes the popup.
+- `r` on a closed session relaunches it into a new window, switches there, and closes the popup.
+
+Options (set before the `run` line):
+
+| Option                | Default | Meaning                                              |
+| --------------------- | ------- | ---------------------------------------------------- |
+| `@agmux-key`          | `g`     | key under the prefix table                           |
+| `@agmux-bin`          | `agmux` | agmux binary (use an absolute path if not on PATH)   |
+| `@agmux-popup-width`  | `80%`   | popup width                                          |
+| `@agmux-popup-height` | `80%`   | popup height                                         |
+| `@agmux-dash-args`    | (empty) | extra args appended to `agmux dash` (e.g. `--agent claude`) |
+
 State lives in `~/.agmux/` — `agmux.sqlite` (event log + projection), `hub.pid` / `hub.port`, and a `queue/` directory for write-through fallback when the hub is briefly unreachable. The hub auto-spawns on first invocation; binds 127.0.0.1 only.
 
 Environment overrides:
