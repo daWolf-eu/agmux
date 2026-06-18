@@ -8,7 +8,7 @@ export interface DashCmdDeps {
   isTTY: () => boolean;
   runManageImpl: (o: RunManageOpts) => Promise<number>;
   makeSourceImpl: (hubUrl: string) => PreviewSource;
-  makeActionsImpl: (hubUrl: string, wrapBin: string) => Actions;
+  makeActionsImpl: (hubUrl: string, wrapBin: string, popup: boolean) => Actions;
   errOut: (s: string) => void;
 }
 
@@ -34,6 +34,6 @@ export async function dashCmd(
     intervalMs: opts.intervalMs,
     defaultPreview: opts.preview,
     source: deps.makeSourceImpl(opts.hubUrl),
-    actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin),
+    actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup),
   });
 }
