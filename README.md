@@ -57,12 +57,18 @@ args = []
 agent_kind = "codex"
 command = "codex"
 args = []
+
+[profiles.pi-default]
+agent_kind = "pi"
+command = "pi"
+args = []
 TOML
 
 # Use it — two ways to launch:
 agmux run claude --resume abc            # ad-hoc: command + args; agent_kind detected from basename
 agmux run --kind=codex /opt/codex-rc1    # explicit --kind for unknown binary names
 agmux run -p claude-work                 # profile from ~/.config/agmux/config.toml
+agmux run -p pi-default                   # PI session (auto-discovered extension)
 
 agmux ls                     # recent 50 sessions (any status) — newest first
 agmux ls -n 5 -r             # 5 most recent, newest at the bottom (above your prompt)

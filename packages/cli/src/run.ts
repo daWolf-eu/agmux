@@ -30,7 +30,7 @@ export interface RunProfileOpts {
 // reads AGMUX_INLINE_PROFILE and skips the config-file lookup.
 export interface RunInlineOpts {
   kind: "inline";
-  agent_kind: "claude" | "codex";
+  agent_kind: "claude" | "codex" | "pi";
   command: string;
   args: string[];
   hubUrl: string;
