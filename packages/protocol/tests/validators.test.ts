@@ -125,3 +125,9 @@ test("validateKnownPayload('session.registered') requires native_session_id + ag
 test("validateKnownPayload('session.lost') accepts the pid_dead reason", () => {
   expect(validateKnownPayload("session.lost", { reason: "pid_dead" }).ok).toBe(true);
 });
+
+test("agent_kind validators accept every registered AgentKind (incl. pi)", () => {
+  expect(validateKnownPayload("session.registered", { native_session_id: "n-1", agent_kind: "pi" }).ok).toBe(true);
+  expect(validateKnownPayload("session.adapter_attached", { agent_kind: "pi", profile: null, adapter_version: "1", capabilities: {} }).ok).toBe(true);
+  expect(validateKnownPayload("session.started", { ...goodEnvelope.payload, agent_kind: "pi" }).ok).toBe(true);
+});

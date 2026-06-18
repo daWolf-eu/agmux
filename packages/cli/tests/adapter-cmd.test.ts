@@ -58,6 +58,15 @@ test("adapter install for a kind with no registered adapter errors cleanly", asy
   expect(s.out.join("\n")).toMatch(/no adapter registered for kind 'codex'/);
 });
 
+test("adapter install --kind pi passes kind validation (reaches registry lookup)", async () => {
+  const s = setup();
+  const rc = await runAdapterCmd(["install", "--kind", "pi"], s.deps);
+  expect(rc).toBe(1);
+  // The fake registry has no pi adapter; the point is that --kind pi is NOT
+  // rejected by the kind-validation guard before the registry lookup.
+  expect(s.out.join("\n")).toMatch(/no adapter registered for kind 'pi'/);
+});
+
 test("adapter list shows registered kinds and install state", async () => {
   const s = setup();
   await runAdapterCmd(["install", "work"], s.deps);

@@ -4,7 +4,11 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 export const LIVE_STATUSES: readonly SessionStatus[] = ["idle", "running", "waiting"];
 export const TERMINAL_STATUSES: readonly SessionStatus[] = ["ended", "lost"];
 
-export type AgentKind = "claude" | "codex" | "pi";
+// Single source of truth for known agent kinds. Adding a kind here flows to the
+// AgentKind type AND the runtime ingest validators (validators.ts) — keeps new
+// providers from being silently rejected at the hub boundary.
+export const AGENT_KINDS = ["claude", "codex", "pi"] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
 
 export type SessionOrigin = "wrapper" | "native";
 

@@ -1,6 +1,11 @@
 import { EVENT_KINDS_MVP } from "./events.ts";
+import { AGENT_KINDS } from "./session.ts";
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
+
+function isAgentKind(v: unknown): boolean {
+  return typeof v === "string" && (AGENT_KINDS as readonly string[]).includes(v);
+}
 
 function isStringNonEmpty(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
@@ -51,7 +56,7 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
   switch (kind) {
     case "session.started": {
       const p = payload;
-      if (p.agent_kind !== "claude" && p.agent_kind !== "codex")
+      if (!isAgentKind(p.agent_kind))
         return { ok: false, error: "session.started: agent_kind invalid" };
       if (!isStringNonEmpty(p.command)) return { ok: false, error: "session.started: command missing" };
       if (!isStringArray(p.args)) return { ok: false, error: "session.started: args not string[]" };
@@ -115,7 +120,7 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
       return { ok: true };
     }
     case "session.adapter_attached": {
-      if (payload.agent_kind !== "claude" && payload.agent_kind !== "codex")
+      if (!isAgentKind(payload.agent_kind))
         return { ok: false, error: "session.adapter_attached: agent_kind invalid" };
       if (!isStringNonEmpty(payload.adapter_version))
         return { ok: false, error: "session.adapter_attached: adapter_version missing" };
@@ -127,7 +132,7 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
       const p = payload;
       if (!isStringNonEmpty(p.native_session_id))
         return { ok: false, error: "session.registered: native_session_id missing" };
-      if (p.agent_kind !== "claude" && p.agent_kind !== "codex")
+      if (!isAgentKind(p.agent_kind))
         return { ok: false, error: "session.registered: agent_kind invalid" };
       return { ok: true };
     }

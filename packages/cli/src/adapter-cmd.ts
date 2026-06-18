@@ -26,7 +26,7 @@ function resolveTarget(args: string[], cfg: AgmuxConfig): Target | { error: stri
   const kindIdx = args.indexOf("--kind");
   if (kindIdx >= 0) {
     const k = args[kindIdx + 1];
-    if (k !== "claude" && k !== "codex") return { error: `--kind must be 'claude' or 'codex'` };
+    if (k !== "claude" && k !== "codex" && k !== "pi") return { error: `--kind must be 'claude', 'codex', or 'pi'` };
     return { agentKind: k, profile: null, profileEnv: {} };
   }
   const profile = args.find((a) => !a.startsWith("-"));
