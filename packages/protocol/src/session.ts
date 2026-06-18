@@ -4,7 +4,7 @@ export type SessionStatus = (typeof SESSION_STATUSES)[number];
 export const LIVE_STATUSES: readonly SessionStatus[] = ["idle", "running", "waiting"];
 export const TERMINAL_STATUSES: readonly SessionStatus[] = ["ended", "lost"];
 
-export type AgentKind = "claude" | "codex";
+export type AgentKind = "claude" | "codex" | "pi";
 
 export type SessionOrigin = "wrapper" | "native";
 
