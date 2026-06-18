@@ -13,6 +13,13 @@ export interface RunManageOpts {
   actions: Actions;
 }
 
+// A Handoff with an empty argv is the "exit dash, spawn nothing" sentinel
+// (used by popup-mode attach/resume after they retarget the parent client).
+// Returns the argv to spawn, or null when nothing should run.
+export function handoffArgv(pending: Handoff | null): string[] | null {
+  return pending && pending.argv.length > 0 ? pending.argv : null;
+}
+
 export async function runManage(o: RunManageOpts): Promise<number> {
   const feed = new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.query, intervalMs: o.intervalMs });
   let pending: Handoff | null = null;
@@ -30,9 +37,10 @@ export async function runManage(o: RunManageOpts): Promise<number> {
   } finally {
     process.stdout.write("\x1b[?1049l"); // restore the user's screen even on throw
   }
-  if (pending) {
-    const h: Handoff = pending;
-    const child = Bun.spawn(h.argv, { stdio: ["inherit", "inherit", "inherit"], env: h.env ?? process.env });
+  const argv = handoffArgv(pending);
+  if (argv) {
+    const env = pending!.env ?? process.env;
+    const child = Bun.spawn(argv, { stdio: ["inherit", "inherit", "inherit"], env });
     await child.exited;
     return child.exitCode ?? 0;
   }

@@ -14,6 +14,8 @@ export interface UsageSummary {
 
 // A terminal hand-off: a command the entry point runs AFTER ink unmounts and the
 // alt-screen is restored (for not-in-tmux attach and for resume/relaunch).
+// An empty `argv` is the exit sentinel: dash exits and spawns nothing (popup-mode
+// attach/resume use this after they retarget the parent tmux client inline).
 export interface Handoff {
   argv: string[];
   env?: Record<string, string>;
