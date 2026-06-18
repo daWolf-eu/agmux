@@ -18,3 +18,22 @@ test("usage is hook-command + live (no transcript tailing); input.required is ab
   expect(PI_CAPABILITIES["turn.started"]).toMatchObject({ source: "hook-command", liveness: "live" });
   expect(PI_CAPABILITIES["input.required"]).toBeUndefined();
 });
+
+import { piResumePlan } from "../../src/adapters/pi/resume.ts";
+
+const resumeCtx = (nid: string | null) => ({
+  agentKind: "pi" as const, profile: null, command: "pi", args: ["--model", "gpt-5.5"],
+  cwd: "/work", env: { FOO: "1" }, nativeSessionId: nid,
+});
+
+test("pi resumePlan builds `pi --session <id>` preserving original args", () => {
+  const plan = piResumePlan(resumeCtx("019e6415-f214-72d2-8352-afd93f03133c"));
+  expect(plan.resumable).toBe(true);
+  expect(plan.argv).toEqual(["pi", "--session", "019e6415-f214-72d2-8352-afd93f03133c", "--model", "gpt-5.5"]);
+  expect(plan.cwd).toBe("/work");
+  expect(plan.nativeSessionId).toBe("019e6415-f214-72d2-8352-afd93f03133c");
+});
+
+test("pi resumePlan is not resumable without a native session id", () => {
+  expect(piResumePlan(resumeCtx(null))).toEqual({ resumable: false });
+});
