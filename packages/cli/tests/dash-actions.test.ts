@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { deltaEnv, attachInPopup } from "../src/dash-actions.ts";
+import { deltaEnv, attachInPopup, resumeIntoNewWindow } from "../src/dash-actions.ts";
 
 test("deltaEnv returns only keys whose value differs from base", () => {
   const base = { PATH: "/bin", HOME: "/home/x" };
@@ -30,4 +30,17 @@ test("attachInPopup without a pane switches window only", async () => {
   const runTmux = async (args: string[]) => { calls.push(args); };
   await attachInPopup({ tmux_session: "work", tmux_window: "@3", tmux_pane: null }, runTmux);
   expect(calls).toEqual([["switch-client", "-t", "work:@3"]]);
+});
+
+test("resumeIntoNewWindow opens a non-detached window with delta env and returns the exit sentinel", async () => {
+  let seen: any = null;
+  const fakeNewWindow = async (a: any) => { seen = a; return { session: a.sessionName, window: "@9", pane: "%9" }; };
+  const spec = { wrapArgv: ["agmux-wrap", "claude"], env: { PATH: "/bin", AGMUX_SESSION_ID: "abc12345" } };
+  const h = await resumeIntoNewWindow(spec, "work", "abc12345", { PATH: "/bin" }, fakeNewWindow);
+  expect(seen.sessionName).toBe("work");
+  expect(seen.windowName).toBe("agmux:abc12345");
+  expect(seen.cmd).toEqual(["agmux-wrap", "claude"]);
+  expect(seen.env).toEqual({ AGMUX_SESSION_ID: "abc12345" });
+  expect(seen.detach).toBe(false);
+  expect(h).toEqual({ argv: [] });
 });

@@ -4,7 +4,8 @@ import { LIVE_STATUSES } from "@agmux/protocol";
 import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
-import { buildRelaunchSpec } from "./relaunch.ts";
+import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
+import { newWindow, readCurrentPane } from "./tmux-place.ts";
 
 // The env keys a relaunch adds on top of the inherited environment. A new tmux
 // window already inherits the parent env, so we only inject these via `-e`.
@@ -26,6 +27,26 @@ export async function attachInPopup(
   runTmux: (args: string[]) => Promise<void>,
 ): Promise<Handoff> {
   for (const args of buildAttachCommands(coords, true)) await runTmux(args);
+  return { argv: [] };
+}
+
+// Popup-mode resume: relaunch the agent in a NEW tmux window (non-detached, so the
+// parent client switches to it), inject only the env delta, then exit dash (empty
+// argv) so the popup closes onto the freshly relaunched agent.
+export async function resumeIntoNewWindow(
+  spec: RelaunchSpec,
+  sessionName: string,
+  label: string,
+  baseEnv: Record<string, string | undefined>,
+  newWindowFn: typeof newWindow = newWindow,
+): Promise<Handoff> {
+  await newWindowFn({
+    sessionName,
+    windowName: `agmux:${label}`,
+    cmd: spec.wrapArgv,
+    env: deltaEnv(spec.env, baseEnv),
+    detach: false,
+  });
   return { argv: [] };
 }
 
@@ -62,7 +83,6 @@ export function makeActions(
       if (!row.pid) return;
       try { process.kill(row.pid, "SIGTERM"); } catch { /* already gone */ }
     },
-    // Resume always hands off: the relaunched wrapper wants the terminal.
     async resume(row: SessionRow): Promise<Handoff> {
       const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
       const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
@@ -70,7 +90,10 @@ export function makeActions(
         hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
         turnCount: usage?.turn_count ?? 0,
       });
-      return { argv: spec.wrapArgv, env: spec.env };
+      if (!popup) return { argv: spec.wrapArgv, env: spec.env };
+      const coords = await readCurrentPane();
+      const sessionName = coords?.session ?? session.tmux_session ?? "agmux";
+      return resumeIntoNewWindow(spec, sessionName, row.session_id.slice(0, 8), process.env);
     },
   };
 }
