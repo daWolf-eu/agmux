@@ -3,7 +3,7 @@ import type { SessionRow } from "@agmux/protocol";
 import { LIVE_STATUSES } from "@agmux/protocol";
 import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
-import { buildAttachCommands } from "./attach.ts";
+import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 
 // The env keys a relaunch adds on top of the inherited environment. A new tmux
@@ -19,7 +19,30 @@ export function deltaEnv(
   return out;
 }
 
-export function makeActions(hubUrl: string, wrapBin: string): Actions {
+// Popup-mode attach: retarget the parent client inline, then exit dash (empty
+// argv) so the `display-popup -E` closes and reveals the agent's window.
+export async function attachInPopup(
+  coords: AttachCoords,
+  runTmux: (args: string[]) => Promise<void>,
+): Promise<Handoff> {
+  for (const args of buildAttachCommands(coords, true)) await runTmux(args);
+  return { argv: [] };
+}
+
+export interface ActionDeps {
+  runTmux: (args: string[]) => Promise<void>;
+}
+
+const defaultActionDeps: ActionDeps = {
+  runTmux: async (args) => { await $`tmux ${args}`.quiet(); },
+};
+
+export function makeActions(
+  hubUrl: string,
+  wrapBin: string,
+  popup = false,
+  deps: ActionDeps = defaultActionDeps,
+): Actions {
   const inTmux = !!process.env.TMUX;
   return {
     // In tmux → switch-client inline (TUI stays alive), return null.
@@ -27,11 +50,12 @@ export function makeActions(hubUrl: string, wrapBin: string): Actions {
     // blocking attach-session after ink unmounts.
     async attach(row: SessionRow): Promise<Handoff | null> {
       if (!LIVE_STATUSES.includes(row.status) || !row.tmux_session || !row.tmux_window) return null;
-      const cmds = buildAttachCommands(
-        { tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane },
-        inTmux,
-      );
-      if (inTmux) { for (const args of cmds) await $`tmux ${args}`.quiet(); return null; }
+      const coords: AttachCoords = {
+        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane,
+      };
+      if (popup) return attachInPopup(coords, deps.runTmux);
+      const cmds = buildAttachCommands(coords, inTmux);
+      if (inTmux) { for (const args of cmds) await deps.runTmux(args); return null; }
       return { argv: ["tmux", ...cmds[0]!] };
     },
     async kill(row: SessionRow): Promise<void> {
