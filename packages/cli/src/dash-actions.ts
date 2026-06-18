@@ -6,6 +6,19 @@ import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 
+// The env keys a relaunch adds on top of the inherited environment. A new tmux
+// window already inherits the parent env, so we only inject these via `-e`.
+export function deltaEnv(
+  specEnv: Record<string, string>,
+  baseEnv: Record<string, string | undefined>,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(specEnv)) {
+    if (baseEnv[k] !== v) out[k] = v;
+  }
+  return out;
+}
+
 export function makeActions(hubUrl: string, wrapBin: string): Actions {
   const inTmux = !!process.env.TMUX;
   return {
