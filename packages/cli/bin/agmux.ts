@@ -108,7 +108,7 @@ async function main(): Promise<number> {
       // mode names its kind directly; profile mode reads it from the profile config.
       // A profile that fails to load (missing/invalid) → leave kind undefined so we
       // fall back to wrapped; the wrapper will surface the real profile error.
-      let kind: "claude" | "codex" | undefined;
+      let kind: "claude" | "codex" | "pi" | undefined;
       let profileEnv: Record<string, string> = {};
       if (parsed.kind === "inline") {
         kind = parsed.agent_kind;

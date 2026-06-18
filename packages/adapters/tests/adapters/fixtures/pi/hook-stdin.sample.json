@@ -1,0 +1,7 @@
+{
+  "session_start": { "session_id": "019e6415-f214-72d2-8352-afd93f03133c", "cwd": "/work", "pid": 4242, "reason": "startup" },
+  "session_resume": { "session_id": "019e6415-f214-72d2-8352-afd93f03133c", "reason": "resume" },
+  "input": { "session_id": "019e6415-f214-72d2-8352-afd93f03133c", "prompt": "refactor the parser" },
+  "tool_result": { "session_id": "019e6415-f214-72d2-8352-afd93f03133c", "tool_name": "bash", "is_error": false },
+  "message_end": { "session_id": "019e6415-f214-72d2-8352-afd93f03133c", "model": "gpt-5.5", "message_id": "m-1", "usage": { "input_tokens": 1200, "output_tokens": 340, "cache_read_tokens": 800, "cache_write_tokens": 0, "reasoning_output_tokens": 64, "total_tokens": 1604, "model_context_window": 258400 } }
+}

@@ -17,8 +17,8 @@ export interface AgmuxConfig {
 }
 
 function asAgentKind(v: unknown): AgentKind {
-  if (v === "claude" || v === "codex") return v;
-  throw new Error(`profile: agent_kind must be 'claude' or 'codex', got ${JSON.stringify(v)}`);
+  if (v === "claude" || v === "codex" || v === "pi") return v;
+  throw new Error(`profile: agent_kind must be 'claude', 'codex', or 'pi', got ${JSON.stringify(v)}`);
 }
 
 // POSIX-shell-style prefix tilde expansion: leading `~` or `~/` → $HOME.

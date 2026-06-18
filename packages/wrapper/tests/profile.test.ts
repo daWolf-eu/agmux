@@ -93,6 +93,11 @@ test("parseLsSection rejects invalid values loudly", () => {
   expect(() => parseLsSection({ status: "bogus" })).toThrow(/status/);
 });
 
+test("parseConfig accepts agent_kind 'pi'", () => {
+  const cfg = parseConfig(`[profiles.pi-default]\nagent_kind = "pi"\ncommand = "pi"\n`);
+  expect(cfg.profiles["pi-default"]?.agent_kind).toBe("pi");
+});
+
 test("loadLsConfig: missing file → {}; [ls] section parsed; broken profiles ignored", () => {
   expect(loadLsConfig(path.join(tmp, "nope.toml"))).toEqual({});
   const f = path.join(tmp, "config.toml");

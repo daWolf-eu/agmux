@@ -12,3 +12,9 @@ test("the default registry has the codex adapter wired in", () => {
   expect(r.kinds()).toContain("codex");
   expect(r.lookup("codex")!.agentKind).toBe("codex");
 });
+
+test("the default registry has the pi adapter wired in", () => {
+  const r = createDefaultRegistry();
+  expect(r.kinds()).toContain("pi");
+  expect(r.lookup("pi")!.agentKind).toBe("pi");
+});
