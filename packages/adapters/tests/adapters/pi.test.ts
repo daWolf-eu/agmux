@@ -62,3 +62,84 @@ test("extension source carries the version marker, a default export, and emits -
   expect(src).toContain("detached: true");
   expect(src).toContain(".unref()");
 });
+
+import { normalizePi } from "../../src/adapters/pi/normalize.ts";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as fs from "node:fs";
+
+const target = { agentKind: "pi" as const, profile: null };
+const FX = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "pi", "hook-stdin.sample.json");
+const SAMPLE = JSON.parse(fs.readFileSync(FX, "utf8"));
+
+test("session.registered builds the native lifecycle root from stdin + env", () => {
+  const out = normalizePi({
+    point: "session.registered", source: "hook-command",
+    raw: SAMPLE.session_start, target,
+    env: { TMUX_PANE: "%4", AGMUX_PROFILE: "work", PI_VERSION: "0.75.5" },
+  });
+  expect(out.events).toHaveLength(1);
+  const p = out.events[0]!.payload as any;
+  expect(out.events[0]!.kind).toBe("session.registered");
+  expect(p.native_session_id).toBe("019e6415-f214-72d2-8352-afd93f03133c");
+  expect(p.agent_kind).toBe("pi");
+  expect(p.pid).toBe(4242);
+  expect(p.cwd).toBe("/work");
+  expect(p.tmux_pane).toBe("%4");
+  expect(p.profile).toBe("work");
+  expect(p.agent_version).toBe("0.75.5");
+  expect(p.parent).toBeNull();
+});
+
+test("session.registered falls back to AGMUX_AGENT_PID when payload pid is absent", () => {
+  const out = normalizePi({
+    point: "session.registered", source: "hook-command",
+    raw: { session_id: "nat-x" }, target, env: { AGMUX_AGENT_PID: "5151" },
+  });
+  expect((out.events[0]!.payload as any).pid).toBe(5151);
+});
+
+test("session.registered/linked are no-ops without a session_id", () => {
+  expect(normalizePi({ point: "session.registered", source: "hook-command", raw: {}, target }).events).toHaveLength(0);
+  expect(normalizePi({ point: "session.linked", source: "hook-command", raw: {}, target }).events).toHaveLength(0);
+});
+
+test("session.linked maps native session id from stdin", () => {
+  const out = normalizePi({ point: "session.linked", source: "hook-command", raw: SAMPLE.session_resume, target });
+  expect(out.events).toEqual([{ kind: "session.linked", payload: { native_session_id: "019e6415-f214-72d2-8352-afd93f03133c" } }]);
+});
+
+test("turn.started / turn.ended map to canonical events", () => {
+  expect(normalizePi({ point: "turn.started", source: "hook-command", raw: {}, target }).events[0]?.kind).toBe("turn.started");
+  expect(normalizePi({ point: "turn.ended", source: "hook-command", raw: {}, target }).events[0]).toEqual({ kind: "turn.ended", payload: { reason: null } });
+});
+
+test("prompt.sent is redacted (chars only); tool.used carries the tool name and ok", () => {
+  expect(normalizePi({ point: "prompt.sent", source: "hook-command", raw: SAMPLE.input, target }).events[0]?.payload).toEqual({ chars: 19, redacted: true });
+  expect(normalizePi({ point: "tool.used", source: "hook-command", raw: SAMPLE.tool_result, target }).events[0]?.payload).toEqual({ tool: "bash", ok: true });
+  expect(normalizePi({ point: "tool.used", source: "hook-command", raw: { tool_name: "bash", is_error: true }, target }).events[0]?.payload).toEqual({ tool: "bash", ok: false });
+});
+
+test("usage.reported maps message_end usage into a per-message delta with a stable dedup key", () => {
+  const out = normalizePi({ point: "usage.reported", source: "hook-command", raw: SAMPLE.message_end, target });
+  expect(out.events).toHaveLength(1);
+  expect(out.events[0]).toMatchObject({
+    kind: "usage.reported",
+    payload: {
+      cumulative: false, source: "hook-command", model: "gpt-5.5",
+      input_tokens: 1200, output_tokens: 340, cache_read_tokens: 800, cache_write_tokens: 0,
+      reasoning_output_tokens: 64, total_tokens: 1604, model_context_window: 258400,
+    },
+  });
+  expect(out.events[0]!.dedup_key).toBe("pi:hook-command:019e6415-f214-72d2-8352-afd93f03133c:m-1");
+});
+
+test("usage.reported is a no-op when no usage object is present", () => {
+  expect(normalizePi({ point: "usage.reported", source: "hook-command", raw: { session_id: "x" }, target }).events).toHaveLength(0);
+});
+
+test("usage.reported tolerates camelCase token field variants (defensive mapping)", () => {
+  const out = normalizePi({ point: "usage.reported", source: "hook-command",
+    raw: { session_id: "s", message_id: "m2", usage: { inputTokens: 5, outputTokens: 7 } }, target });
+  expect(out.events[0]!.payload).toMatchObject({ input_tokens: 5, output_tokens: 7, total_tokens: null });
+});
