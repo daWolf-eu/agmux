@@ -196,3 +196,27 @@ test("separate PI_CODING_AGENT_DIR dirs install independently (profile isolation
   expect(piStatus(ictx(cfgA, state)).installed).toBe(true);
   expect(piStatus(ictx(cfgB, state)).installed).toBe(false);
 });
+
+import { piAdapter } from "../../src/adapters/pi/index.ts";
+import { assertAdapterConformance } from "../../src/core/conformance.ts";
+
+test("the piAdapter exposes the expected shape", () => {
+  expect(piAdapter.agentKind).toBe("pi");
+  expect(piAdapter.sources({} as any).length).toBe(1);
+  expect(Object.keys(piAdapter.capabilities({} as any))).toContain("usage.reported");
+  // PI exposes no native session-id env var → nativeIdFromEnv is omitted; identity
+  // comes from stdin (the session-file UUID the extension emits).
+  expect(piAdapter.nativeIdFromEnv).toBeUndefined();
+  expect(piAdapter.nativeIdFromStdin!({ session_id: "abc" })).toBe("abc");
+  expect(piAdapter.nativeIdFromStdin!({})).toBeNull();
+});
+
+test("piAdapter passes the framework conformance battery", () => {
+  const cfg = tmpCfg();
+  const state = tmpState();
+  const passed = assertAdapterConformance(piAdapter, {
+    makeContext: () => ({ agentKind: "pi", profile: null, profileEnv: { PI_CODING_AGENT_DIR: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state }),
+    makeResumeContext: (nid) => ({ agentKind: "pi", profile: null, command: "pi", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
+  });
+  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+});
