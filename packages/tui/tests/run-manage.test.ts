@@ -1,14 +1,15 @@
 import { test, expect } from "bun:test";
-import { handoffArgv } from "../src/run-manage.tsx";
+import { resolveHandoff } from "../src/run-manage.tsx";
 
 test("null handoff yields no spawn", () => {
-  expect(handoffArgv(null)).toBeNull();
+  expect(resolveHandoff(null)).toBeNull();
 });
 
 test("empty-argv handoff is the exit sentinel: no spawn", () => {
-  expect(handoffArgv({ argv: [] })).toBeNull();
+  expect(resolveHandoff({ argv: [] })).toBeNull();
 });
 
-test("non-empty handoff yields its argv", () => {
-  expect(handoffArgv({ argv: ["tmux", "switch-client"] })).toEqual(["tmux", "switch-client"]);
+test("non-empty handoff is returned as-is", () => {
+  const h = { argv: ["tmux", "switch-client"] };
+  expect(resolveHandoff(h)).toEqual(h);
 });
