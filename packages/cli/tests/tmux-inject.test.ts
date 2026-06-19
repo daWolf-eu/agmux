@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
 import { sanitizePayload, computeNeedle } from "../src/tmux-inject.ts";
+import { glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES } from "../src/tmux-inject.ts";
 
 // sanitizePayload returns the exact bytes to load into the tmux buffer.
 // Compare via Array.from for readable failures.
@@ -46,4 +47,41 @@ test("computeNeedle takes the first non-empty line, stripped, truncated at first
   expect(computeNeedle("before\tafter")).toBe("before"); // truncates at the tab
   expect(computeNeedle("x".repeat(40))).toBe("x".repeat(24));
   expect(computeNeedle("   \n   ")).toBe(""); // all whitespace → empty needle
+});
+
+const claudeBox = [
+  "previous output line",
+  "╭───────────────────────────╮",
+  "│ ❯ do the thing            │",
+  "╰───────────────────────────╯",
+  "  ? for shortcuts      1.2k tokens",
+].join("\n");
+
+test("glyphInTail finds the glyph inside the bordered box above footer text", () => {
+  expect(glyphInTail(claudeBox, "❯", PROMPT_SCAN_TAIL_LINES)).toBe(true);
+});
+
+test("glyphInTail ignores the glyph when it is only in scrollback (beyond the tail window)", () => {
+  const lines = ["❯ old echoed prompt"];
+  for (let i = 0; i < 10; i++) lines.push(`output ${i}`); // push the glyph >5 lines up
+  expect(glyphInTail(lines.join("\n"), "❯", PROMPT_SCAN_TAIL_LINES)).toBe(false);
+});
+
+test("glyphInTail returns false when the glyph is absent", () => {
+  expect(glyphInTail("just\nplain\noutput", "❯", PROMPT_SCAN_TAIL_LINES)).toBe(false);
+});
+
+test("draftLanded matches the needle in the text after the last glyph", () => {
+  expect(draftLanded(claudeBox, "❯", "do the thing")).toBe(true);
+});
+
+test("draftLanded accepts the collapsed [Pasted text placeholder regardless of needle", () => {
+  const collapsed = "│ ❯ [Pasted text +42 lines]   │";
+  expect(draftLanded(collapsed, "❯", "needle never appears")).toBe(true);
+});
+
+test("draftLanded with no glyph (null-glyph kind) matches the needle anywhere in the tail", () => {
+  // empty glyph string => fall back to tail substring match
+  expect(draftLanded("codex prompt\n> do the thing", "", "do the thing")).toBe(true);
+  expect(draftLanded("codex prompt\n> nothing here", "", "do the thing")).toBe(false);
 });

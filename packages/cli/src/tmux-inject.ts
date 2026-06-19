@@ -34,6 +34,38 @@ export function sanitizePayload(text: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
+export const PROMPT_SCAN_TAIL_LINES = 5;
+const PASTED_PLACEHOLDER = "[Pasted text";
+
+function tailNonEmptyLines(capture: string, n: number): string[] {
+  const nonEmpty = capture.split("\n").filter((l) => l.trim().length > 0);
+  return nonEmpty.slice(-n);
+}
+
+// The glyph signals "input box rendered". Scan the last N non-empty lines only:
+// whole-pane would match the glyph echoed in scrollback; last-line-only misses it
+// (the glyph sits in a bordered box above footer text).
+export function glyphInTail(capture: string, glyph: string, tailLines: number): boolean {
+  if (!glyph) return false;
+  return tailNonEmptyLines(capture, tailLines).some((l) => l.includes(glyph));
+}
+
+// Has the draft landed in the input box?
+//  - glyph kinds: inspect the text AFTER the last glyph-bearing line; accept the
+//    needle OR the collapsed "[Pasted text +N lines]" placeholder
+//  - null-glyph kinds (glyph === ""): match the needle anywhere in the tail
+export function draftLanded(capture: string, glyph: string, needle: string): boolean {
+  if (!glyph) {
+    const tail = tailNonEmptyLines(capture, PROMPT_SCAN_TAIL_LINES).join("\n");
+    return needle.length > 0 && tail.includes(needle);
+  }
+  const glyphLines = capture.split("\n").filter((l) => l.includes(glyph));
+  if (glyphLines.length === 0) return false;
+  const after = glyphLines[glyphLines.length - 1]!.split(glyph).pop() ?? "";
+  if (after.includes(PASTED_PLACEHOLDER)) return true;
+  return needle.length > 0 && after.includes(needle);
+}
+
 // The distinctive substring we poll the pane for to confirm the draft landed:
 // first non-empty line, truncated at the first control char, stripped, capped.
 export function computeNeedle(content: string): string {
