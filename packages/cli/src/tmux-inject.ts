@@ -119,7 +119,7 @@ export const STABLE_POLLS = 2;
 
 export interface WaitForReadyOpts {
   glyph: string;            // "" for null-glyph kinds → stability heuristic
-  capture: TmuxCapture | (() => Promise<string>);
+  capture: () => Promise<string>;   // pane already bound by the orchestrator
   sleep: Sleep;
   pollIntervalMs: number;
   timeoutMs: number;
@@ -134,7 +134,7 @@ export async function waitForReady(opts: WaitForReadyOpts): Promise<"ready" | "t
   let prev: string | null = null;
   let stableRun = 0;
   for (let n = 0; n < attempts; n++) {
-    const cap = await (opts.capture as () => Promise<string>)();
+    const cap = await opts.capture();
     if (opts.glyph) {
       if (glyphInTail(cap, opts.glyph, PROMPT_SCAN_TAIL_LINES)) return "ready";
     } else {
@@ -155,7 +155,7 @@ export interface VerifiedSubmitOpts {
   glyph: string;
   needle: string;
   exec: TmuxExec;
-  capture: TmuxCapture | (() => Promise<string>);
+  capture: () => Promise<string>;   // pane already bound by the orchestrator
   sleep: Sleep;
   pollIntervalMs: number;
   commitTimeoutMs: number;
@@ -170,7 +170,7 @@ async function sendEnter(exec: TmuxExec, pane: string): Promise<void> {
 }
 
 export async function verifiedSubmit(o: VerifiedSubmitOpts): Promise<"submitted" | "submitted-unverified"> {
-  const cap = o.capture as () => Promise<string>;
+  const cap = o.capture;
 
   // Phase 1: poll until the draft is visible in the input box.
   const commitAttempts = Math.max(1, Math.ceil(o.commitTimeoutMs / o.pollIntervalMs));
@@ -264,7 +264,10 @@ export async function injectBootstrap(opts: InjectOpts): Promise<InjectResult> {
       settleMs: PASTE_SETTLE_MS,
     });
 
-    if (ready === "timeout") return { outcome: "timeout-ready" };
+    // Readiness timed out AND we couldn't confirm the submit → the louder signal
+    // is "pane may still be booting". If the submit was confirmed despite the
+    // timeout, report that success rather than masking it (spec §5.5).
+    if (ready === "timeout" && submit === "submitted-unverified") return { outcome: "timeout-ready" };
     return { outcome: submit };
   } catch (e) {
     return { outcome: "failed", detail: e instanceof Error ? e.message : String(e) };
