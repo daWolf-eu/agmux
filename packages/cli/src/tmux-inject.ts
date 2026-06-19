@@ -206,3 +206,76 @@ export async function pasteViaBuffer(pane: string, bytes: Uint8Array, exec: Tmux
   await run(exec, ["load-buffer", "-b", PASTE_BUFFER_NAME, "-"], bytes);
   await run(exec, ["paste-buffer", "-t", pane, "-b", PASTE_BUFFER_NAME, "-p", "-d"]);
 }
+
+// null = no known prompt glyph for this kind → readiness uses the stability
+// heuristic + timeout. Confirm codex/pi glyphs against live TUIs before setting.
+export const READINESS_GLYPHS: Record<AgentKind, string | null> = {
+  claude: "❯",
+  codex: null,
+  pi: null,
+};
+
+export type InjectOutcome = "submitted" | "submitted-unverified" | "timeout-ready" | "failed";
+export interface InjectResult { outcome: InjectOutcome; detail?: string; }
+
+export interface InjectOpts {
+  pane: string;
+  text: string;
+  agentKind?: AgentKind;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  exec?: TmuxExec;
+  capture?: TmuxCapture;
+  sleep?: Sleep;
+}
+
+const READY_TIMEOUT_MS = 30_000;
+const POLL_INTERVAL_MS = 150;
+const PASTE_SETTLE_MS = 100;
+const PASTE_COMMIT_TIMEOUT_MS = 5_000;
+const SUBMIT_VERIFY_TIMEOUT_MS = 10_000;
+const SUBMIT_RETRY_INTERVAL_MS = 1_000;
+
+export async function injectBootstrap(opts: InjectOpts): Promise<InjectResult> {
+  const exec = opts.exec ?? defaultExec;
+  const captureFn = opts.capture ?? defaultCapture;
+  const sleep = opts.sleep ?? defaultSleep;
+  const pollIntervalMs = opts.pollIntervalMs ?? POLL_INTERVAL_MS;
+  const timeoutMs = opts.timeoutMs ?? READY_TIMEOUT_MS;
+  const glyph = (opts.agentKind ? READINESS_GLYPHS[opts.agentKind] : null) ?? "";
+  const capture = () => captureFn(opts.pane);
+
+  try {
+    const ready = await waitForReady({ glyph, capture, sleep, pollIntervalMs, timeoutMs });
+
+    // Pre-clear any pre-populated text: C-a (Home) then C-k (kill-to-end).
+    await run(exec, ["send-keys", "-t", opts.pane, "C-a"]);
+    await run(exec, ["send-keys", "-t", opts.pane, "C-k"]);
+
+    await pasteViaBuffer(opts.pane, sanitizePayload(opts.text), exec);
+
+    const submit = await verifiedSubmit({
+      pane: opts.pane, glyph, needle: computeNeedle(opts.text),
+      exec, capture, sleep,
+      pollIntervalMs,
+      commitTimeoutMs: PASTE_COMMIT_TIMEOUT_MS,
+      verifyTimeoutMs: SUBMIT_VERIFY_TIMEOUT_MS,
+      retryIntervalMs: SUBMIT_RETRY_INTERVAL_MS,
+      settleMs: PASTE_SETTLE_MS,
+    });
+
+    if (ready === "timeout") return { outcome: "timeout-ready" };
+    return { outcome: submit };
+  } catch (e) {
+    return { outcome: "failed", detail: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+export function reportInject(result: InjectResult): string {
+  switch (result.outcome) {
+    case "submitted": return "agmux: prompt injected";
+    case "submitted-unverified": return "agmux: prompt injected (submit unconfirmed)";
+    case "timeout-ready": return "agmux: prompt inject timed out — pane may still be booting";
+    case "failed": return `agmux: prompt inject failed: ${result.detail ?? "unknown error"}`;
+  }
+}

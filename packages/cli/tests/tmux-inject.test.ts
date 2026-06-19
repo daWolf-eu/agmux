@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import {
   sanitizePayload, computeNeedle, glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES,
   pasteViaBuffer, waitForReady, verifiedSubmit, type TmuxExec,
+  injectBootstrap, reportInject, READINESS_GLYPHS,
 } from "../src/tmux-inject.ts";
 
 const noSleep = async () => {};
@@ -180,4 +181,53 @@ test("verifiedSubmit: draft never seen → blind submit, no verify, 'submitted-u
   expect(r).toBe("submitted-unverified");
   const enters = sent.filter((a) => a[0] === "send-keys" && a.includes("Enter"));
   expect(enters.length).toBe(1); // blind submit only
+});
+
+test("READINESS_GLYPHS maps claude to the prompt glyph and others to null", () => {
+  expect(READINESS_GLYPHS.claude).toBe("❯");
+  expect(READINESS_GLYPHS.codex).toBeNull();
+  expect(READINESS_GLYPHS.pi).toBeNull();
+});
+
+test("injectBootstrap (claude): ready → pre-clear → paste → submit, outcome 'submitted'", async () => {
+  const sent: string[][] = [];
+  const exec: TmuxExec = async (args) => { sent.push(args); return { code: 0, stdout: "" }; };
+  // ready (glyph), then draft visible, then cleared
+  const cap = scripted(["│ ❯  │", "│ ❯ do X │", "│ ❯  │"]);
+  const res = await injectBootstrap({
+    pane: "%3", text: "do X", agentKind: "claude",
+    exec, capture: async () => cap(), sleep: noSleep,
+  });
+  expect(res.outcome).toBe("submitted");
+  // pre-clear sends C-a and C-k before the paste
+  expect(sent.some((a) => a.includes("C-a"))).toBe(true);
+  expect(sent.some((a) => a.includes("C-k"))).toBe(true);
+  expect(sent.some((a) => a[0] === "load-buffer")).toBe(true);
+  expect(sent.some((a) => a[0] === "paste-buffer")).toBe(true);
+});
+
+test("injectBootstrap: readiness timeout still pastes+submits, outcome 'timeout-ready'", async () => {
+  const exec: TmuxExec = async () => ({ code: 0, stdout: "" });
+  const res = await injectBootstrap({
+    pane: "%3", text: "hi", agentKind: "claude",
+    exec, capture: async () => "never any glyph", sleep: noSleep,
+    timeoutMs: 5, pollIntervalMs: 5, // 1 attempt → immediate timeout
+  });
+  expect(res.outcome).toBe("timeout-ready");
+});
+
+test("injectBootstrap: a failing tmux exec yields outcome 'failed', never throws", async () => {
+  const exec: TmuxExec = async () => ({ code: 1, stdout: "" });
+  const res = await injectBootstrap({
+    pane: "%3", text: "hi", agentKind: "claude",
+    exec, capture: async () => "│ ❯  │", sleep: noSleep,
+  });
+  expect(res.outcome).toBe("failed");
+});
+
+test("reportInject maps each outcome to a user-facing line", () => {
+  expect(reportInject({ outcome: "submitted" })).toMatch(/prompt injected/);
+  expect(reportInject({ outcome: "submitted-unverified" })).toMatch(/submit unconfirmed/);
+  expect(reportInject({ outcome: "timeout-ready" })).toMatch(/timed out/);
+  expect(reportInject({ outcome: "failed" })).toMatch(/failed/);
 });
