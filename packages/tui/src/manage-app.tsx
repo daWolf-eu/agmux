@@ -27,20 +27,32 @@ function canMirror(r: SessionRow): boolean {
 
 const MODES: PreviewMode[] = ["mirror", "events", "detail"];
 
+// Hold off the leading preview fetch this long after the selection changes, so
+// scrolling through rows with j/k doesn't spawn a tmux capture-pane per row —
+// only the row you settle on is fetched. Short enough to feel instant.
+const PREVIEW_DEBOUNCE_MS = 80;
+
+// Stable empty list so the memoized Preview isn't handed a fresh [] each render
+// (which would defeat the memo) when no events belong to the current selection.
+const NO_EVENTS: EventEnvelope[] = [];
+
 export function ManageApp(props: ManageAppProps) {
   const { feed, source, actions, hubUrl, defaultPreview, intervalMs, onHandoff } = props;
   const setIntervalImpl = props.setIntervalImpl ?? setInterval;
   const clearIntervalImpl = props.clearIntervalImpl ?? clearInterval;
   const { exit } = useApp();
 
-  // Track terminal height so we can pin the layout to the viewport: the table
-  // and the preview's tabs/separator stay fixed while only the preview body is
-  // clipped. Falls back to 24 rows when stdout doesn't report a size (tests).
+  // Track terminal size to bound the layout: the preview is clamped so the whole
+  // frame stays strictly *under* the viewport. Ink full-clears the screen (visible
+  // flicker) only when a frame overflows the viewport or crosses the fullscreen
+  // boundary — keeping every frame under it avoids that entirely while letting the
+  // frame shrink (fast repaint) while navigating. Falls back to 24×80 in tests.
   const { stdout } = useStdout();
   const [termRows, setTermRows] = useState(() => stdout?.rows || 24);
+  const [termCols, setTermCols] = useState(() => stdout?.columns || 80);
   useEffect(() => {
     if (!stdout) return;
-    const onResize = () => setTermRows(stdout.rows || 24);
+    const onResize = () => { setTermRows(stdout.rows || 24); setTermCols(stdout.columns || 80); };
     stdout.on("resize", onResize);
     return () => { stdout.off("resize", onResize); };
   }, [stdout]);
@@ -64,9 +76,13 @@ export function ManageApp(props: ManageAppProps) {
   const [showHelp, setShowHelp] = useState(false);
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
 
-  const [mirrorText, setMirrorText] = useState("");
-  const [events, setEvents] = useState<EventEnvelope[]>([]);
-  const [usage, setUsage] = useState<UsageSummary | null>(null);
+  // Each preview buffer is tagged with the session it was fetched for. We only
+  // surface it when the tag matches the current selection, so a buffer captured
+  // for the previous row is never shown under the new row's header (that swap
+  // was the visible flicker). A mismatch renders empty until the fetch lands.
+  const [mirror, setMirror] = useState<{ id: string | null; text: string }>({ id: null, text: "" });
+  const [eventsBuf, setEventsBuf] = useState<{ id: string | null; list: EventEnvelope[] }>({ id: null, list: [] });
+  const [usageBuf, setUsageBuf] = useState<{ id: string | null; data: UsageSummary | null }>({ id: null, data: null });
 
   const visible = useMemo(() => (rows ?? []).filter((r) => matchesFilter(r, filter)), [rows, filter]);
   const flat = useMemo(() => selectableRows(visible), [visible]);
@@ -83,6 +99,11 @@ export function ManageApp(props: ManageAppProps) {
   const selected = flat.find((r) => r.session_id === effectiveSelectedId) ?? null;
   const effectiveMode: PreviewMode = mode === "mirror" && (!selected || !canMirror(selected)) ? "events" : mode;
 
+  // Only show a buffer that belongs to the current selection (see setMirror).
+  const mirrorText = mirror.id === effectiveSelectedId ? mirror.text : "";
+  const events = eventsBuf.id === effectiveSelectedId ? eventsBuf.list : NO_EVENTS;
+  const usage = usageBuf.id === effectiveSelectedId ? usageBuf.data : null;
+
   // Preview polling — re-runs when selection or resolved mode changes.
   const selRef = useRef<SessionRow | null>(selected);
   selRef.current = selected;
@@ -93,14 +114,16 @@ export function ManageApp(props: ManageAppProps) {
       const row = selRef.current;
       if (!row) return;
       try {
-        if (effectiveMode === "mirror") { const t = await source.mirror(row); if (!stop) setMirrorText(t); }
-        else if (effectiveMode === "events") { const e = await source.events(row); if (!stop) setEvents(e); }
-        else { const u = await source.usage(row); if (!stop) setUsage(u); }
+        if (effectiveMode === "mirror") { const t = await source.mirror(row); if (!stop) setMirror({ id: row.session_id, text: t }); }
+        else if (effectiveMode === "events") { const e = await source.events(row); if (!stop) setEventsBuf({ id: row.session_id, list: e }); }
+        else { const u = await source.usage(row); if (!stop) setUsageBuf({ id: row.session_id, data: u }); }
       } catch { /* keep last good */ }
     };
-    void pull();
+    // Debounce the leading fetch so rapid j/k navigation doesn't spawn a capture
+    // per row; the periodic refresh then keeps the settled row's preview live.
+    const lead = setTimeout(() => { void pull(); }, PREVIEW_DEBOUNCE_MS);
     const t = setIntervalImpl(pull, intervalMs);
-    return () => { stop = true; clearIntervalImpl(t); };
+    return () => { stop = true; clearTimeout(lead); clearIntervalImpl(t); };
   }, [effectiveSelectedId, effectiveMode, intervalMs, source]);
 
   const move = (delta: number) => {
@@ -160,23 +183,32 @@ export function ManageApp(props: ManageAppProps) {
     );
   }
 
-  const leftPct = `${Math.round(split * 100)}%`;
-  const rightPct = `${100 - Math.round(split * 100)}%`;
+  const leftCols = Math.round(split * 100);
+  const leftPct = `${leftCols}%`;
+  const rightPct = `${100 - leftCols}%`;
   // Footer lines below the body (hint, plus the kill/filter prompts when active).
   const footerLines = 1 + (confirmKill ? 1 : 0) + (filtering ? 1 : 0);
-  const bodyHeight = Math.max(1, termRows - footerLines);
-  // Preview reserves 2 lines for its tabs + separator header before the body.
-  const maxBodyLines = Math.max(1, bodyHeight - 2);
+  // Bound the preview body so the *whole* frame stays strictly under the viewport
+  // (header 2 + body + footer + 1 reserved row). Staying under the viewport — not
+  // pinned to it — is what keeps Ink off its full-screen-clear path: the frame is
+  // only as tall as its content, so an empty preview while navigating repaints
+  // cheaply, and Ink never clears even as the height changes.
+  const maxBodyLines = Math.max(1, termRows - footerLines - 2 - 1);
+  // Column widths in chars. The left (table) rows are truncated to keep column
+  // alignment; the right (preview) lines are hard-wrapped. The -2 covers the
+  // 1-col gutter plus a slack column so a full-width line can't spill and wrap.
+  const leftWidth = Math.max(1, Math.floor((termCols * leftCols) / 100));
+  const rightWidth = Math.max(1, termCols - leftWidth - 2);
   return (
-    <Box flexDirection="column" height={termRows}>
-      <Box flexGrow={1} overflow="hidden">
-        <Box width={leftPct} flexDirection="column" overflow="hidden">
+    <Box flexDirection="column">
+      <Box>
+        <Box width={leftPct} flexDirection="column">
           {rows === null
             ? <Text dimColor>connecting to {hubUrl}…</Text>
-            : <SessionList rows={visible} selectedId={effectiveSelectedId} />}
+            : <SessionList rows={visible} selectedId={effectiveSelectedId} width={leftWidth} />}
         </Box>
-        <Box width={rightPct} flexDirection="column" marginLeft={1} overflow="hidden">
-          <Preview row={selected} mode={effectiveMode} mirrorText={mirrorText} events={events} usage={usage} maxBodyLines={maxBodyLines} />
+        <Box width={rightPct} flexDirection="column" marginLeft={1}>
+          <Preview row={selected} mode={effectiveMode} mirrorText={mirrorText} events={events} usage={usage} maxBodyLines={maxBodyLines} bodyWidth={rightWidth} />
         </Box>
       </Box>
       {confirmKill && <Text color="red">kill {confirmKill.session_id.slice(0, 8)} (pid {confirmKill.pid ?? "?"})? y/n</Text>}

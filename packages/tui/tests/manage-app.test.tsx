@@ -119,14 +119,38 @@ test("long preview output stays within the viewport — footer and table not scr
   m.push([mkRow({ session_id: "run1", status: "running" })]);
   await Bun.sleep(0);
   stdin.write("\t"); // detail → mirror
-  await Bun.sleep(0);
+  await Bun.sleep(120); // let the debounced mirror capture land
   const frame = lastFrame()!;
   // Frame height is pinned to the (fallback) 24-row viewport, so the table and
   // footer survive even though the mirror has 200 lines.
   expect(frame.split("\n").length).toBeLessThanOrEqual(24);
   expect(frame).toContain("WORKING (1)"); // table header still visible
   expect(frame).toContain(FOOTER_HINT);   // footer still visible
-  expect(frame).not.toContain("pane-line-199"); // overflow clipped
+  expect(frame).toContain("pane-line-199"); // newest tail kept
+  expect(frame).not.toContain("pane-line-0"); // older top clipped
+});
+
+test("switching selection never shows the previous row's mirror buffer", async () => {
+  const m = manualFeed();
+  const { actions } = recordingActions();
+  // Each session's pane content is its own id, so a stale buffer is detectable.
+  const perRow: PreviewSource = {
+    async mirror(row) { return `PANE-${row.session_id}`; },
+    async events() { return []; },
+    async usage() { return null; },
+  };
+  const { lastFrame, stdin } = render(
+    <ManageApp feed={m.feed} actions={actions} {...base} source={perRow} defaultPreview="mirror" />,
+  );
+  m.push([mkRow({ session_id: "run1", status: "running" }), mkRow({ session_id: "run2", status: "running" })]);
+  await Bun.sleep(120); // first row's capture lands
+  expect(lastFrame()).toContain("PANE-run1");
+  stdin.write("j"); // move to run2
+  await Bun.sleep(0); // before the debounced capture for run2 resolves
+  // run1's buffer must not bleed under run2's header.
+  expect(lastFrame()).not.toContain("PANE-run1");
+  await Bun.sleep(120); // run2's capture lands
+  expect(lastFrame()).toContain("PANE-run2");
 });
 
 test("mirror mode falls back to events for a dead session", async () => {

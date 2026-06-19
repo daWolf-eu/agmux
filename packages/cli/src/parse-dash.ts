@@ -55,7 +55,7 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
     opts: {
       ...parsed.opts,
       intervalMs: Math.round((intervalSec ?? cfg.interval ?? 1) * 1000),
-      preview: preview ?? cfg.preview ?? "events",
+      preview: preview ?? cfg.preview ?? "mirror",
       popup,
     },
   };
