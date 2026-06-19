@@ -1,8 +1,15 @@
 import { test, expect } from "bun:test";
 import {
   sanitizePayload, computeNeedle, glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES,
-  pasteViaBuffer, type TmuxExec,
+  pasteViaBuffer, waitForReady, type TmuxExec,
 } from "../src/tmux-inject.ts";
+
+const noSleep = async () => {};
+// Returns a capture fn that yields each scripted frame once, repeating the last.
+const scripted = (frames: string[]): (() => Promise<string>) => {
+  let i = 0;
+  return async () => frames[Math.min(i++, frames.length - 1)]!;
+};
 
 // sanitizePayload returns the exact bytes to load into the tmux buffer.
 // Compare via Array.from for readable failures.
@@ -107,4 +114,31 @@ test("pasteViaBuffer loads the sanitized bytes via stdin and pastes with -p -d",
 test("pasteViaBuffer throws if a tmux command exits non-zero", async () => {
   const exec: TmuxExec = async () => ({ code: 1, stdout: "" });
   await expect(pasteViaBuffer("%3", sanitizePayload("x"), exec)).rejects.toThrow();
+});
+
+test("waitForReady (glyph kind) returns 'ready' once the glyph appears in the tail", async () => {
+  const cap = scripted(["booting...", "still booting", "│ ❯            │"]);
+  const r = await waitForReady({
+    glyph: "❯", capture: async () => cap(), sleep: noSleep,
+    pollIntervalMs: 10, timeoutMs: 1000,
+  });
+  expect(r).toBe("ready");
+});
+
+test("waitForReady (glyph kind) returns 'timeout' when the glyph never appears", async () => {
+  const r = await waitForReady({
+    glyph: "❯", capture: async () => "no glyph here", sleep: noSleep,
+    pollIntervalMs: 100, timeoutMs: 300, // → 3 attempts
+  });
+  expect(r).toBe("timeout");
+});
+
+test("waitForReady (null-glyph kind) returns 'ready' once capture is stable for 2 polls", async () => {
+  // changing, changing, then identical twice → stable
+  const cap = scripted(["a", "b", "c", "c"]);
+  const r = await waitForReady({
+    glyph: "", capture: async () => cap(), sleep: noSleep,
+    pollIntervalMs: 10, timeoutMs: 1000,
+  });
+  expect(r).toBe("ready");
 });

@@ -115,6 +115,41 @@ async function run(exec: TmuxExec, args: string[], stdin?: Uint8Array): Promise<
   if (code !== 0) throw new Error(`tmux ${args[0]} exited ${code}`);
 }
 
+export const STABLE_POLLS = 2;
+
+export interface WaitForReadyOpts {
+  glyph: string;            // "" for null-glyph kinds → stability heuristic
+  capture: TmuxCapture | (() => Promise<string>);
+  sleep: Sleep;
+  pollIntervalMs: number;
+  timeoutMs: number;
+}
+
+// Poll until ready or the attempt budget (timeout/interval) is spent.
+//  - glyph kinds: ready when the glyph renders in the tail (no stability check —
+//    the glyph persists while the agent is busy, so presence = "box mounted")
+//  - null-glyph kinds: ready when the capture is unchanged for STABLE_POLLS polls
+export async function waitForReady(opts: WaitForReadyOpts): Promise<"ready" | "timeout"> {
+  const attempts = Math.max(1, Math.ceil(opts.timeoutMs / opts.pollIntervalMs));
+  let prev: string | null = null;
+  let stableRun = 0;
+  for (let n = 0; n < attempts; n++) {
+    const cap = await (opts.capture as () => Promise<string>)();
+    if (opts.glyph) {
+      if (glyphInTail(cap, opts.glyph, PROMPT_SCAN_TAIL_LINES)) return "ready";
+    } else {
+      if (prev !== null && cap === prev) {
+        if (++stableRun >= STABLE_POLLS - 1) return "ready";
+      } else {
+        stableRun = 0;
+      }
+      prev = cap;
+    }
+    if (n < attempts - 1) await opts.sleep(opts.pollIntervalMs);
+  }
+  return "timeout";
+}
+
 // Deliver text into the pane's input box via a tmux buffer (NOT send-keys):
 //  - load-buffer dodges the ~16 KB argv cap (bytes arrive on stdin)
 //  - paste-buffer -p uses bracketed paste so multi-line lands as one chunk
