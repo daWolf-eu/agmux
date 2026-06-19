@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   sanitizePayload, computeNeedle, glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES,
+  pasteViaBuffer, type TmuxExec,
 } from "../src/tmux-inject.ts";
 
 // sanitizePayload returns the exact bytes to load into the tmux buffer.
@@ -85,4 +86,25 @@ test("draftLanded with no glyph (null-glyph kind) matches the needle anywhere in
   // empty glyph string => fall back to tail substring match
   expect(draftLanded("codex prompt\n> do the thing", "", "do the thing")).toBe(true);
   expect(draftLanded("codex prompt\n> nothing here", "", "do the thing")).toBe(false);
+});
+
+test("pasteViaBuffer loads the sanitized bytes via stdin and pastes with -p -d", async () => {
+  const calls: { args: string[]; stdin?: Uint8Array }[] = [];
+  const exec: TmuxExec = async (args, stdin) => {
+    calls.push({ args, stdin });
+    return { code: 0, stdout: "" };
+  };
+  await pasteViaBuffer("%3", sanitizePayload("hello"), exec);
+
+  expect(calls).toHaveLength(2);
+  // 1) load-buffer from stdin into a named buffer
+  expect(calls[0]!.args).toEqual(["load-buffer", "-b", "agmux-paste", "-"]);
+  expect(Array.from(calls[0]!.stdin!)).toEqual(Array.from(sanitizePayload("hello")));
+  // 2) bracketed paste (-p) into the pane, deleting the buffer after (-d)
+  expect(calls[1]!.args).toEqual(["paste-buffer", "-t", "%3", "-b", "agmux-paste", "-p", "-d"]);
+});
+
+test("pasteViaBuffer throws if a tmux command exits non-zero", async () => {
+  const exec: TmuxExec = async () => ({ code: 1, stdout: "" });
+  await expect(pasteViaBuffer("%3", sanitizePayload("x"), exec)).rejects.toThrow();
 });

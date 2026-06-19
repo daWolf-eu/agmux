@@ -83,3 +83,44 @@ export function computeNeedle(content: string): string {
   }
   return "";
 }
+
+const PASTE_BUFFER_NAME = "agmux-paste";
+
+// Injectable tmux seams. Defaults shell out via Bun.spawn(["tmux", ...]),
+// matching tmux-place.ts:116. No `-S socket`: agmux uses the ambient server.
+export type TmuxExec = (args: string[], stdin?: Uint8Array) => Promise<{ code: number; stdout: string }>;
+export type TmuxCapture = (pane: string) => Promise<string>;
+export type Sleep = (ms: number) => Promise<void>;
+
+export const defaultExec: TmuxExec = async (args, stdin) => {
+  const proc = Bun.spawn(["tmux", ...args], {
+    stdin: stdin ? stdin : "ignore",
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  await proc.exited;
+  return { code: proc.exitCode ?? 0, stdout };
+};
+
+export const defaultCapture: TmuxCapture = async (pane) => {
+  const { stdout } = await defaultExec(["capture-pane", "-p", "-t", pane]);
+  return stdout;
+};
+
+export const defaultSleep: Sleep = (ms) => Bun.sleep(ms);
+
+async function run(exec: TmuxExec, args: string[], stdin?: Uint8Array): Promise<void> {
+  const { code } = await exec(args, stdin);
+  if (code !== 0) throw new Error(`tmux ${args[0]} exited ${code}`);
+}
+
+// Deliver text into the pane's input box via a tmux buffer (NOT send-keys):
+//  - load-buffer dodges the ~16 KB argv cap (bytes arrive on stdin)
+//  - paste-buffer -p uses bracketed paste so multi-line lands as one chunk
+//    (dodges the per-newline submit bug, anthropics/claude-code#52126)
+//  - -d deletes the named buffer afterward
+export async function pasteViaBuffer(pane: string, bytes: Uint8Array, exec: TmuxExec): Promise<void> {
+  await run(exec, ["load-buffer", "-b", PASTE_BUFFER_NAME, "-"], bytes);
+  await run(exec, ["paste-buffer", "-t", pane, "-b", PASTE_BUFFER_NAME, "-p", "-d"]);
+}
