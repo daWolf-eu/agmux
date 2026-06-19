@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import type { SessionRow, SessionStatus } from "@agmux/protocol";
 import {
-  groupSessions, buildDashTable, selectableRows, matchesFilter, dashActivityCell, DASH_HEADER,
+  groupSessions, buildDashTable, selectableRows, matchesFilter, dashActivityCell, dashTmuxCell, DASH_HEADER,
 } from "../src/group-table.ts";
 
 function mkRow(over: Partial<SessionRow> = {}): SessionRow {
@@ -30,6 +30,25 @@ test("dashActivityCell shows exit info for closed rows", () => {
   expect(dashActivityCell(mkRow({ status: "ended", signal: "SIGTERM", exit_code: null }))).toBe("signal SIGTERM");
   expect(dashActivityCell(mkRow({ status: "lost" }))).toBe("lost");
   expect(dashActivityCell(mkRow({ status: "running", last_tool: "Edit" }))).toBe("tool: Edit");
+});
+
+test("dashTmuxCell joins session:window, dashes when missing, truncates at 24", () => {
+  expect(dashTmuxCell(mkRow({ tmux_session: "agmux", tmux_window: "@1" }))).toBe("agmux:@1");
+  expect(dashTmuxCell(mkRow({ tmux_session: null, tmux_window: "@1" }))).toBe("-");
+  expect(dashTmuxCell(mkRow({ tmux_session: "agmux", tmux_window: null }))).toBe("-");
+  const long = dashTmuxCell(mkRow({ tmux_session: "very-long-session-name-here", tmux_window: "@99" }));
+  expect(long.length).toBe(24);
+  expect(long.endsWith("…")).toBe(true);
+});
+
+test("buildDashTable includes the TMUX column", () => {
+  const t = buildDashTable([mkRow({ session_id: "run1", status: "running", tmux_session: "mysess", tmux_window: "@2" })]);
+  expect(t.header.split(/\s{2,}/)).toContain("TMUX");
+  expect(t.groups[0]!.rows[0]!.text).toContain("mysess:@2");
+});
+
+test("matchesFilter matches the tmux name", () => {
+  expect(matchesFilter(mkRow({ tmux_session: "infra-box", tmux_window: "@1" }), "infra-box")).toBe(true);
 });
 
 test("buildDashTable aligns columns across all groups and labels each group", () => {

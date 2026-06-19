@@ -5,6 +5,7 @@ import type { SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../src/feed.ts";
 import type { Actions, Handoff, PreviewSource } from "../src/types.ts";
 import { ManageApp } from "../src/manage-app.tsx";
+import { FOOTER_HINT } from "../src/keymap.ts";
 
 function mkRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
@@ -102,6 +103,30 @@ test("x prompts confirm, y kills", async () => {
   stdin.write("y");
   await Bun.sleep(0);
   expect(calls).toContain("kill:run1");
+});
+
+test("long preview output stays within the viewport — footer and table not scrolled off", async () => {
+  const m = manualFeed();
+  const { actions } = recordingActions();
+  const tallSource: PreviewSource = {
+    async mirror() { return Array.from({ length: 200 }, (_, i) => `pane-line-${i}`).join("\n"); },
+    async events() { return []; },
+    async usage() { return null; },
+  };
+  const { lastFrame, stdin } = render(
+    <ManageApp feed={m.feed} actions={actions} {...base} source={tallSource} defaultPreview="detail" />,
+  );
+  m.push([mkRow({ session_id: "run1", status: "running" })]);
+  await Bun.sleep(0);
+  stdin.write("\t"); // detail → mirror
+  await Bun.sleep(0);
+  const frame = lastFrame()!;
+  // Frame height is pinned to the (fallback) 24-row viewport, so the table and
+  // footer survive even though the mirror has 200 lines.
+  expect(frame.split("\n").length).toBeLessThanOrEqual(24);
+  expect(frame).toContain("WORKING (1)"); // table header still visible
+  expect(frame).toContain(FOOTER_HINT);   // footer still visible
+  expect(frame).not.toContain("pane-line-199"); // overflow clipped
 });
 
 test("mirror mode falls back to events for a dead session", async () => {

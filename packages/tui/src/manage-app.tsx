@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import { LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow, type EventEnvelope } from "@agmux/protocol";
 import type { SessionFeed } from "./feed.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "./types.ts";
@@ -32,6 +32,18 @@ export function ManageApp(props: ManageAppProps) {
   const setIntervalImpl = props.setIntervalImpl ?? setInterval;
   const clearIntervalImpl = props.clearIntervalImpl ?? clearInterval;
   const { exit } = useApp();
+
+  // Track terminal height so we can pin the layout to the viewport: the table
+  // and the preview's tabs/separator stay fixed while only the preview body is
+  // clipped. Falls back to 24 rows when stdout doesn't report a size (tests).
+  const { stdout } = useStdout();
+  const [termRows, setTermRows] = useState(() => stdout?.rows || 24);
+  useEffect(() => {
+    if (!stdout) return;
+    const onResize = () => setTermRows(stdout.rows || 24);
+    stdout.on("resize", onResize);
+    return () => { stdout.off("resize", onResize); };
+  }, [stdout]);
 
   // Use useSyncExternalStore so the feed subscription notifies React synchronously
   // (avoids the DefaultLane async-scheduler path that would require 2 event-loop
@@ -150,16 +162,21 @@ export function ManageApp(props: ManageAppProps) {
 
   const leftPct = `${Math.round(split * 100)}%`;
   const rightPct = `${100 - Math.round(split * 100)}%`;
+  // Footer lines below the body (hint, plus the kill/filter prompts when active).
+  const footerLines = 1 + (confirmKill ? 1 : 0) + (filtering ? 1 : 0);
+  const bodyHeight = Math.max(1, termRows - footerLines);
+  // Preview reserves 2 lines for its tabs + separator header before the body.
+  const maxBodyLines = Math.max(1, bodyHeight - 2);
   return (
-    <Box flexDirection="column">
-      <Box>
-        <Box width={leftPct} flexDirection="column">
+    <Box flexDirection="column" height={termRows}>
+      <Box flexGrow={1} overflow="hidden">
+        <Box width={leftPct} flexDirection="column" overflow="hidden">
           {rows === null
             ? <Text dimColor>connecting to {hubUrl}…</Text>
             : <SessionList rows={visible} selectedId={effectiveSelectedId} />}
         </Box>
-        <Box width={rightPct} flexDirection="column" marginLeft={1}>
-          <Preview row={selected} mode={effectiveMode} mirrorText={mirrorText} events={events} usage={usage} />
+        <Box width={rightPct} flexDirection="column" marginLeft={1} overflow="hidden">
+          <Preview row={selected} mode={effectiveMode} mirrorText={mirrorText} events={events} usage={usage} maxBodyLines={maxBodyLines} />
         </Box>
       </Box>
       {confirmKill && <Text color="red">kill {confirmKill.session_id.slice(0, 8)} (pid {confirmKill.pid ?? "?"})? y/n</Text>}

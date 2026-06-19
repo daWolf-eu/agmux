@@ -13,7 +13,18 @@ const GROUP_DEFS: GroupDef[] = [
   { key: "closed", label: "CLOSED", statuses: ["ended", "lost"] },
 ];
 
-export const DASH_HEADER = ["ID", "AGENT", "PROFILE", "ACTIVITY", "TURNS", "LAST"] as const;
+export const DASH_HEADER = ["ID", "TMUX", "AGENT", "PROFILE", "ACTIVITY", "TURNS", "LAST"] as const;
+
+// tmux names are user-chosen and the only human-friendly identifier, but they
+// can run long — cap so the table can't crowd out the preview pane.
+const TMUX_MAX = 24;
+
+// session:window joined, same shape as `agmux ls`, truncated to TMUX_MAX.
+export function dashTmuxCell(r: SessionRow): string {
+  if (!r.tmux_session || !r.tmux_window) return "-";
+  const cell = `${r.tmux_session}:${r.tmux_window}`;
+  return cell.length > TMUX_MAX ? cell.slice(0, TMUX_MAX - 1) + "…" : cell;
+}
 
 // Activity text for the dash table: reuse activityCell for live rows; closed
 // rows show how they ended instead of "-".
@@ -26,6 +37,7 @@ export function dashActivityCell(r: SessionRow): string {
 function cells(r: SessionRow): string[] {
   return [
     r.session_id.slice(0, 8),
+    dashTmuxCell(r),
     r.agent_kind,
     r.profile ?? "-",
     dashActivityCell(r),
@@ -70,6 +82,6 @@ export function selectableRows(rows: SessionRow[]): SessionRow[] {
 export function matchesFilter(r: SessionRow, q: string): boolean {
   if (!q) return true;
   const needle = q.toLowerCase();
-  return [r.session_id, r.agent_kind, r.profile ?? "", dashActivityCell(r)]
+  return [r.session_id, r.agent_kind, r.profile ?? "", dashActivityCell(r), dashTmuxCell(r)]
     .some((s) => s.toLowerCase().includes(needle));
 }
