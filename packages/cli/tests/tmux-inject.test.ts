@@ -225,6 +225,18 @@ test("injectBootstrap: a failing tmux exec yields outcome 'failed', never throws
   expect(res.outcome).toBe("failed");
 });
 
+test("injectBootstrap (undefined agentKind): null glyph → stability gate + needle submit", async () => {
+  const exec: TmuxExec = async () => ({ code: 0, stdout: "" });
+  // glyph resolves to "" → waitForReady uses the stability heuristic (two equal
+  // frames), verifiedSubmit uses the null-glyph needle match in the tail.
+  const cap = scripted(["booting", "booting", "> do X", "> done"]);
+  const res = await injectBootstrap({
+    pane: "%3", text: "do X", // agentKind omitted
+    exec, capture: async () => cap(), sleep: noSleep,
+  });
+  expect(res.outcome).toBe("submitted");
+});
+
 test("reportInject maps each outcome to a user-facing line", () => {
   expect(reportInject({ outcome: "submitted" })).toMatch(/prompt injected/);
   expect(reportInject({ outcome: "submitted-unverified" })).toMatch(/submit unconfirmed/);
