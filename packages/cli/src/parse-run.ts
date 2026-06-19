@@ -20,8 +20,8 @@
 export type Placement = "inherit" | "new-pane" | "new-window" | "new-session";
 
 export type ParsedRun =
-  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean }
-  | { kind: "inline"; agent_kind: "claude" | "codex" | "pi"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean }
+  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean; prompt?: string; promptFile?: string }
+  | { kind: "inline"; agent_kind: "claude" | "codex" | "pi"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean; prompt?: string; promptFile?: string }
   | { kind: "error"; message: string };
 
 function parseKind(v: string): "claude" | "codex" | "pi" | null {
@@ -34,6 +34,8 @@ export function parseRunArgs(argv: string[]): ParsedRun {
   let placement: Placement = "inherit";
   let detach = false;
   let wrapped = false;
+  let prompt: string | undefined;
+  let promptFile: string | undefined;
   // Track *explicit* --new-* selection so we can error on collisions; -d's
   // default ("--new-pane unless overridden") never collides on its own.
   let explicitPlacementFlag: string | null = null;
@@ -65,6 +67,20 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       continue;
     }
     if (a === "--wrapped") { wrapped = true; i += 1; continue; }
+    if (a === "--prompt") {
+      const v = argv[i + 1];
+      if (v === undefined) return { kind: "error", message: `--prompt requires a value` };
+      prompt = v;
+      i += 2;
+      continue;
+    }
+    if (a === "--prompt-file") {
+      const v = argv[i + 1];
+      if (v === undefined) return { kind: "error", message: `--prompt-file requires a value` };
+      promptFile = v;
+      i += 2;
+      continue;
+    }
     if (a === "-d" || a === "--detach") {
       detach = true;
       // Soft default: only fills placement if no explicit --new-* was given (yet
@@ -91,11 +107,18 @@ export function parseRunArgs(argv: string[]): ParsedRun {
 
   const tail = argv.slice(i);
 
+  if (prompt !== undefined && promptFile !== undefined) {
+    return { kind: "error", message: "cannot combine --prompt with --prompt-file" };
+  }
+  if ((prompt !== undefined || promptFile !== undefined) && placement === "inherit") {
+    return { kind: "error", message: "--prompt requires --new-pane, --new-window, or --new-session" };
+  }
+
   if (profileName) {
     if (tail.length > 0) {
       return { kind: "error", message: "cannot combine -p/--profile with a positional command" };
     }
-    return { kind: "profile", profileName, placement, detach, wrapped };
+    return { kind: "profile", profileName, placement, detach, wrapped, prompt, promptFile };
   }
 
   if (tail.length === 0) {
@@ -117,5 +140,5 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       message: `agmux run: cannot infer agent_kind from '${basename}'. Use --kind=claude, --kind=codex, or --kind=pi.`,
     };
   }
-  return { kind: "inline", agent_kind, command, args, placement, detach, wrapped };
+  return { kind: "inline", agent_kind, command, args, placement, detach, wrapped, prompt, promptFile };
 }
