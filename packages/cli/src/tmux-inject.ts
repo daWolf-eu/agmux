@@ -5,9 +5,12 @@
 // All tmux access flows through injected exec/capture/sleep seams so the logic
 // unit-tests with no live tmux, mirroring tmux-place.ts / dash-preview.ts.
 
+// AgentKind keys the per-kind readiness glyph map added in a later task.
 import type { AgentKind } from "@agmux/protocol";
 
 export const DRAFT_NEEDLE_MAX_CHARS = 24;
+
+const enc = new TextEncoder();
 
 // Build the exact bytes to load into a tmux buffer for a bracketed paste.
 //  - normalize CRLF/CR → \n, then append a trailing \n so a trailing "\" can't
@@ -15,7 +18,8 @@ export const DRAFT_NEEDLE_MAX_CHARS = 24;
 //  - \n → 0x0D (CR): under bracketed paste the TUI keeps these as in-draft newlines
 //  - \t → 0x09 (kept)
 //  - any other byte < 0x20 dropped: a stray ESC would prematurely close the paste
-//  - everything else → UTF-8 bytes
+//  - everything else → UTF-8 bytes (incl. DEL 0x7F, passed through for parity
+//    with omnigent, which only drops < 0x20)
 export function sanitizePayload(text: string): Uint8Array {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n") + "\n";
   const out: number[] = [];

@@ -32,6 +32,14 @@ test("sanitizePayload trailing backslash is absorbed by the appended newline", (
   expect(bytes("x\\")).toEqual([0x78, 0x5c, 0x0d]);
 });
 
+test("sanitizePayload of empty string is just the appended trailing CR", () => {
+  expect(bytes("")).toEqual([0x0d]);
+});
+
+test("computeNeedle of empty string is empty", () => {
+  expect(computeNeedle("")).toBe("");
+});
+
 test("computeNeedle takes the first non-empty line, stripped, truncated at first control char, max 24 chars", () => {
   expect(computeNeedle("  hello world  ")).toBe("hello world");
   expect(computeNeedle("\n\n  second line is used")).toBe("second line is used");
