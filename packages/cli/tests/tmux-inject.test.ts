@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   sanitizePayload, computeNeedle, glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES,
-  pasteViaBuffer, waitForReady, type TmuxExec,
+  pasteViaBuffer, waitForReady, verifiedSubmit, type TmuxExec,
 } from "../src/tmux-inject.ts";
 
 const noSleep = async () => {};
@@ -141,4 +141,43 @@ test("waitForReady (null-glyph kind) returns 'ready' once capture is stable for 
     pollIntervalMs: 10, timeoutMs: 1000,
   });
   expect(r).toBe("ready");
+});
+
+const okExec = (sink: string[][]): TmuxExec => async (args) => { sink.push(args); return { code: 0, stdout: "" }; };
+
+test("verifiedSubmit: draft seen then cleared after Enter → 'submitted'", async () => {
+  const sent: string[][] = [];
+  // capture: draft visible, then draft visible (commit poll), then cleared
+  const cap = scripted(["│ ❯ hello there │", "│ ❯ hello there │", "│ ❯  │"]);
+  const r = await verifiedSubmit({
+    pane: "%3", glyph: "❯", needle: "hello there",
+    exec: okExec(sent), capture: async () => cap(), sleep: noSleep,
+    pollIntervalMs: 1, commitTimeoutMs: 50, verifyTimeoutMs: 50, retryIntervalMs: 5, settleMs: 0,
+  });
+  expect(r).toBe("submitted");
+  expect(sent.some((a) => a[0] === "send-keys" && a.includes("Enter"))).toBe(true);
+});
+
+test("verifiedSubmit: draft never clears → re-sends Enter, returns 'submitted-unverified'", async () => {
+  const sent: string[][] = [];
+  const r = await verifiedSubmit({
+    pane: "%3", glyph: "❯", needle: "stuck",
+    exec: okExec(sent), capture: async () => "│ ❯ stuck │", sleep: noSleep,
+    pollIntervalMs: 1, commitTimeoutMs: 10, verifyTimeoutMs: 30, retryIntervalMs: 1, settleMs: 0,
+  });
+  expect(r).toBe("submitted-unverified");
+  const enters = sent.filter((a) => a[0] === "send-keys" && a.includes("Enter"));
+  expect(enters.length).toBeGreaterThan(1); // initial + at least one re-send
+});
+
+test("verifiedSubmit: draft never seen → blind submit, no verify, 'submitted-unverified'", async () => {
+  const sent: string[][] = [];
+  const r = await verifiedSubmit({
+    pane: "%3", glyph: "❯", needle: "absent",
+    exec: okExec(sent), capture: async () => "│ ❯  │", sleep: noSleep,
+    pollIntervalMs: 1, commitTimeoutMs: 10, verifyTimeoutMs: 30, retryIntervalMs: 1, settleMs: 0,
+  });
+  expect(r).toBe("submitted-unverified");
+  const enters = sent.filter((a) => a[0] === "send-keys" && a.includes("Enter"));
+  expect(enters.length).toBe(1); // blind submit only
 });

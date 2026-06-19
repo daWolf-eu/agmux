@@ -150,6 +150,53 @@ export async function waitForReady(opts: WaitForReadyOpts): Promise<"ready" | "t
   return "timeout";
 }
 
+export interface VerifiedSubmitOpts {
+  pane: string;
+  glyph: string;
+  needle: string;
+  exec: TmuxExec;
+  capture: TmuxCapture | (() => Promise<string>);
+  sleep: Sleep;
+  pollIntervalMs: number;
+  commitTimeoutMs: number;
+  verifyTimeoutMs: number;
+  retryIntervalMs: number;
+  settleMs: number;
+}
+
+async function sendEnter(exec: TmuxExec, pane: string): Promise<void> {
+  // No -l: tmux must interpret "Enter" as a key name, not literal text.
+  await run(exec, ["send-keys", "-t", pane, "Enter"]);
+}
+
+export async function verifiedSubmit(o: VerifiedSubmitOpts): Promise<"submitted" | "submitted-unverified"> {
+  const cap = o.capture as () => Promise<string>;
+
+  // Phase 1: poll until the draft is visible in the input box.
+  const commitAttempts = Math.max(1, Math.ceil(o.commitTimeoutMs / o.pollIntervalMs));
+  let draftSeen = false;
+  for (let n = 0; n < commitAttempts; n++) {
+    if (draftLanded(await cap(), o.glyph, o.needle)) { draftSeen = true; break; }
+    await o.sleep(o.pollIntervalMs);
+  }
+
+  await o.sleep(o.settleMs);
+  await sendEnter(o.exec, o.pane);
+
+  // Draft never observed → submit blind; nothing reliable to verify against.
+  if (!draftSeen) return "submitted-unverified";
+
+  // Phase 2: poll until the draft clears; re-send Enter every retryIntervalMs.
+  const verifyAttempts = Math.max(1, Math.ceil(o.verifyTimeoutMs / o.pollIntervalMs));
+  const retryEvery = Math.max(1, Math.round(o.retryIntervalMs / o.pollIntervalMs));
+  for (let n = 0; n < verifyAttempts; n++) {
+    await o.sleep(o.pollIntervalMs);
+    if (!draftLanded(await cap(), o.glyph, o.needle)) return "submitted";
+    if ((n + 1) % retryEvery === 0) await sendEnter(o.exec, o.pane);
+  }
+  return "submitted-unverified";
+}
+
 // Deliver text into the pane's input box via a tmux buffer (NOT send-keys):
 //  - load-buffer dodges the ~16 KB argv cap (bytes arrive on stdin)
 //  - paste-buffer -p uses bracketed paste so multi-line lands as one chunk
