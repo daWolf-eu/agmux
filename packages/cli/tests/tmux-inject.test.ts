@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
-import { sanitizePayload, computeNeedle } from "../src/tmux-inject.ts";
-import { glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES } from "../src/tmux-inject.ts";
+import {
+  sanitizePayload, computeNeedle, glyphInTail, draftLanded, PROMPT_SCAN_TAIL_LINES,
+} from "../src/tmux-inject.ts";
 
 // sanitizePayload returns the exact bytes to load into the tmux buffer.
 // Compare via Array.from for readable failures.

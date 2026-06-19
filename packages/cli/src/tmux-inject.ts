@@ -23,7 +23,6 @@ const enc = new TextEncoder();
 export function sanitizePayload(text: string): Uint8Array {
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n") + "\n";
   const out: number[] = [];
-  const enc = new TextEncoder();
   for (const ch of normalized) {
     if (ch === "\n") { out.push(0x0d); continue; }
     if (ch === "\t") { out.push(0x09); continue; }
@@ -59,7 +58,11 @@ export function draftLanded(capture: string, glyph: string, needle: string): boo
     const tail = tailNonEmptyLines(capture, PROMPT_SCAN_TAIL_LINES).join("\n");
     return needle.length > 0 && tail.includes(needle);
   }
-  const glyphLines = capture.split("\n").filter((l) => l.includes(glyph));
+  // Scope to the same tail window as glyphInTail so the predicate is correct
+  // even if called without a prior readiness gate (a stale scrollback glyph
+  // above the tail must not produce a spurious match). The bottom-most glyph
+  // line in the tail is the live input box.
+  const glyphLines = tailNonEmptyLines(capture, PROMPT_SCAN_TAIL_LINES).filter((l) => l.includes(glyph));
   if (glyphLines.length === 0) return false;
   const after = glyphLines[glyphLines.length - 1]!.split(glyph).pop() ?? "";
   if (after.includes(PASTED_PLACEHOLDER)) return true;
