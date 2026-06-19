@@ -32,8 +32,9 @@ const verb = argv[0];
 
 function usage(): never {
   console.error(`usage: agmux <verb> [args]
-  run [placement] [--wrapped] [--kind=<claude|codex>] <command> [args...]
-  run [placement] [--wrapped] -p <profile>
+  run [placement] [--wrapped] [--kind=<claude|codex|pi>] [--prompt <text>|--prompt-file <path>] <command> [args...]
+  run [placement] [--wrapped] [--prompt <text>|--prompt-file <path>] -p <profile>
+    --prompt <text>   inject a bootstrap prompt after spawn (requires --new-pane/--new-window/--new-session)
     placement: -d/--detach (default --new-pane) | --new-pane | --new-window | --new-session
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
@@ -135,15 +136,24 @@ async function main(): Promise<number> {
         if (!ready) mode = "wrapped";
       }
 
+      // Resolve --prompt-file to text (parse-run kept the path; IO lives here).
+      let prompt: string | undefined = parsed.prompt;
+      if (parsed.promptFile) {
+        try { prompt = await Bun.file(parsed.promptFile).text(); }
+        catch (e) { console.error(`agmux run: cannot read --prompt-file ${parsed.promptFile}: ${e instanceof Error ? e.message : String(e)}`); return 2; }
+      }
+
       if (parsed.kind === "profile") {
         return runCmd({
           kind: "profile", profileName: parsed.profileName,
           placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode,
+          agentKind: kind, prompt,
         }, agmuxBin);
       }
       return runCmd({
         kind: "inline", agent_kind: parsed.agent_kind, command: parsed.command, args: parsed.args,
         placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode,
+        agentKind: kind, prompt,
       }, agmuxBin);
     }
     case "ls": {
