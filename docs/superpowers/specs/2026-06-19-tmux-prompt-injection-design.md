@@ -258,6 +258,24 @@ prompt containing an ESC byte; slow-booting pane; rapid sequential
 `agmux run --prompt` into the same session — verified by hand against a live
 claude pane.
 
+### Verification status (2026-06-19)
+
+- **Unit suite:** 159 CLI tests pass (`bun test packages/cli/`), `tsc --noEmit`
+  clean. 28 of those are `tmux-inject` unit tests.
+- **Real-tmux mechanics smoke (automated, non-agent target):** ran
+  `injectBootstrap` against an isolated detached `cat` pane on a live tmux 3.6a
+  server. Confirmed end-to-end: `load-buffer -` via stdin, `paste-buffer -p -d`
+  delivers a **multi-line** payload as one chunk (not split per newline),
+  pre-clear `C-a`/`C-k` fires, CR-conversion + `send-keys Enter` submits each
+  line. Outcome `submitted-unverified` — correct for `cat`, which never clears
+  the "draft" (a real agent input box does, yielding `submitted`).
+- **Human-pending (needs a live `claude` pane + profile):** the `❯` readiness
+  glyph gate, the `[Pasted text +N]` collapse-placeholder detection, the
+  draft-clears→`submitted` confirmation, and the >16 KB / trailing-`\` / ESC /
+  slow-boot / rapid-sequential matrix above. Run `agmux run --new-window -p
+  <claude-profile> --prompt "…"` per the plan's Task 10 before relying on it in
+  production.
+
 ## 9. File plan
 
 **Create:**
