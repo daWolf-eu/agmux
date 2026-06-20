@@ -6,6 +6,7 @@ import type { SessionFeed } from "../feed.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, type SortKey } from "../shared/sort.ts";
 import { filterRows } from "../shared/filter.ts";
+import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
 import { PreviewPane } from "./PreviewPane.tsx";
@@ -20,8 +21,8 @@ export interface DashAppProps {
   intervalMs: number;
   onHandoff: (h: Handoff) => void;
   onQuit: () => void;
-  // best-effort attached session id (Task 15); null when unknown
-  attachedId?: string | null;
+  // best-effort active pane id from the parent tmux client (Task 15); null when unknown
+  activePane?: string | null;
 }
 
 const MODES: PreviewMode[] = ["mirror", "events", "detail"];
@@ -58,6 +59,7 @@ export function DashApp(props: DashAppProps) {
   const [usageBuf] = useState<{ id: string | null; data: UsageSummary | null }>({ id: null, data: null });
 
   const visible = useMemo(() => sortRows(filterRows(rows ?? [], filter), sortKey), [rows, filter, sortKey]);
+  const attachedId = useMemo(() => matchAttachedPane(visible, props.activePane ?? null), [visible, props.activePane]);
 
   const effectiveSelectedId =
     selectedId && visible.some((r) => r.session_id === selectedId)
@@ -123,7 +125,7 @@ export function DashApp(props: DashAppProps) {
         <box style={{ flexGrow: 1, border: true }} title="Sessions">
           {rows === null
             ? <text fg="#6c7086">connecting to {hubUrl}…</text>
-            : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={props.attachedId ?? null} now={now} height={bodyHeight} onSelect={setSelectedId} />}
+            : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} onSelect={setSelectedId} />}
         </box>
         <box style={{ width: "45%", border: true }} title={mode[0]!.toUpperCase() + mode.slice(1)}>
           <PreviewPane

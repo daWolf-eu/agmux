@@ -5,6 +5,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { PollingSessionFeed } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
+import { activePaneId } from "./attached.ts";
 import type { RunManageOpts } from "../run-manage.tsx";
 import type { Handoff } from "../types.ts";
 
@@ -17,6 +18,8 @@ function resolveHandoff(pending: Handoff | null): Handoff | null {
 export async function runManageOtui(o: RunManageOpts): Promise<number> {
   const feed = new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.query, intervalMs: o.intervalMs });
   let pending: Handoff | null = null;
+
+  const activePane = await activePaneId();
 
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
@@ -34,6 +37,7 @@ export async function runManageOtui(o: RunManageOpts): Promise<number> {
       hubUrl={o.hubUrl}
       defaultPreview={o.defaultPreview}
       intervalMs={o.intervalMs}
+      activePane={activePane}
       onHandoff={(h) => { pending = h; }}
       onQuit={() => renderer.destroy()}
     />,
