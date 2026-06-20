@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/react */
-import { useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { LIVE_STATUSES, type SessionRow, type EventEnvelope } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
@@ -53,11 +53,6 @@ export function DashApp(props: DashAppProps) {
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
   const [showHelp, setShowHelp] = useState(false);
 
-  // Async-decoupled preview buffers (Task 16 fills the fetch effect).
-  const [mirror] = useState<{ id: string | null; text: string }>({ id: null, text: "" });
-  const [eventsBuf] = useState<{ id: string | null; list: EventEnvelope[] }>({ id: null, list: [] });
-  const [usageBuf] = useState<{ id: string | null; data: UsageSummary | null }>({ id: null, data: null });
-
   const visible = useMemo(() => sortRows(filterRows(rows ?? [], filter), sortKey), [rows, filter, sortKey]);
   const attachedId = useMemo(() => matchAttachedPane(visible, props.activePane ?? null), [visible, props.activePane]);
 
@@ -66,6 +61,34 @@ export function DashApp(props: DashAppProps) {
       ? selectedId
       : (visible[0]?.session_id ?? null);
   const selected = visible.find((r) => r.session_id === effectiveSelectedId) ?? null;
+
+  // Async-decoupled preview buffers — live, tagged by session_id.
+  const [mirror, setMirror] = useState<{ id: string | null; text: string }>({ id: null, text: "" });
+  const [eventsBuf, setEventsBuf] = useState<{ id: string | null; list: EventEnvelope[] }>({ id: null, list: [] });
+  const [usageBuf, setUsageBuf] = useState<{ id: string | null; data: UsageSummary | null }>({ id: null, data: null });
+
+  const canMirror = (r: SessionRow | null) => !!r && LIVE_STATUSES.includes(r.status) && !!r.tmux_pane;
+  const effectiveMode: PreviewMode = mode === "mirror" && !canMirror(selected) ? "events" : mode;
+
+  const selRef = useRef<SessionRow | null>(selected);
+  selRef.current = selected;
+  const PREVIEW_DEBOUNCE_MS = 80;
+  useEffect(() => {
+    if (!selected) return;
+    let stop = false;
+    const pull = async () => {
+      const row = selRef.current;
+      if (!row) return;
+      try {
+        if (effectiveMode === "mirror") { const t = await props.source.mirror(row); if (!stop) setMirror({ id: row.session_id, text: t }); }
+        else if (effectiveMode === "events") { const e = await props.source.events(row); if (!stop) setEventsBuf({ id: row.session_id, list: e }); }
+        else { const u = await props.source.usage(row); if (!stop) setUsageBuf({ id: row.session_id, data: u }); }
+      } catch { /* keep last good */ }
+    };
+    const lead = setTimeout(() => { void pull(); }, PREVIEW_DEBOUNCE_MS);
+    const timer = setInterval(pull, props.intervalMs);
+    return () => { stop = true; clearTimeout(lead); clearInterval(timer); };
+  }, [effectiveSelectedId, effectiveMode, props.intervalMs, props.source, selected]);
 
   const move = (delta: number) => {
     if (visible.length === 0) return;
@@ -127,9 +150,9 @@ export function DashApp(props: DashAppProps) {
             ? <text fg="#6c7086">connecting to {hubUrl}…</text>
             : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} onSelect={setSelectedId} />}
         </box>
-        <box style={{ width: "45%", border: true }} title={mode[0]!.toUpperCase() + mode.slice(1)}>
+        <box style={{ width: "45%", border: true }} title={effectiveMode[0]!.toUpperCase() + effectiveMode.slice(1)}>
           <PreviewPane
-            row={selected} mode={mode}
+            row={selected} mode={effectiveMode}
             mirrorText={mirror.id === effectiveSelectedId ? mirror.text : ""}
             events={eventsBuf.id === effectiveSelectedId ? eventsBuf.list : []}
             usage={usageBuf.id === effectiveSelectedId ? usageBuf.data : null}
