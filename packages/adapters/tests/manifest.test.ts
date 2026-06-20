@@ -16,3 +16,7 @@ test("isManifestPoint narrows valid and rejects invalid", () => {
 test("session.registered is a manifest point", () => {
   expect(MANIFEST_POINTS).toContain("session.registered");
 });
+
+test("compaction is a manifest point", () => {
+  expect(isManifestPoint("compaction")).toBe(true);
+});

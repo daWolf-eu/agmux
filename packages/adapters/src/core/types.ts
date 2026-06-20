@@ -15,6 +15,7 @@ export const MANIFEST_POINTS = [
   "usage.reported",
   "tool.used",
   "prompt.sent",
+  "compaction",
 ] as const;
 export type ManifestPoint = (typeof MANIFEST_POINTS)[number];
 
