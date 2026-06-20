@@ -253,6 +253,12 @@ test("compaction maps PreCompact trigger; defaults to null when absent", () => {
     .toEqual({ trigger: null });
 });
 
+test("compaction is a live hook-command capability", () => {
+  expect(CLAUDE_CAPABILITIES["compaction"]).toMatchObject({ fulfil: "yes", source: "hook-command", liveness: "live" });
+  const covered = new Set(CLAUDE_SOURCES.flatMap((s) => s.points as string[]));
+  expect(covered.has("compaction")).toBe(true);
+});
+
 test("tool.used reflects tool_response failure: is_error/success:false → fail, else ok", () => {
   const err = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { is_error: true } }, target });
   expect(err.events[0]?.payload).toEqual({ tool: "Bash", ok: false, detail: "error" });

@@ -7,7 +7,7 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
   {
     type: "hook-command",
     activation: "event-triggered",
-    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent"],
+    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent", "compaction"],
   },
   {
     type: "transcript-delta",
@@ -30,4 +30,5 @@ export const CLAUDE_CAPABILITIES: CapabilityMap = {
   "usage.reported": { fulfil: "yes", source: "transcript-delta", liveness: "backfilled" },
   "tool.used": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "prompt.sent": { fulfil: "yes", source: "hook-command", liveness: "live" },
+  "compaction": { fulfil: "yes", source: "hook-command", liveness: "live" },
 };
