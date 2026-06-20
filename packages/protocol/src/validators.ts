@@ -117,6 +117,8 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
     case "tool.used": {
       if (!isStringNonEmpty(payload.tool))
         return { ok: false, error: "tool.used: tool missing" };
+      if ("ok" in payload && payload.ok !== null && typeof payload.ok !== "boolean")
+        return { ok: false, error: "tool.used: ok must be boolean|null when present" };
       return { ok: true };
     }
     case "session.adapter_attached": {
