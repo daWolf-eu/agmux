@@ -12,6 +12,8 @@ test("non-TTY returns 2 and prints a hint", async () => {
   const deps: DashCmdDeps = {
     isTTY: () => false,
     runManageImpl: async () => 0,
+    runManageOtuiImpl: async () => 0,
+    tuiKind: () => undefined,
     makeSourceImpl: () => ({ async mirror() { return ""; }, async events() { return []; }, async usage() { return null; } }),
     makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; } }),
     errOut: (s) => { err = s; },
@@ -25,6 +27,8 @@ test("TTY path forwards preview + interval to runManage", async () => {
   const deps: DashCmdDeps = {
     isTTY: () => true,
     runManageImpl: async (o) => { seen = { defaultPreview: o.defaultPreview, intervalMs: o.intervalMs }; return 0; },
+    runManageOtuiImpl: async () => 0,
+    tuiKind: () => undefined,
     makeSourceImpl: () => ({ async mirror() { return ""; }, async events() { return []; }, async usage() { return null; } }),
     makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; } }),
     errOut: () => {},
@@ -38,6 +42,8 @@ test("forwards popup flag to makeActions", async () => {
   const deps: DashCmdDeps = {
     isTTY: () => true,
     runManageImpl: async () => 0,
+    runManageOtuiImpl: async () => 0,
+    tuiKind: () => undefined,
     makeSourceImpl: () => ({ async mirror() { return ""; }, async events() { return []; }, async usage() { return null; } }),
     makeActionsImpl: (_h, _w, popup) => { seenPopup = popup; return { async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; } }; },
     errOut: () => {},
