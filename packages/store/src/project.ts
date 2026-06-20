@@ -50,7 +50,8 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "session.adapter_attached":
       applyAdapterAttached(db, ev);
       return;
-    // prompt.sent is known but log-only: no projection effect.
+    // prompt.sent and compaction are known but log-only: stored in the event
+    // log, no projection effect. (A compaction_count column is a deferred option.)
     default:
       // Unknown kinds are stored in events but do not touch the projection.
       return;
