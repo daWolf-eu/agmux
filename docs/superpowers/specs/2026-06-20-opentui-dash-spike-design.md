@@ -190,10 +190,24 @@ best-effort attached marker · lifecycle/cleanup · pure-fn + smoke tests.
 4. Decision output: keep + expand to full migration, or discard the flag branch — with a clear verdict on
    feel and effort.
 
+## Verification verdict (2026-06-20)
+
+Implemented via subagent-driven execution against **OpenTUI 0.4.1** (Bun 1.3.14). Automated verification **PASS**:
+
+- **Tests:** 83/83 TUI tests pass (existing Ink suite + new `shared/`, `attached`, and the render+nav smoke test), 10/10 CLI dash tests pass. The smoke test confirms the OpenTUI app mounts and `j` moves the `▶` selection row-to-row via `testRender` + `act`.
+- **Typecheck:** clean across all 7 workspace packages.
+- **Packaging:** `bun build --compile` succeeds (676 modules → 71 MB binary); both `AGMUX_TUI=opentui agmux dash` and the default Ink `agmux dash` load the bundled module graph and hit the TTY guard gracefully in the compiled binary — **OpenTUI's native core bundles into the standalone executable** (the main packaging risk is cleared).
+- Resolved risks: test-renderer API pinned (`testRender`+`act`); per-file `@jsxImportSource` pragma coexists with Ink's `react` JSX; `EventEnvelope.kind` (not `type`) corrected during impl.
+
+**Still requires a human (needs a real TTY + live hub with sessions)** — the interactive A/B in success criteria 1–3:
+- Smooth nav vs Ink under a live, updating mirror.
+- Visual language on a real terminal (panels/colors/hierarchy/mouse).
+- `⏎` attach end-to-end against a live session; `x`+`y` kill; `q` restores the terminal.
+
+Run: `AGMUX_TUI=opentui agmux dash` against a running hub, A/B against plain `agmux dash`, then record the keep/expand-or-discard decision here (success criterion 4).
+
 ## Risks / open items
 
-- OpenTUI test-renderer API specifics (resolve during impl).
-- Per-file JSX pragma coexisting with Ink's `react` JSX in one package (validate early).
+- Interactive feel + attach/kill/quit lifecycle on a real TTY — pending human A/B (see verdict above).
 - Attached-session detection heuristic reliability (best-effort; non-blocking).
-- `bun build --compile` packaging of OpenTUI's native core into the standalone binary (verify the
-  compiled `agmux` binary launches the OpenTUI dash).
+- `:` command palette and the future detail-card preview are deferred (architecture is ready for the latter).
