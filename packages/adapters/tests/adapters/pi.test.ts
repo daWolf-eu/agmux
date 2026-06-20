@@ -122,7 +122,7 @@ test("turn.started / turn.ended map to canonical events", () => {
 test("prompt.sent is redacted (chars only); tool.used carries the tool name and ok", () => {
   expect(normalizePi({ point: "prompt.sent", source: "hook-command", raw: SAMPLE.input, target }).events[0]?.payload).toEqual({ chars: 19, redacted: true });
   expect(normalizePi({ point: "tool.used", source: "hook-command", raw: SAMPLE.tool_result, target }).events[0]?.payload).toEqual({ tool: "bash", ok: true });
-  expect(normalizePi({ point: "tool.used", source: "hook-command", raw: { tool_name: "bash", is_error: true }, target }).events[0]?.payload).toEqual({ tool: "bash", ok: false });
+  expect(normalizePi({ point: "tool.used", source: "hook-command", raw: { tool_name: "bash", is_error: true }, target }).events[0]?.payload).toEqual({ tool: "bash", ok: false, detail: "error" });
 });
 
 test("usage.reported maps message_end usage into a per-message delta with a stable dedup key", () => {
