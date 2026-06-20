@@ -1501,15 +1501,15 @@ git commit -m "cli: select dash TUI via AGMUX_TUI env (ink default, opentui opt-
 **Files:**
 - Create: `packages/tui/tests/opentui/dash-app.test.tsx`
 
-- [ ] **Step 1: Write the smoke test**
+- [ ] **Step 1: Write the smoke test (uses `testRender` + `act` — see Confirmed API)**
 
-Use the `mockInput` keypress method recorded in Task 2. This plan assumes `mockInput.pressKey(name)`; substitute the real method name if it differs.
+First read `node_modules/@opentui/react/test-utils*` (`.d.ts` and source) to confirm `testRender`'s exact signature and return shape, then write the test. The shape below matches the verified 0.4.1 behavior (`testRender` wraps `createTestRenderer` + `act`); adjust property names if the declaration differs.
 
 ```tsx
 /** @jsxImportSource @opentui/react */
 import { test, expect } from "bun:test";
-import { createTestRenderer } from "@opentui/core/testing";
-import { createRoot } from "@opentui/react";
+import { act } from "react";
+import { testRender } from "@opentui/react/test-utils";
 import type { SessionRow, EventEnvelope } from "@agmux/protocol";
 import type { SessionFeed } from "../../src/feed.ts";
 import type { Actions, PreviewSource, UsageSummary } from "../../src/types.ts";
@@ -1535,13 +1535,14 @@ test("renders the table and j/k moves the selection", async () => {
     mkRow({ session_id: "agx-aaaaaaaa1", status: "waiting", tmux_session: "main", tmux_window: "w1" }),
     mkRow({ session_id: "agx-bbbbbbbb2", status: "running", tmux_session: "work", tmux_window: "w2" }),
   ];
-  const { renderer, renderOnce, captureCharFrame, mockInput } = await createTestRenderer({ width: 120, height: 30 });
-  createRoot(renderer).render(
+  // testRender handles act() around the initial render and returns the test harness.
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
       feed={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
+    { width: 120, height: 30 },
   );
   await renderOnce();
 
@@ -1553,7 +1554,7 @@ test("renders the table and j/k moves the selection", async () => {
   const sel1 = frame1.split("\n").find((l) => l.includes("▶"));
   expect(sel1).toContain("agx-aaaaaaaa1");
 
-  mockInput.pressKey("j");
+  await act(async () => { mockInput.pressKey("j"); });
   await renderOnce();
   const frame2 = captureCharFrame();
   const sel2 = frame2.split("\n").find((l) => l.includes("▶"));
@@ -1566,7 +1567,7 @@ test("renders the table and j/k moves the selection", async () => {
 - [ ] **Step 2: Run the test**
 
 Run: `bun test packages/tui/tests/opentui/dash-app.test.tsx`
-Expected: PASS. If it fails on the `mockInput` API, fix the method name per Task 2 notes; if the cursor glyph isn't found, confirm the frame width is wide enough (raise `width`) and that the selection background/`▶` is rendered.
+Expected: PASS. If `testRender`'s return shape or args differ from above, fix per the `.d.ts` you read. If the cursor glyph isn't found, raise `width` and confirm the `▶` gutter renders for the selected row.
 
 - [ ] **Step 3: Commit**
 
@@ -1626,6 +1627,18 @@ git commit -m "docs: record opentui dash spike verification verdict"
 ```
 
 ---
+
+## Confirmed OpenTUI 0.4.1 API (verified in Task 2 — authoritative)
+
+The installed version is **`@opentui/core`/`@opentui/react` 0.4.1** (newer than the docs). Verified facts to build against:
+
+- **`<box>`**: layout/visual options (`border`, `borderStyle`, `flexDirection`, `flexGrow`, `width`, `height`, `padding`, `backgroundColor`) work as direct props **or** under `style` — both fine. **`title`/`bottomTitle` must be DIRECT props** (excluded from `style`). `onMouseDown` is a valid direct prop.
+- **`<text>`**: `fg`/`bg` direct (or via `style`). `attributes={TextAttributes.DIM}` works; `TextAttributes` is exported from `@opentui/core`.
+- **`<span>`**: valid inside `<text>`, takes `fg`/`bg`/`attributes` — the supported way to color inline segments.
+- **`<scrollbox>`**: `scrollY`/`stickyScroll` are direct props; a `ref` exposes `scrollChildIntoView(id: string)`; children accept `id` and `onMouseDown`.
+- **`useKeyboard((key) => …)`** event fields: `key.name`, `key.sequence`, `key.ctrl`, `key.meta`, `key.shift`. `name` values: Enter=`"return"`, Esc=`"escape"`, Backspace=`"backspace"`, Tab=`"tab"`, arrows=`"up"/"down"/"left"/"right"`, plain letters/symbols are themselves (`"j"`, `"s"`, `"/"`, `"?"`, `"x"`, `"y"`, `"g"`), Shift+G=`"G"` with `shift:true`. **Prefer `key.name` consistently** (the plan's occasional `key.sequence === "x"` also works, but standardize on `key.name`).
+- **App entry (non-test):** `createRoot(renderer).render(<App/>)` is correct (Task 9).
+- **Tests:** use **`testRender`** from `@opentui/react/test-utils` (it wraps `createTestRenderer` + `act()` + sets `IS_REACT_ACT_ENVIRONMENT`); raw `createTestRenderer`+`createRoot` renders a blank frame. Wrap input that triggers state in React's `act()`. `mockInput` methods: `pressKey("j")`, `pressKey("G", { shift: true })`, `pressEnter()`, `pressEscape()` (needs `kittyKeyboard: true`), `pressArrow("down")`, `typeText(...)`. `captureCharFrame()` + `renderOnce()` are available. Confirm `testRender`'s exact return shape from `node_modules/@opentui/react/test-utils*.d.ts`.
 
 ## Notes for the implementer
 
