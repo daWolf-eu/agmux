@@ -240,3 +240,19 @@ test("claude nativeIdFromEnv reads CLAUDE_CODE_SESSION_ID", () => {
   expect(claudeAdapter.nativeIdFromEnv!({ CLAUDE_CODE_SESSION_ID: "abc" })).toBe("abc");
   expect(claudeAdapter.nativeIdFromEnv!({})).toBeNull();
 });
+
+test("tool.used reflects tool_response failure: is_error/success:false → fail, else ok", () => {
+  const err = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { is_error: true } }, target });
+  expect(err.events[0]?.payload).toEqual({ tool: "Bash", ok: false, detail: "error" });
+
+  const failSuccessFalse = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Read", tool_response: { success: false } }, target });
+  expect(failSuccessFalse.events[0]?.payload).toEqual({ tool: "Read", ok: false, detail: "error" });
+
+  // No failure signal → default ok (unchanged behavior).
+  const ok = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { stdout: "hi" } }, target });
+  expect(ok.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
+
+  // No tool_response at all → default ok.
+  const bare = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash" }, target });
+  expect(bare.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
+});
