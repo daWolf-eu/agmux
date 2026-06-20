@@ -36,3 +36,7 @@ test("SessionLostPayload + SessionRow.origin compile", () => {
   expect(lost.reason).toBe("pid_dead");
   expect(row.origin).toBe("native");
 });
+
+test("compaction is a known adapter event kind", () => {
+  expect(EVENT_KINDS_ADAPTER).toContain("compaction");
+});

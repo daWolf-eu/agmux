@@ -143,6 +143,12 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "session.lost: reason must be pid_dead" };
       return { ok: true };
     }
+    case "compaction": {
+      const t = payload.trigger;
+      if (t != null && t !== "manual" && t !== "auto")
+        return { ok: false, error: "compaction: trigger must be manual|auto|null" };
+      return { ok: true };
+    }
     default:
       // Unknown future kind: stored raw, validation passes.
       return { ok: true };

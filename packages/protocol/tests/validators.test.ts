@@ -137,3 +137,11 @@ test("tool.used accepts ok boolean/absent, rejects non-boolean ok", () => {
   expect(validateKnownPayload("tool.used", { tool: "Bash", ok: false, detail: "exit 1" })).toEqual({ ok: true });
   expect(validateKnownPayload("tool.used", { tool: "Bash", ok: "nope" }).ok).toBe(false);
 });
+
+test("compaction validates trigger (manual|auto|null|absent), rejects other strings", () => {
+  expect(validateKnownPayload("compaction", {})).toEqual({ ok: true });
+  expect(validateKnownPayload("compaction", { trigger: "manual" })).toEqual({ ok: true });
+  expect(validateKnownPayload("compaction", { trigger: "auto" })).toEqual({ ok: true });
+  expect(validateKnownPayload("compaction", { trigger: null })).toEqual({ ok: true });
+  expect(validateKnownPayload("compaction", { trigger: "weird" }).ok).toBe(false);
+});
