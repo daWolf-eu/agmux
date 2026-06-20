@@ -7,6 +7,7 @@ interface CodexHookStdin {
   cwd?: string;
   prompt?: string;
   tool_name?: string;
+  tool_response?: { exit_code?: number } & Record<string, unknown>;
   turn_id?: string;
   model?: string;
   reason?: string;
@@ -51,8 +52,17 @@ export function normalizeCodex(input: NormalizeInput): NormalizeOutput {
       return { events: [{ kind: "input.required", payload: { kind: "permission" } }] };
     case "prompt.sent":
       return { events: [{ kind: "prompt.sent", payload: { chars: typeof raw.prompt === "string" ? raw.prompt.length : null, redacted: true } }] };
-    case "tool.used":
-      return { events: [{ kind: "tool.used", payload: { tool: typeof raw.tool_name === "string" ? raw.tool_name : "unknown", ok: true } }] };
+    case "tool.used": {
+      const tool = typeof raw.tool_name === "string" ? raw.tool_name : "unknown";
+      // Codex shell tools report a numeric exit_code in tool_response; non-zero is a
+      // failure. Tools without an exit_code (e.g. apply_patch) carry no failure
+      // signal here, so we default to ok — never invent a failure we can't see.
+      const code = raw.tool_response?.exit_code;
+      if (typeof code === "number" && code !== 0) {
+        return { events: [{ kind: "tool.used", payload: { tool, ok: false, detail: `exit ${code}` } }] };
+      }
+      return { events: [{ kind: "tool.used", payload: { tool, ok: true } }] };
+    }
     case "usage.reported":
       return normalizeUsage(input, raw);
     default:
