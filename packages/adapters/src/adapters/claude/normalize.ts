@@ -10,6 +10,7 @@ interface ClaudeHookStdin {
   tool_response?: { is_error?: boolean; success?: boolean } & Record<string, unknown>;
   notification_type?: string;
   reason?: string;
+  trigger?: string;
 }
 
 export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
@@ -76,6 +77,11 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
     }
     case "usage.reported":
       return normalizeUsage(input, raw);
+    case "compaction": {
+      // PreCompact stdin carries trigger: "manual" (user /compact) | "auto".
+      const t = raw.trigger;
+      return { events: [{ kind: "compaction", payload: { trigger: t === "manual" || t === "auto" ? t : null } }] };
+    }
     default:
       return { events: [] };
   }

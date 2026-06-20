@@ -241,6 +241,18 @@ test("claude nativeIdFromEnv reads CLAUDE_CODE_SESSION_ID", () => {
   expect(claudeAdapter.nativeIdFromEnv!({})).toBeNull();
 });
 
+test("compaction maps PreCompact trigger; defaults to null when absent", () => {
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "manual" }, target }).events[0])
+    .toEqual({ kind: "compaction", payload: { trigger: "manual" } });
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "auto" }, target }).events[0]?.payload)
+    .toEqual({ trigger: "auto" });
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: {}, target }).events[0]?.payload)
+    .toEqual({ trigger: null });
+  // unrecognized trigger values coerce to null (guards against loosening the check)
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "bogus" }, target }).events[0]?.payload)
+    .toEqual({ trigger: null });
+});
+
 test("tool.used reflects tool_response failure: is_error/success:false → fail, else ok", () => {
   const err = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { is_error: true } }, target });
   expect(err.events[0]?.payload).toEqual({ tool: "Bash", ok: false, detail: "error" });
