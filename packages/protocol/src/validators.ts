@@ -117,6 +117,8 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
     case "tool.used": {
       if (!isStringNonEmpty(payload.tool))
         return { ok: false, error: "tool.used: tool missing" };
+      if ("ok" in payload && payload.ok !== null && typeof payload.ok !== "boolean")
+        return { ok: false, error: "tool.used: ok must be boolean|null when present" };
       return { ok: true };
     }
     case "session.adapter_attached": {
@@ -139,6 +141,12 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
     case "session.lost": {
       if (payload.reason !== "pid_dead")
         return { ok: false, error: "session.lost: reason must be pid_dead" };
+      return { ok: true };
+    }
+    case "compaction": {
+      const t = payload.trigger;
+      if (t != null && t !== "manual" && t !== "auto")
+        return { ok: false, error: "compaction: trigger must be manual|auto|null" };
       return { ok: true };
     }
     default:

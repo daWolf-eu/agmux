@@ -240,3 +240,37 @@ test("claude nativeIdFromEnv reads CLAUDE_CODE_SESSION_ID", () => {
   expect(claudeAdapter.nativeIdFromEnv!({ CLAUDE_CODE_SESSION_ID: "abc" })).toBe("abc");
   expect(claudeAdapter.nativeIdFromEnv!({})).toBeNull();
 });
+
+test("compaction maps PreCompact trigger; defaults to null when absent", () => {
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "manual" }, target }).events[0])
+    .toEqual({ kind: "compaction", payload: { trigger: "manual" } });
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "auto" }, target }).events[0]?.payload)
+    .toEqual({ trigger: "auto" });
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: {}, target }).events[0]?.payload)
+    .toEqual({ trigger: null });
+  // unrecognized trigger values coerce to null (guards against loosening the check)
+  expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "bogus" }, target }).events[0]?.payload)
+    .toEqual({ trigger: null });
+});
+
+test("compaction is a live hook-command capability", () => {
+  expect(CLAUDE_CAPABILITIES["compaction"]).toMatchObject({ fulfil: "yes", source: "hook-command", liveness: "live" });
+  const covered = new Set(CLAUDE_SOURCES.flatMap((s) => s.points as string[]));
+  expect(covered.has("compaction")).toBe(true);
+});
+
+test("tool.used reflects tool_response failure: is_error/success:false → fail, else ok", () => {
+  const err = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { is_error: true } }, target });
+  expect(err.events[0]?.payload).toEqual({ tool: "Bash", ok: false, detail: "error" });
+
+  const failSuccessFalse = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Read", tool_response: { success: false } }, target });
+  expect(failSuccessFalse.events[0]?.payload).toEqual({ tool: "Read", ok: false, detail: "error" });
+
+  // No failure signal → default ok (unchanged behavior).
+  const ok = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { stdout: "hi" } }, target });
+  expect(ok.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
+
+  // No tool_response at all → default ok.
+  const bare = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash" }, target });
+  expect(bare.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
+});

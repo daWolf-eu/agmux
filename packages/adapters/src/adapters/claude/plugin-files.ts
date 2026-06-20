@@ -3,7 +3,7 @@
 // source and from a `bun build --compile` binary (where import.meta.dir points
 // into the virtual /$bunfs and on-disk data files don't exist).
 
-export const PLUGIN_VERSION = "1.2.0";
+export const PLUGIN_VERSION = "1.3.0";
 
 const EMIT = "${AGMUX_BIN:-agmux} emit --from=claude";
 
@@ -58,6 +58,17 @@ const HOOKS = {
         matcher: "*",
         hooks: [
           { type: "command", async: true, command: `${EMIT} --source=hook-command --point=tool.used` },
+        ],
+      },
+    ],
+    // Fires BEFORE a context compaction — records the compaction as its own
+    // telemetry event. Distinct from the SessionStart `compact` matcher above,
+    // which re-registers the rotated native id (resolveIngest rule 3); this only
+    // logs that a compaction happened.
+    PreCompact: [
+      {
+        hooks: [
+          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=compaction` },
         ],
       },
     ],

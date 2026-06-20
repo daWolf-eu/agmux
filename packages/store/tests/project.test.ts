@@ -216,3 +216,20 @@ test("session.adapter_attached after session.ended is ignored", () => {
   }));
   expect(db.query<any, []>(`SELECT adapter_capabilities FROM sessions WHERE session_id='${sid}'`).get().adapter_capabilities).toBeNull();
 });
+
+test("compaction is log-only: no projection side effects, session row untouched", () => {
+  const db = freshDb();
+  applyEventToProjection(db, startedEvent());
+  const before = db.query<any, []>(`SELECT * FROM sessions WHERE session_id='${sid}'`).get();
+  applyEventToProjection(db, {
+    event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2R",
+    ts: "2026-05-28T12:01:00.000Z",
+    session_id: sid,
+    kind: "compaction",
+    version: 1,
+    host: "macbook.local",
+    payload: { trigger: "manual" },
+  });
+  const after = db.query<any, []>(`SELECT * FROM sessions WHERE session_id='${sid}'`).get();
+  expect(after).toEqual(before); // projection unchanged — compaction only lives in the event log
+});

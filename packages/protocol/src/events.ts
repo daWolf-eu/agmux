@@ -19,6 +19,7 @@ export const EVENT_KINDS_ADAPTER = [
   "usage.reported",
   "tool.used",
   "prompt.sent",
+  "compaction",
   "session.adapter_attached",
 ] as const;
 export type AdapterEventKind = (typeof EVENT_KINDS_ADAPTER)[number];
@@ -145,6 +146,14 @@ export interface PromptSentPayload {
   redacted: true;
 }
 
+// A context compaction happened mid-session (Claude PreCompact). Log-only: the
+// fact is queryable from the event log; identity rotation is handled separately by
+// SessionStart re-registration (resolve.ts rule 3). `trigger` is the provider's
+// cause when known ("manual" = user /compact, "auto" = auto-compaction).
+export interface CompactionPayload {
+  trigger?: "manual" | "auto" | null;
+}
+
 export type UsageReportedPayload = UsageReport;
 
 export interface AdapterAttachedPayload {
@@ -169,6 +178,7 @@ export type InputReceivedEvent = EventEnvelope<InputReceivedPayload> & { kind: "
 export type UsageReportedEvent = EventEnvelope<UsageReportedPayload> & { kind: "usage.reported" };
 export type ToolUsedEvent = EventEnvelope<ToolUsedPayload> & { kind: "tool.used" };
 export type PromptSentEvent = EventEnvelope<PromptSentPayload> & { kind: "prompt.sent" };
+export type CompactionEvent = EventEnvelope<CompactionPayload> & { kind: "compaction" };
 export type AdapterAttachedEvent = EventEnvelope<AdapterAttachedPayload> & { kind: "session.adapter_attached" };
 
 export type KnownEvent =
@@ -186,4 +196,5 @@ export type KnownEvent =
   | UsageReportedEvent
   | ToolUsedEvent
   | PromptSentEvent
+  | CompactionEvent
   | AdapterAttachedEvent;
