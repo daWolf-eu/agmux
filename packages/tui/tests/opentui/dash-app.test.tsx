@@ -41,13 +41,13 @@ test("renders the table and j/k moves the selection", async () => {
   expect(frame1).toContain("Sessions");
   expect(frame1).toContain("agx-aaaaaaaa1");
   expect(frame1).toContain("agx-bbbbbbbb2");
-  const sel1 = frame1.split("\n").find((l) => l.includes("▶"));
+  const sel1 = frame1.split("\n").find((l) => l.includes("›"));
   expect(sel1).toContain("agx-aaaaaaaa1");
 
   await act(async () => { mockInput.pressKey("j"); });
   await renderOnce();
   const frame2 = captureCharFrame();
-  const sel2 = frame2.split("\n").find((l) => l.includes("▶"));
+  const sel2 = frame2.split("\n").find((l) => l.includes("›"));
   expect(sel2).toContain("agx-bbbbbbbb2");
 
   renderer.destroy();

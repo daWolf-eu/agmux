@@ -27,6 +27,9 @@ export interface DashAppProps {
 
 const MODES: PreviewMode[] = ["mirror", "events", "detail"];
 
+// Muted panel border — softer than the renderer's default white. Easy to tune.
+const BORDER = "#7f849c";
+
 export function DashApp(props: DashAppProps) {
   const { feed, hubUrl } = props;
 
@@ -133,7 +136,7 @@ export function DashApp(props: DashAppProps) {
 
   if (showHelp) {
     return (
-      <box style={{ flexDirection: "column", border: true }} title="agmux dash — keys">
+      <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
         <text>j/k move · g/G top/bottom · s sort · / filter</text>
         <text>tab preview · ⏎ attach · x kill · ? help · q quit</text>
         <text fg="#6c7086">? or esc to close</text>
@@ -145,12 +148,12 @@ export function DashApp(props: DashAppProps) {
     <box style={{ flexDirection: "column", width: "100%", height: "100%" }}>
       <HeaderBar rows={visible} connected={!error} hubUrl={hubUrl} />
       <box style={{ flexDirection: "row", flexGrow: 1 }}>
-        <box style={{ flexGrow: 1, border: true }} title="Sessions">
+        <box style={{ flexGrow: 1, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" Sessions ">
           {rows === null
             ? <text fg="#6c7086">connecting to {hubUrl}…</text>
             : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} onSelect={setSelectedId} />}
         </box>
-        <box style={{ width: "45%", border: true }} title={effectiveMode[0]!.toUpperCase() + effectiveMode.slice(1)}>
+        <box style={{ width: "45%", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title={` ${effectiveMode[0]!.toUpperCase() + effectiveMode.slice(1)} `}>
           <PreviewPane
             row={selected} mode={effectiveMode}
             mirrorText={mirror.id === effectiveSelectedId ? mirror.text : ""}
