@@ -1,6 +1,7 @@
-import type { SessionRow, EventEnvelope } from "@agmux/protocol";
+import type { SessionRow } from "@agmux/protocol";
 
-export type PreviewMode = "mirror" | "events" | "detail";
+// The dash preview has two tabs: a live tmux mirror and a technical detail card.
+export type PreviewMode = "mirror" | "detail";
 
 // Minimal usage shape the detail card needs; the cli maps the hub's usage row
 // into this so tui stays free of @agmux/store types.
@@ -12,8 +13,8 @@ export interface UsageSummary {
   turn_count: number;
 }
 
-// A terminal hand-off: a command the entry point runs AFTER ink unmounts and the
-// alt-screen is restored (for not-in-tmux attach and for resume/relaunch).
+// A terminal hand-off: a command the entry point runs AFTER the renderer tears
+// down and the alt-screen is restored (for not-in-tmux attach and resume/relaunch).
 // An empty `argv` is the exit sentinel: dash exits and spawns nothing (popup-mode
 // attach/resume use this after they retarget the parent tmux client inline).
 export interface Handoff {
@@ -24,7 +25,6 @@ export interface Handoff {
 // Side-effecting preview data sources; concrete impls live in cli.
 export interface PreviewSource {
   mirror(row: SessionRow): Promise<string>;       // tmux capture-pane text ("" if unavailable)
-  events(row: SessionRow): Promise<EventEnvelope[]>;
   usage(row: SessionRow): Promise<UsageSummary | null>;
 }
 

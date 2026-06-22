@@ -13,7 +13,7 @@ export type ParsedDash =
   | { kind: "error"; message: string };
 
 function isPreview(v: string): v is PreviewMode {
-  return v === "mirror" || v === "events" || v === "detail";
+  return v === "mirror" || v === "detail";
 }
 
 export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
@@ -35,7 +35,7 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
     } else if (name === "--preview") {
       const v = eq >= 0 ? a.slice(eq + 1) : argv[++i];
       if (!v || !isPreview(v))
-        return { kind: "error", message: "dash: --preview must be 'mirror', 'events' or 'detail'" };
+        return { kind: "error", message: "dash: --preview must be 'mirror' or 'detail'" };
       preview = v;
     } else if (name === "--popup") {
       popup = true;

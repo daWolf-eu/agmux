@@ -29,19 +29,6 @@ test("mirror runs capture-pane for a live session", async () => {
   expect(await src.mirror(mkRow())).toBe("ran capture-pane -p -t %1");
 });
 
-test("events fetches the hub /events endpoint", async () => {
-  const orig = globalThis.fetch;
-  globalThis.fetch = (async (url: string) => {
-    expect(url).toBe("http://h/events?session_id=s1&limit=100");
-    return new Response(JSON.stringify({ events: [{ event_id: "1", ts: "t", session_id: "s1", kind: "turn.started", version: 1, host: "h", payload: {} }] }), { status: 200 });
-  }) as unknown as typeof fetch;
-  try {
-    const src = makePreviewSource("http://h");
-    const ev = await src.events(mkRow());
-    expect(ev[0]!.kind).toBe("turn.started");
-  } finally { globalThis.fetch = orig; }
-});
-
 test("usage maps the hub usage row, null when absent", async () => {
   const orig = globalThis.fetch;
   globalThis.fetch = (async () => new Response(JSON.stringify({

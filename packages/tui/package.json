@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@agmux/protocol": "workspace:*",
+    "@opentui/core": "^0.4.1",
+    "@opentui/react": "^0.4.1",
     "ink": "7.0.5",
     "react": "19.2.7"
   },
