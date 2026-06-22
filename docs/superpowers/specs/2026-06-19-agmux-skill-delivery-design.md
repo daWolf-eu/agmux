@@ -15,13 +15,13 @@ The pitch splits naturally into two efforts. This branch is **(A) only**:
 
 **Key prior-art correction:** the pitch recommends lift-and-porting omnigent's `bundle_skills.py` to "build the plugin/bundle plumbing." That plumbing **already exists in agmux** — the Claude adapter already writes a skills-directory plugin (`<configDir>/skills/agmux/.claude-plugin/plugin.json` + `hooks/`) for telemetry. This branch **extends the already-shipped plugin payload** to also carry `SKILL.md` files; it does not build new bundling machinery or a launcher flag. agmux's auto-discovery placement is strictly simpler than omnigent's `--plugin-dir` handoff.
 
-**Verification scope (decided):** full unit + conformance coverage for the catalog and per-adapter materialization. A **live Claude smoke-test** (skills listed + invocable in a real session) is in scope. Codex/Pi live tests follow the precedent of their adapters (Codex was initially library-only; Pi's live test deferred) — Codex gets a filesystem-level assertion; Pi is out of scope (deferred to B).
+**Verification scope (decided):** full unit + conformance coverage for the catalog and all three adapters' materialization. A **live Claude smoke-test** (skills listed + invocable in a real session) is in scope (requires `claude` on PATH). Codex and Pi get filesystem-level assertions (skills materialized to the right discovery dir); their live smoke-tests follow the precedent of those adapters' own specs (binary not necessarily on PATH) and are a non-blocking follow-up.
 
 ---
 
 ## 1. What we ship: two self-documentation skills
 
-A skill is a directory with `SKILL.md` (+ YAML frontmatter `name`, `description`) — the **same authoring format for both Claude and Codex** (verified against [code.claude.com/docs/skills](https://code.claude.com/docs/en/skills) and [developers.openai.com/codex/skills](https://developers.openai.com/codex/skills)). `description` drives automatic triggering and is budget-capped (Claude: combined ≤1536 chars); keep it tight and put the trigger condition first.
+A skill is a directory with `SKILL.md` (+ YAML frontmatter `name`, `description`) — the **same authoring format across Claude, Codex, and Pi** (verified against [code.claude.com/docs/skills](https://code.claude.com/docs/en/skills), [developers.openai.com/codex/skills](https://developers.openai.com/codex/skills), and [pi.dev/docs/skills](https://pi.dev/docs/latest/skills)). `description` drives automatic triggering and is budget-capped (Claude: combined ≤1536 chars); keep it tight and put the trigger condition first.
 
 | name | purpose | trigger intent |
 |---|---|---|
@@ -67,7 +67,7 @@ description: <def.description>
 <def.body>
 ```
 
-Each consuming adapter imports `SKILLS` and `compose` — the catalog is authored once and materialized per-adapter. The same composed text satisfies both Claude and Codex frontmatter requirements.
+Each consuming adapter imports `SKILLS` and `compose` — the catalog is authored once and materialized per-adapter. The same composed text satisfies the Claude, Codex, and Pi frontmatter requirements.
 
 ---
 
@@ -110,9 +110,21 @@ Labeled by the `name` field, **no plugin namespacing** — they sit alongside th
 
 This divergence (host-global vs Claude's config-dir-isolated) is recorded in the capability matrix (§7) — it is a Codex platform fact, not an agmux choice.
 
-### 3.3 Pi — deferred to (B)
+### 3.3 Pi — config-dir skills dir (per-profile isolated)
 
-Pi exposes skills via the **runtime `--skill <path>` / `--no-skills`** launch flags (per the pitch), i.e. a *runner* concern, not an install-time auto-discovery directory. There is no `<configDir>` skills dir analogous to Claude's plugin `skills/` or Codex's `$HOME/.agents/skills`. Pi skill delivery therefore belongs to **(B)** and is deferred. The plan includes a one-line re-confirmation against current Pi docs/code; if an install-time discovery dir is found to exist, Pi can be added with no change to the catalog or composer.
+Pi auto-discovers skills from several roots ([pi.dev/docs/skills](https://pi.dev/docs/latest/skills)); the install-time-relevant one is **`<configDir>/skills/`** — i.e. `~/.pi/agent/skills/`, relocatable via **`PI_CODING_AGENT_DIR`**, which the Pi adapter already resolves (`--config-dir` > `PI_CODING_AGENT_DIR` > `~/.pi/agent`). Discovery rule: *"directories containing `SKILL.md` are discovered recursively."* Materialize to:
+
+```
+<configDir>/skills/agmux/
+  agmux-overview/SKILL.md
+  agmux-troubleshooting/SKILL.md
+```
+
+The `agmux/` grouping dir is found recursively and gives a single artifact for clean uninstall. Skills are labeled by the `name` field (flat, no plugin namespacing). Because they live under the resolved `configDir`, Pi skill delivery is **per-profile isolated**, exactly like Claude — and consistent with the Pi adapter's existing config-dir isolation (it already drops `<configDir>/extensions/agmux.ts`).
+
+The runtime `--skill <path>` / `--no-skills` launch flags are a separate, *runner-time* surface (inject arbitrary skills at `agmux run`) and remain **(B)** — they are not needed for install-time self-doc delivery.
+
+**Minor edge (documented):** Pi *also* reads the shared `~/.agents/skills/` (where the Codex adapter installs, §3.2). If both the Codex and Pi adapters are installed, Pi may discover the agmux skills twice (once from its config-dir, once from `~/.agents/skills/agmux/`). Harmless duplication; noted, not engineered around.
 
 ---
 
@@ -120,8 +132,8 @@ Pi exposes skills via the **runtime `--skill <path>` / `--no-skills`** launch fl
 
 Catalog names are prefixed: **`agmux-overview`**, **`agmux-troubleshooting`**.
 
-- On **Codex** they share the user's flat personal-skill namespace, so the prefix marks ownership and avoids collisions (Codex does not merge same-named skills — both would appear).
-- On **Claude** they read `agmux:agmux-overview` (the plugin already namespaces with `agmux:`). The doubled token is cosmetically redundant but unambiguous and harmless — a single catalog name across both surfaces is worth more than per-surface renaming.
+- On **Codex** and **Pi** they share the user's flat skill namespace, so the prefix marks ownership and avoids collisions (Codex does not merge same-named skills — both would appear).
+- On **Claude** they read `agmux:agmux-overview` (the plugin already namespaces with `agmux:`). The doubled token is cosmetically redundant but unambiguous and harmless — a single catalog name across all three surfaces is worth more than per-surface renaming.
 
 ---
 
@@ -162,9 +174,9 @@ export interface SkillSurface {
 |---|---|---|---|---|---|
 | **claude** | ✅ | `plugin-skills-dir` (`<configDir>/skills/agmux/skills/`) | config-dir | `agmux:<name>` | **delivers both** |
 | **codex** | ✅ | `personal-skills-dir` (`$HOME/.agents/skills/agmux/`) | host-global | `<name>` | **delivers both** |
-| **pi** | ❌ (runtime `--skill` only) | `runtime-flag` | n/a | n/a | **deferred → (B)** |
+| **pi** | ✅ | `skills-dir` (`<configDir>/skills/agmux/`) | config-dir | `<name>` | **delivers both** |
 
-This directly serves Foundation's *agent-agnostic-by-construction* principle: where a kind lacks the surface, install **degrades gracefully** (skips skills, no error), and the gap is recorded rather than hidden.
+All three concrete kinds support install-time skill delivery — Claude and Pi config-dir-isolated, Codex host-global (§3.2). The descriptor still exists for the *agent-agnostic-by-construction* principle: a future kind without a skill surface sets `installTime: false`, install **degrades gracefully** (skips skills, no error), and the gap is recorded rather than hidden. The `mechanism: "runtime-flag"` value is reserved for (B) (Pi `--skill`, Codex/Claude bundle-only modes) and is not exercised this branch.
 
 ---
 
@@ -175,8 +187,9 @@ Library/unit + conformance (Bun test, `packages/adapters/tests/`):
 1. **Catalog:** every `SkillDef` has non-empty `name`/`description`/`body`; names unique; `description` ≤1536 chars; `compose()` emits valid frontmatter (parseable YAML, `name`+`description` present, body preserved).
 2. **Claude install:** with default options, `SKILL.md` files appear at `<configDir>/skills/agmux/skills/<name>/`; `--no-skills` omits them; artifacts recorded in the record; uninstall removes them; bumping `PLUGIN_VERSION` → `status().drift === true`.
 3. **Codex install:** `SKILL.md` files appear at `$HOME/.agents/skills/agmux/<name>/` (test against a temp `$HOME`); `--no-skills` omits; artifacts recorded; uninstall removes the dir.
-4. **Capability matrix:** every `AgentKind` has a `SkillSurface` descriptor; values match the documented matrix; `pi.installTime === false`.
-5. **Conformance:** existing adapter conformance harness still passes with the extended install.
+4. **Pi install:** `SKILL.md` files appear at `<configDir>/skills/agmux/<name>/` (test against a temp `PI_CODING_AGENT_DIR`); `--no-skills` omits; artifacts recorded; uninstall removes the dir; extension-version bump → `status().drift === true`.
+5. **Capability matrix:** every `AgentKind` has a `SkillSurface` descriptor with `installTime === true`; values match the documented matrix (mechanism + isolation per kind).
+6. **Conformance:** existing adapter conformance harness still passes with the extended install.
 
 **Live spike (Claude, the pitch's named deliverable):** install into a scratch `CLAUDE_CONFIG_DIR`, launch a real `claude` session, confirm `agmux:agmux-overview` and `agmux:agmux-troubleshooting` are listed and invocable, and that invoking `agmux-overview` yields guidance referencing `$AGMUX_SESSION_ID`.
 
@@ -188,7 +201,7 @@ A standalone handoff doc (`docs/backlog/05-skill-bundling-runner.md` or `docs/ha
 
 - `agmux run`-time injection of arbitrary skills into any kind/profile (vs install-time self-docs).
 - Per-profile **enable/disable filters** (the omnigent `skills_filter` analogue) and a config surface in `config.toml`.
-- **Pi** `--skill <path>` / `--no-skills` launcher wiring; Claude `--plugin-dir`/setting-source suppression if a "bundle-only" mode is ever wanted.
+- **Pi** `--skill <path>` / `--no-skills` launcher wiring (additive runtime injection — distinct from this branch's install-time `<configDir>/skills/` delivery); Claude `--plugin-dir`/setting-source suppression if a "bundle-only" mode is ever wanted.
 - Orchestration/comms skills — authored **after** `@agmux/comms` exists, teaching `send_message`/`check_inbox`/`ask`/`reply`/`notify`, all stamping `AGMUX_SESSION_ID` (§5).
 - Whether (B) warrants a dedicated `@agmux/skills` package (the catalog could graduate out of `@agmux/adapters` once it serves both install-time and run-time consumers).
 
@@ -197,8 +210,7 @@ A standalone handoff doc (`docs/backlog/05-skill-bundling-runner.md` or `docs/ha
 ## 10. Out of scope (this branch)
 
 - Any `@agmux/skills` package (catalog stays in `@agmux/adapters`; extract only when (B) gives it a second consumer).
-- Runner/launcher changes (`agmux run`, profiles config) — pure (B).
-- Pi skill delivery.
+- Runner/launcher changes (`agmux run`, profiles config) and runtime `--skill` injection — pure (B).
 - Orchestration/comms skills.
 - User-authored skill sourcing (only agmux-shipped skills here).
 
@@ -206,6 +218,6 @@ A standalone handoff doc (`docs/backlog/05-skill-bundling-runner.md` or `docs/ha
 
 1. This spec.
 2. Implementation plan → `docs/plans/pitch-04-skill-delivery-bundling.plan.md`.
-3. Implementation: skill catalog + Claude & Codex materialization + capability matrix + `--no-skills` + tests, per the plan.
+3. Implementation: skill catalog + Claude, Codex & Pi materialization + capability matrix + `--no-skills` + tests, per the plan.
 4. (B) handoff doc (§9).
 5. Live Claude spike confirming listing + invocation.
