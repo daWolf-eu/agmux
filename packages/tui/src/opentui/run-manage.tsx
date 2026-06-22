@@ -6,16 +6,24 @@ import { createRoot } from "@opentui/react";
 import { PollingSessionFeed } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activePaneId } from "./attached.ts";
-import type { RunManageOpts } from "../run-manage.tsx";
-import type { Handoff } from "../types.ts";
+import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
+
+export interface RunManageOpts {
+  hubUrl: string;
+  query: URLSearchParams;
+  intervalMs: number;
+  defaultPreview: PreviewMode;
+  source: PreviewSource;
+  actions: Actions;
+}
 
 // An empty-argv Handoff means "exit, spawn nothing" (popup attach/resume after
-// they retarget the parent client inline). Same sentinel as the Ink entry.
+// they retarget the parent client inline).
 function resolveHandoff(pending: Handoff | null): Handoff | null {
   return pending && pending.argv.length > 0 ? pending : null;
 }
 
-export async function runManageOtui(o: RunManageOpts): Promise<number> {
+export async function runManage(o: RunManageOpts): Promise<number> {
   const feed = new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.query, intervalMs: o.intervalMs });
   let pending: Handoff | null = null;
 

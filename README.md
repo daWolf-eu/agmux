@@ -78,9 +78,9 @@ agmux ls --all               # uncapped   (--live = alias for --status open)
 # ls/watch show an ACTIVITY column: current tool while running, awaited input kind while waiting
 agmux watch                  # fullscreen live view of ls (status open, sorted by start); q quits
 agmux watch -i 2 --agent claude   # accepts ls filter flags + -i/--interval seconds
-agmux dash                         # lazygit-style TUI: grouped table + preview pane; q quits
+agmux dash                         # interactive TUI: sortable session table + preview pane; q quits
 agmux dash -i 2 --agent claude     # accepts ls filter flags + -i/--interval
-agmux dash --preview detail        # default preview tab (mirror|events|detail)
+agmux dash --preview detail        # default preview tab (mirror|detail)
 agmux attach <prefix>        # live → tmux switch; ended/lost → relaunch w/ same session_id
 agmux kill   <prefix>        # signal it (default SIGTERM)
 agmux inspect <prefix>       # full row + recent events as JSON
@@ -97,8 +97,8 @@ reverse = true      # newest at the bottom
 status = "open"     # active | open | closed | comma-separated statuses
 ```
 
-`dash` keys: `j/k` move · `{ }` group jump · `< >` resize split · `tab` preview ·
-`⏎` attach (switch-client) · `x` kill · `r` resume closed · `/` filter · `?` help · `q` quit.
+`dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `/` filter · `tab` preview tab ·
+`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `?` help · `q` quit.
 Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `status`, `sort`.
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
 

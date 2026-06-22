@@ -1,12 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import type { SessionRow } from "@agmux/protocol";
-import type { UsageSummary } from "../types.ts";
+import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
-
-// The OpenTUI dash has exactly two preview tabs (the Ink dash keeps its own
-// three-tab PreviewMode incl. "events"). Kept local so the shared type and the
-// `--preview` CLI flag are untouched.
-export type PreviewTab = "mirror" | "detail";
 
 function shortHeader(row: SessionRow): string {
   return `${row.session_id.slice(0, 13)} · ${row.agent_kind}${row.profile ? ` · ${row.profile}` : ""}`;
@@ -73,7 +68,7 @@ function MirrorBody(props: { text: string }) {
 }
 
 export function PreviewPane(props: {
-  row: SessionRow | null; mode: PreviewTab; mirrorText: string; usage: UsageSummary | null;
+  row: SessionRow | null; mode: PreviewMode; mirrorText: string; usage: UsageSummary | null;
   // Exact rows available to the scrollable body (terminal height minus the header
   // bar, footer, panel border, and this pane's header+divider). An EXPLICIT height
   // is required: flex alone (even with minHeight:0) lets the scrollbox grow past

@@ -2,7 +2,7 @@
 import { test, expect } from "bun:test";
 import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
-import type { SessionRow, EventEnvelope } from "@agmux/protocol";
+import type { SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../../src/feed.ts";
 import type { Actions, PreviewSource, UsageSummary } from "../../src/types.ts";
 import { DashApp } from "../../src/opentui/DashApp.tsx";
@@ -13,7 +13,6 @@ function fakeFeed(rows: SessionRow[]): SessionFeed {
 }
 const noSource: PreviewSource = {
   async mirror() { return ""; },
-  async events(): Promise<EventEnvelope[]> { return []; },
   async usage(): Promise<UsageSummary | null> { return null; },
 };
 const noActions: Actions = {

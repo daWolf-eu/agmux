@@ -1,4 +1,4 @@
-import type { SessionRow, EventEnvelope } from "@agmux/protocol";
+import type { SessionRow } from "@agmux/protocol";
 import { LIVE_STATUSES } from "@agmux/protocol";
 import type { PreviewSource, UsageSummary } from "@agmux/tui";
 
@@ -29,12 +29,6 @@ export function makePreviewSource(hubUrl: string, tmuxText: TmuxText = defaultTm
     async mirror(row: SessionRow): Promise<string> {
       if (!LIVE_STATUSES.includes(row.status) || !row.tmux_pane) return "";
       return tmuxText(buildCapturePaneArgs(row.tmux_pane));
-    },
-    async events(row: SessionRow): Promise<EventEnvelope[]> {
-      const r = await fetch(`${hubUrl}/events?session_id=${row.session_id}&limit=100`);
-      if (!r.ok) throw new Error(`hub error ${r.status}`);
-      const { events } = (await r.json()) as { events: EventEnvelope[] };
-      return events;
     },
     async usage(row: SessionRow): Promise<UsageSummary | null> {
       const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);

@@ -9,7 +9,7 @@ import { filterRows } from "../shared/filter.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
-import { PreviewPane, type PreviewTab } from "./PreviewPane.tsx";
+import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 
 export interface DashAppProps {
@@ -25,10 +25,8 @@ export interface DashAppProps {
   activePane?: string | null;
 }
 
-// The OpenTUI dash has two preview tabs (mirror / detail). The shared
-// PreviewMode still carries "events" for the Ink dash + the --preview flag.
-const TABS: PreviewTab[] = ["mirror", "detail"];
-const initialTab = (m: PreviewMode): PreviewTab => (m === "detail" ? "detail" : "mirror");
+// The dash has two preview tabs: mirror / detail.
+const TABS: PreviewMode[] = ["mirror", "detail"];
 
 // Muted panel border — softer than the renderer's default white. Easy to tune.
 const BORDER = "#7f849c";
@@ -52,7 +50,7 @@ export function DashApp(props: DashAppProps) {
   const { rows, error } = useSyncExternalStore(subscribe, getSnap);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mode, setMode] = useState<PreviewTab>(initialTab(props.defaultPreview));
+  const [mode, setMode] = useState<PreviewMode>(props.defaultPreview);
   const [showPreview, setShowPreview] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("last");
   const [filter, setFilter] = useState("");
@@ -75,7 +73,7 @@ export function DashApp(props: DashAppProps) {
 
   const canMirror = (r: SessionRow | null) => !!r && LIVE_STATUSES.includes(r.status) && !!r.tmux_pane;
   // Mirror needs a live pane; otherwise fall back to the always-available detail tab.
-  const effectiveMode: PreviewTab = mode === "mirror" && !canMirror(selected) ? "detail" : mode;
+  const effectiveMode: PreviewMode = mode === "mirror" && !canMirror(selected) ? "detail" : mode;
 
   const selRef = useRef<SessionRow | null>(selected);
   selRef.current = selected;
