@@ -451,7 +451,9 @@ git commit -m "adapters: deliver agmux self-doc skills in the claude plugin"
 - Modify: `packages/adapters/src/adapters/codex/install.ts`
 - Test: `packages/adapters/tests/adapters/codex.test.ts` (modify helpers + append)
 
-> **Test-isolation note:** Codex skills are written to `$HOME/.agents/skills` (host-global, not config-dir-scoped). To keep the test suite from touching the real home dir, (a) existing install tests are switched to `skills: false`, and (b) the new skill tests set `process.env.HOME` to a temp dir. `codexSkillsDir()` reads `process.env.HOME` first for exactly this reason.
+> **Codex install target:** `$HOME/.agents/skills/agmux/` — the USER-scope skill dir. Codex has no `CODEX_HOME`-scoped skill location (its other roots are repo/launch-context `$CWD`/`$REPO_ROOT/.agents/skills`, admin `/etc/codex/skills`, and bundled), so USER scope is the correct target for a per-user installer.
+>
+> **Tests** drive this through the standard `process.env.HOME` seam: `codexSkillsDir()` reads `process.env.HOME` first, so the new skill tests point it at a temp dir. Existing marketplace/telemetry tests pass `skills: false` (they're not about skills), keeping them unchanged in intent.
 
 - [ ] **Step 1: Guard existing codex tests from writing to the real home**
 
@@ -591,10 +593,10 @@ export function codexUninstall(ctx: InstallContext, record: InstallRecord): void
 Run: `cd packages/adapters && bun test tests/adapters/codex.test.ts`
 Expected: PASS (all codex tests, including the two new ones and the unchanged conformance test).
 
-- [ ] **Step 6: Confirm no real-home pollution**
+- [ ] **Step 6: Sanity-check that tests used the temp home seam**
 
-Run: `ls ~/.agents/skills/agmux 2>/dev/null && echo "POLLUTED" || echo "clean"`
-Expected: `clean` (tests used temp homes; existing tests use `skills: false`).
+Run: `ls ~/.agents/skills/agmux 2>/dev/null && echo "unexpected — check the HOME seam" || echo "clean"`
+Expected: `clean` (skill tests point `process.env.HOME` at a temp dir; marketplace tests use `skills: false`).
 
 - [ ] **Step 7: Commit**
 
@@ -897,9 +899,9 @@ Expected: PASS.
 Run: `cd packages/adapters && bunx tsc --noEmit && cd ../cli && bunx tsc --noEmit`
 Expected: PASS (no type errors).
 
-- [ ] **Step 3: Confirm the real home dir was not polluted by the suite**
+- [ ] **Step 3: Sanity-check the temp-home seam held across the suite**
 
-Run: `ls ~/.agents/skills/agmux 2>/dev/null && echo "POLLUTED — investigate codex test isolation" || echo "clean"`
+Run: `ls ~/.agents/skills/agmux 2>/dev/null && echo "unexpected — check the HOME seam" || echo "clean"`
 Expected: `clean`.
 
 - [ ] **Step 4: Live Claude spike — install into a scratch config dir**
