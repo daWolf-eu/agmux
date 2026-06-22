@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { LIVE_STATUSES, type SessionRow, type EventEnvelope } from "@agmux/protocol";
+import { LIVE_STATUSES, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, type SortKey } from "../shared/sort.ts";
@@ -9,7 +9,7 @@ import { filterRows } from "../shared/filter.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
-import { PreviewPane } from "./PreviewPane.tsx";
+import { PreviewPane, type PreviewTab } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 
 export interface DashAppProps {
@@ -25,7 +25,10 @@ export interface DashAppProps {
   activePane?: string | null;
 }
 
-const MODES: PreviewMode[] = ["mirror", "events", "detail"];
+// The OpenTUI dash has two preview tabs (mirror / detail). The shared
+// PreviewMode still carries "events" for the Ink dash + the --preview flag.
+const TABS: PreviewTab[] = ["mirror", "detail"];
+const initialTab = (m: PreviewMode): PreviewTab => (m === "detail" ? "detail" : "mirror");
 
 // Muted panel border — softer than the renderer's default white. Easy to tune.
 const BORDER = "#7f849c";
@@ -49,8 +52,9 @@ export function DashApp(props: DashAppProps) {
   const { rows, error } = useSyncExternalStore(subscribe, getSnap);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [mode, setMode] = useState<PreviewMode>(props.defaultPreview);
-  const [sortKey, setSortKey] = useState<SortKey>("status");
+  const [mode, setMode] = useState<PreviewTab>(initialTab(props.defaultPreview));
+  const [showPreview, setShowPreview] = useState(true);
+  const [sortKey, setSortKey] = useState<SortKey>("last");
   const [filter, setFilter] = useState("");
   const [filtering, setFiltering] = useState(false);
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
@@ -67,11 +71,11 @@ export function DashApp(props: DashAppProps) {
 
   // Async-decoupled preview buffers — live, tagged by session_id.
   const [mirror, setMirror] = useState<{ id: string | null; text: string }>({ id: null, text: "" });
-  const [eventsBuf, setEventsBuf] = useState<{ id: string | null; list: EventEnvelope[] }>({ id: null, list: [] });
   const [usageBuf, setUsageBuf] = useState<{ id: string | null; data: UsageSummary | null }>({ id: null, data: null });
 
   const canMirror = (r: SessionRow | null) => !!r && LIVE_STATUSES.includes(r.status) && !!r.tmux_pane;
-  const effectiveMode: PreviewMode = mode === "mirror" && !canMirror(selected) ? "events" : mode;
+  // Mirror needs a live pane; otherwise fall back to the always-available detail tab.
+  const effectiveMode: PreviewTab = mode === "mirror" && !canMirror(selected) ? "detail" : mode;
 
   const selRef = useRef<SessionRow | null>(selected);
   selRef.current = selected;
@@ -84,7 +88,6 @@ export function DashApp(props: DashAppProps) {
       if (!row) return;
       try {
         if (effectiveMode === "mirror") { const t = await props.source.mirror(row); if (!stop) setMirror({ id: row.session_id, text: t }); }
-        else if (effectiveMode === "events") { const e = await props.source.events(row); if (!stop) setEventsBuf({ id: row.session_id, list: e }); }
         else { const u = await props.source.usage(row); if (!stop) setUsageBuf({ id: row.session_id, data: u }); }
       } catch { /* keep last good */ }
     };
@@ -121,7 +124,8 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
     if (key.name === "G") { setSelectedId(visible[visible.length - 1]?.session_id ?? null); return; }
     if (key.name === "s") { setSortKey((k) => nextSort(k)); return; }
-    if (key.name === "tab") { setMode((m) => MODES[(MODES.indexOf(m) + 1) % MODES.length]!); return; }
+    if (key.name === "p") { setShowPreview((v) => !v); return; }
+    if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
     if (key.name === "/") { setFilter(""); setFiltering(true); return; }
     if (key.name === "return" && selected) {
       void props.actions.attach(selected).then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } });
@@ -138,7 +142,8 @@ export function DashApp(props: DashAppProps) {
     return (
       <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
         <text>j/k move · g/G top/bottom · s sort · / filter</text>
-        <text>tab preview · ⏎ attach · x kill · ? help · q quit</text>
+        <text>tab preview tab · p show/hide preview · ⏎ attach</text>
+        <text>x kill · ? help · q quit</text>
         <text fg="#6c7086">? or esc to close</text>
       </box>
     );
@@ -147,21 +152,22 @@ export function DashApp(props: DashAppProps) {
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%" }}>
       <HeaderBar rows={visible} connected={!error} hubUrl={hubUrl} />
-      <box style={{ flexDirection: "row", flexGrow: 1 }}>
-        <box style={{ flexGrow: 1, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" Sessions ">
+      <box style={{ flexDirection: "row", flexGrow: 1, minHeight: 0 }}>
+        <box style={{ flexGrow: 1, minHeight: 0, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" Sessions ">
           {rows === null
             ? <text fg="#6c7086">connecting to {hubUrl}…</text>
-            : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} onSelect={setSelectedId} />}
+            : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} sortKey={sortKey} onSelect={setSelectedId} />}
         </box>
-        <box style={{ width: "45%", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title={` ${effectiveMode[0]!.toUpperCase() + effectiveMode.slice(1)} `}>
-          <PreviewPane
-            row={selected} mode={effectiveMode}
-            mirrorText={mirror.id === effectiveSelectedId ? mirror.text : ""}
-            events={eventsBuf.id === effectiveSelectedId ? eventsBuf.list : []}
-            usage={usageBuf.id === effectiveSelectedId ? usageBuf.data : null}
-            maxBodyLines={bodyHeight}
-          />
-        </box>
+        {showPreview && (
+          <box style={{ width: "45%", minHeight: 0, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title={effectiveMode === "mirror" ? " Mirror " : " Details "}>
+            <PreviewPane
+              row={selected} mode={effectiveMode}
+              mirrorText={mirror.id === effectiveSelectedId ? mirror.text : ""}
+              usage={usageBuf.id === effectiveSelectedId ? usageBuf.data : null}
+              viewportHeight={bodyHeight - 2}
+            />
+          </box>
+        )}
       </box>
       <FooterBar error={error} filtering={filtering} filter={filter} confirmKill={confirmKill?.session_id.slice(0, 13) ?? null} />
     </box>

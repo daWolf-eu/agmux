@@ -1,9 +1,9 @@
 /** @jsxImportSource @opentui/react */
 import { useEffect, useMemo, useRef } from "react";
-import { TextAttributes } from "@opentui/core";
 import type { SessionRow } from "@agmux/protocol";
 import { COLS, columnWidths, pad, rowCells, type RowCells } from "../shared/columns.ts";
 import { statusGlyph } from "../shared/glyph.ts";
+import type { SortKey } from "../shared/sort.ts";
 
 // Each row is ONE <text> built from colored <span> segments. A single text buffer
 // preserves all whitespace exactly (OpenTUI trims lone spaces at the boundary
@@ -16,19 +16,43 @@ const GAP = "  "; // 2-space column separator, matches the header join
 // pad must equal this so column titles sit above their values.
 const PREFIX = 5;
 
+// Direction marker per sort key (down = newest/priority first, up = a→z). The
+// marker rides inside the existing column gap (or the glyph prefix for "status"),
+// so it never changes a column width — alignment is preserved.
+const ARROW: Record<SortKey, string> = { status: "▾", last: "▾", id: "▴" };
+const H_DIM = "#6c7086";   // inactive header
+const H_HI = "#cdd6f4";    // active sort column header
+const H_MARK = "#f9e2af";  // sort-direction marker
+
 export function SessionTable(props: {
   rows: SessionRow[]; selectedId: string | null; attachedId: string | null; now: number; height: number;
-  onSelect: (id: string) => void;
+  sortKey: SortKey; onSelect: (id: string) => void;
 }) {
-  const { rows, selectedId, attachedId, now } = props;
+  const { rows, selectedId, attachedId, now, sortKey } = props;
 
   const cells = useMemo<RowCells[]>(() => rows.map((r) => rowCells(r, now)), [rows, now]);
   const widths = useMemo(() => columnWidths(cells), [cells]);
 
-  const headerText = useMemo(
-    () => " ".repeat(PREFIX) + COLS.map((c) => pad(c.header, widths[c.key], "left")).join(GAP),
-    [widths],
-  );
+  // Header is one <text> of colored spans: the sorted column is highlighted and
+  // carries a direction marker tucked into its gap (no width change).
+  const headerSegs = useMemo<{ t: string; c: string }[]>(() => {
+    const activeCol = sortKey === "status" ? null : sortKey; // "id" | "last" | null
+    const segs: { t: string; c: string }[] = [];
+    if (sortKey === "status") segs.push({ t: "  ", c: H_DIM }, { t: ARROW.status, c: H_MARK }, { t: "  ", c: H_DIM });
+    else segs.push({ t: " ".repeat(PREFIX), c: H_DIM });
+    COLS.forEach((c, idx) => {
+      const isActive = c.key === activeCol;
+      segs.push({ t: pad(c.header, widths[c.key], "left"), c: isActive ? H_HI : H_DIM });
+      const isLast = idx === COLS.length - 1;
+      if (!isLast) {
+        if (isActive) segs.push({ t: ARROW[sortKey], c: H_MARK }, { t: " ", c: H_DIM });
+        else segs.push({ t: GAP, c: H_DIM });
+      } else if (isActive) {
+        segs.push({ t: " " + ARROW[sortKey], c: H_MARK });
+      }
+    });
+    return segs;
+  }, [widths, sortKey]);
 
   // Keep the selected row visible without moving the viewport more than needed.
   const boxRef = useRef<any>(null);
@@ -39,9 +63,9 @@ export function SessionTable(props: {
   }, [selectedId]);
 
   return (
-    <box style={{ flexDirection: "column", flexGrow: 1 }}>
-      <text fg="#9399b2" attributes={TextAttributes.DIM}>{headerText}</text>
-      <scrollbox ref={boxRef} style={{ flexGrow: 1 }} scrollY stickyScroll={false}>
+    <box style={{ flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
+      <text>{headerSegs.map((s, j) => <span key={j} fg={s.c}>{s.t}</span>)}</text>
+      <scrollbox ref={boxRef} style={{ flexGrow: 1, minHeight: 0 }} scrollY stickyScroll={false}>
         {rows.map((r, i) => {
           const g = statusGlyph(r);
           const c = cells[i]!;
