@@ -1,7 +1,14 @@
 {
   "name": "agmux",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0-alpha.1",
+  "description": "A consolidated central hub for your AI agent sessions — see, search, attach to, and manage Claude Code, Codex, pi, and others.",
+  "license": "MIT",
+  "author": "David Wolf",
+  "homepage": "https://github.com/daWolf-eu/agmux#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/daWolf-eu/agmux.git" },
+  "bugs": { "url": "https://github.com/daWolf-eu/agmux/issues" },
+  "engines": { "bun": ">=1.3.0" },
   "workspaces": ["packages/*", "tests"],
   "scripts": {
     "test": "bun test",

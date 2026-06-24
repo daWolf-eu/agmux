@@ -35,10 +35,9 @@ In baseline (A) one process runs both roles on one machine. In (B), host-agents 
 ## 4. Capture Model (Layered)
 
 > **Superseded (2026-06-08):** The wrapper-primary capture/identity stance below is
-> superseded by the native-first design — see
-> [`docs/superpowers/specs/2026-06-05-native-first-design.md`](superpowers/specs/2026-06-05-native-first-design.md).
-> Sessions now self-register from their own hooks; the hub resolves native identity
-> to a canonical session at ingest. The wrapper remains an opt-in launcher.
+> superseded by the native-first design: sessions now self-register from their own
+> hooks; the hub resolves native identity to a canonical session at ingest. The
+> wrapper remains an opt-in launcher.
 >
 > **Stage 2 (2026-06-09):** the launcher flip is realized — `agmux run` direct-execs an
 > adapter-backed agent (it self-registers via its plugin); the PTY wrapper is the
@@ -54,10 +53,9 @@ Two layers feed the same ingest API:
 ## 5. Identity
 
 > **Superseded (2026-06-08):** The wrapper-primary capture/identity stance below is
-> superseded by the native-first design — see
-> [`docs/superpowers/specs/2026-06-05-native-first-design.md`](superpowers/specs/2026-06-05-native-first-design.md).
-> Sessions now self-register from their own hooks; the hub resolves native identity
-> to a canonical session at ingest. The wrapper remains an opt-in launcher.
+> superseded by the native-first design: sessions now self-register from their own
+> hooks; the hub resolves native identity to a canonical session at ingest. The
+> wrapper remains an opt-in launcher.
 
 - agmux **mints a canonical `session_id` (UUID) at spawn** and injects `AGMUX_SESSION_ID` into the child environment.
 - The agent's **native session id is stored as an attribute** (`native_session_id`), never the primary key — agmux is not hostage to whether an agent has a stable id.

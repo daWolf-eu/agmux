@@ -1,28 +1,41 @@
 # agmux
 
-A consolidated central hub for AI agent sessions — Claude Code, Codex, Gemini, opencode, pi, and others. Records every session as it happens and exposes the data to a family of decoupled, opt-in services: analytics, dashboard, TUI/CLI management, inter-agent comms, and agent-to-agent orchestration.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+![Platform: macOS](https://img.shields.io/badge/platform-macOS-blue)
+![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
 
-**Status:** MVP slice (`protocol + store + hub + wrapper + cli`) implemented. macOS-verified; Linux portability is best-effort and unverified in CI.
+A consolidated central hub for your AI agent sessions — Claude Code, Codex, pi, and others.
+
+If you run more than one coding agent, you lose track of them fast: which sessions are live, which are waiting on you, what each one is doing, and how to jump back into the right tmux pane. `agmux` records every session as it happens into a local-first store and gives you one place to **see, search, attach to, and manage** them — from the CLI, an interactive TUI, or a tmux popup.
+
+**Status:** alpha (`v0.1.0-alpha.1`). The foundation (`protocol + store + hub + wrapper`), agent adapters (`claude`, `codex`, `pi`), and the `cli` + `tui` consumers are implemented. macOS-verified; Linux portability is best-effort and unverified in CI. Expect rough edges and breaking changes between alpha releases.
 
 ## Read first
 
 - [`docs/agmux-foundation.md`](docs/agmux-foundation.md) — vision, architecture, package decomposition, and standing principles. Every per-service design doc builds on this.
 - [`docs/spikes/2026-05-27-bun-pty/SPIKE_REPORT.md`](docs/spikes/2026-05-27-bun-pty/SPIKE_REPORT.md) — feasibility proof for a transparent TS-on-Bun PTY wrapper; `wrapper.ts` is the reference for the eventual `@agmux/wrapper` package.
 
-## Layout (target)
+## Layout
 
 Monorepo with Bun workspaces:
 
 ```
 packages/
-  protocol/    store/    hub/         # foundation
-  wrapper/     adapters/              # capture
-  cli/  tui/  dashboard/  insights/  comms/   # consumers (all optional)
+  protocol/  store/  hub/        # foundation: schema, SQLite store, query daemon
+  wrapper/   adapters/           # capture: PTY wrapper + per-agent native hooks
+  cli/  tui/                     # consumers: management verbs + interactive dashboard
 ```
 
-Foundation (`protocol + store + hub + wrapper`) is the MVP slice; everything else layers on top of its query API.
+The foundation persists an append-only event log and serves a local query API over `127.0.0.1`. Adapters and consumers layer on top of it. Future, not-yet-built services (web dashboard, insights, inter-agent comms) plug into the same API — see [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
 
-## Quickstart (MVP)
+## Prerequisites
+
+- [Bun](https://bun.com) ≥ 1.3 — the only runtime; there is no Node.js fallback.
+- [tmux](https://github.com/tmux/tmux) ≥ 3.2 — for session placement, `attach`, and the dashboard popup.
+- The agent CLIs you want to track on your `PATH` (e.g. `claude`, `codex`, `pi`).
+- macOS (verified). Linux is best-effort and unverified.
+
+## Quickstart
 
 ```bash
 # Install + build the three binaries
@@ -136,6 +149,21 @@ Environment overrides:
 - `AGMUX_HUB_BIN`, `AGMUX_WRAP_BIN` — paths for `agmux` to spawn the hub / wrapper from. Defaults assume the binaries are on `PATH`.
 - `AGMUX_TMUX_SESSION` — tmux session name used by the wrapper (default `agmux`). Override for test isolation.
 
-## Implementation status
+## Troubleshooting
 
-See [`docs/superpowers/specs/2026-05-28-mvp-slice-design.md`](docs/superpowers/specs/2026-05-28-mvp-slice-design.md) for the design and [`docs/superpowers/plans/2026-05-28-mvp-slice.md`](docs/superpowers/plans/2026-05-28-mvp-slice.md) for the implementation plan. Out of MVP per the spec: adapters (per-agent native session-id capture and `running`/`waiting` status), subagent spawning, multi-host, output capture, dashboard/TUI/insights/comms.
+- **`agmux: command not found`** — the binaries aren't on your `PATH`. Re-check the symlink step, or point `AGMUX_HUB_BIN` / `AGMUX_WRAP_BIN` at the `dist/` paths.
+- **Sessions don't show as `running`/`waiting`** — that status comes from a per-agent adapter. Install it once with `agmux adapter install <profile>` (or `--kind <agent>`); check state with `agmux adapter status`.
+- **Hub seems stale or wedged** — `agmux hub status` shows the running vs installed version; `agmux hub restart` rolls it gracefully. State lives in `~/.agmux/`.
+- **`dash` exits immediately** — it needs a TTY. Use `agmux ls` for scripted/non-interactive output.
+
+## Status & roadmap
+
+Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Not yet built: subagent spawning, multi-host, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
+
+## Contributing
+
+See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the build, test, and layout notes. Issues and PRs welcome — it's alpha, so feedback on rough edges is especially useful.
+
+## License
+
+[MIT](LICENSE) © David Wolf
