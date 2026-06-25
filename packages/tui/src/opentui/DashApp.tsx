@@ -1,11 +1,12 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { LIVE_STATUSES, type SessionRow } from "@agmux/protocol";
+import { LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, type SortKey } from "../shared/sort.ts";
-import { filterRows } from "../shared/filter.ts";
+import { searchRows } from "../shared/search.ts";
+import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
@@ -19,6 +20,7 @@ export interface DashAppProps {
   hubUrl: string;
   defaultPreview: PreviewMode;
   intervalMs: number;
+  initialGroup?: ActivityGroup;
   onHandoff: (h: Handoff) => void;
   onQuit: () => void;
   // best-effort active pane id from the parent tmux client (Task 15); null when unknown
@@ -53,12 +55,17 @@ export function DashApp(props: DashAppProps) {
   const [mode, setMode] = useState<PreviewMode>(props.defaultPreview);
   const [showPreview, setShowPreview] = useState(true);
   const [sortKey, setSortKey] = useState<SortKey>("last");
-  const [filter, setFilter] = useState("");
-  const [filtering, setFiltering] = useState(false);
+  const [search, setSearch] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const visible = useMemo(() => sortRows(filterRows(rows ?? [], filter), sortKey), [rows, filter, sortKey]);
+  const visible = useMemo(
+    () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
+    [rows, search, group, sortKey],
+  );
   const attachedId = useMemo(() => matchAttachedPane(visible, props.activePane ?? null), [visible, props.activePane]);
 
   const effectiveSelectedId =
@@ -102,10 +109,10 @@ export function DashApp(props: DashAppProps) {
   };
 
   useKeyboard((key) => {
-    if (filtering) {
-      if (key.name === "return" || key.name === "escape") { setFiltering(false); return; }
-      if (key.name === "backspace") { setFilter((f) => f.slice(0, -1)); return; }
-      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) setFilter((f) => f + key.sequence);
+    if (searching) {
+      if (key.name === "return" || key.name === "escape") { setSearching(false); return; }
+      if (key.name === "backspace") { setSearch((f) => f.slice(0, -1)); return; }
+      if (key.sequence && key.sequence.length === 1 && !key.ctrl && !key.meta) setSearch((f) => f + key.sequence);
       return;
     }
     if (confirmKill) {
@@ -115,6 +122,9 @@ export function DashApp(props: DashAppProps) {
     }
     if (showHelp) { if (key.name === "escape" || key.name === "q" || key.name === "?") setShowHelp(false); return; }
 
+    // Any key dismisses a lingering notice (a failed attach/resume message).
+    if (notice) setNotice(null);
+
     if (key.name === "q") { props.onQuit(); return; }
     if (key.name === "?") { setShowHelp(true); return; }
     if (key.name === "j" || key.name === "down") { move(1); return; }
@@ -122,11 +132,16 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
     if (key.name === "G") { setSelectedId(visible[visible.length - 1]?.session_id ?? null); return; }
     if (key.name === "s") { setSortKey((k) => nextSort(k)); return; }
+    if (key.name === "f") { setGroup((g) => nextGroup(g)); return; }
     if (key.name === "p") { setShowPreview((v) => !v); return; }
     if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
-    if (key.name === "/") { setFilter(""); setFiltering(true); return; }
+    if (key.name === "/") { setSearch(""); setSearching(true); return; }
     if (key.name === "return" && selected) {
-      void props.actions.attach(selected).then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } });
+      const isTerminal = TERMINAL_STATUSES.includes(selected.status);
+      const act = isTerminal ? props.actions.resume : props.actions.attach;
+      void act(selected)
+        .then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } })
+        .catch((e) => setNotice(`${isTerminal ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`));
       return;
     }
     if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) { setConfirmKill(selected); return; }
@@ -139,8 +154,8 @@ export function DashApp(props: DashAppProps) {
   if (showHelp) {
     return (
       <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
-        <text>j/k move · g/G top/bottom · s sort · / filter</text>
-        <text>tab preview tab · p show/hide preview · ⏎ attach</text>
+        <text>j/k move · g/G top/bottom · s sort · f filter · / search</text>
+        <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
         <text>x kill · ? help · q quit</text>
         <text fg="#6c7086">? or esc to close</text>
       </box>
@@ -149,7 +164,7 @@ export function DashApp(props: DashAppProps) {
 
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%" }}>
-      <HeaderBar rows={visible} connected={!error} hubUrl={hubUrl} />
+      <HeaderBar rows={rows ?? []} connected={!error} hubUrl={hubUrl} group={group} />
       <box style={{ flexDirection: "row", flexGrow: 1, minHeight: 0 }}>
         <box style={{ flexGrow: 1, minHeight: 0, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" Sessions ">
           {rows === null
@@ -167,7 +182,7 @@ export function DashApp(props: DashAppProps) {
           </box>
         )}
       </box>
-      <FooterBar error={error} filtering={filtering} filter={filter} confirmKill={confirmKill?.session_id.slice(0, 13) ?? null} />
+      <FooterBar error={error} searching={searching} search={search} confirmKill={confirmKill?.session_id.slice(0, 13) ?? null} notice={notice} />
     </box>
   );
 }

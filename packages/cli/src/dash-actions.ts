@@ -8,7 +8,7 @@ import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
-import { newWindow, readCurrentPane } from "./tmux-place.ts";
+import { newWindow, newSession, hasSession, switchClient, readCurrentPane } from "./tmux-place.ts";
 
 // The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
 // new tmux window inherits only the tmux SERVER env, so agmux-specific vars
@@ -42,22 +42,34 @@ export async function attachInPopup(
   return { argv: [] };
 }
 
-// Popup-mode resume: relaunch the agent in a NEW tmux window (non-detached, so the
-// parent client switches to it), forwarding only the agmux env keys explicitly,
-// then exit dash (empty argv) so the popup closes onto the freshly relaunched agent.
-export async function resumeIntoNewWindow(
+// Placement deps for resume — injectable so the tmux dance is unit-testable.
+export interface ResumePlacementDeps {
+  hasSession: (name: string) => Promise<boolean>;
+  newWindow: typeof newWindow;
+  newSession: typeof newSession;
+  switchClient: (target: string) => Promise<void>;
+}
+
+const defaultPlacementDeps: ResumePlacementDeps = { hasSession, newWindow, newSession, switchClient };
+
+// Resume a closed agent into the session dash runs in (the caller's session).
+// If that session exists, add a new window; if not (dash launched outside tmux),
+// create the session with the same name and the agent as its first window. Then
+// move the client onto the new window. Returns the exit sentinel so a popup closes
+// onto the freshly switched-to agent.
+export async function resumeIntoSession(
   spec: RelaunchSpec,
-  sessionName: string,
+  targetSession: string,
   label: string,
-  newWindowFn: typeof newWindow = newWindow,
+  deps: ResumePlacementDeps = defaultPlacementDeps,
 ): Promise<Handoff> {
-  await newWindowFn({
-    sessionName,
-    windowName: `agmux:${label}`,
-    cmd: spec.wrapArgv,
-    env: relaunchEnv(spec.env),
-    detach: false,
-  });
+  const windowName = `agmux:${label}`;
+  const cmd = spec.wrapArgv;
+  const env = relaunchEnv(spec.env);
+  const coords = (await deps.hasSession(targetSession))
+    ? await deps.newWindow({ sessionName: targetSession, windowName, cmd, env, detach: true })
+    : await deps.newSession({ sessionName: targetSession, windowName, cmd, env });
+  await deps.switchClient(`${coords.session}:${coords.window}`);
   return { argv: [] };
 }
 
@@ -94,17 +106,23 @@ export function makeActions(
       if (!row.pid) return;
       try { process.kill(row.pid, "SIGTERM"); } catch { /* already gone */ }
     },
-    async resume(row: SessionRow): Promise<Handoff> {
+    async resume(row: SessionRow): Promise<Handoff | null> {
       const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
       const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
       const spec = buildRelaunchSpec(session, {
         hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
         turnCount: usage?.turn_count ?? 0,
       });
-      if (!popup) return { argv: spec.wrapArgv, env: spec.env };
+      // Outside tmux: no client to switch — hand the terminal to the relaunched agent.
+      if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };
+      // In tmux (popup or inline): place the agent in a new window of the caller's
+      // session and switch the client onto it.
       const coords = await readCurrentPane().catch(() => null);
-      const sessionName = coords?.session ?? session.tmux_session ?? "agmux";
-      return resumeIntoNewWindow(spec, sessionName, row.session_id.slice(0, 8));
+      const target = coords?.session ?? session.tmux_session ?? "agmux";
+      const h = await resumeIntoSession(spec, target, row.session_id.slice(0, 8));
+      // popup: exit sentinel closes the popup onto the agent. inline tmux: client
+      // already switched, keep the dash alive (return null).
+      return popup ? h : null;
     },
   };
 }

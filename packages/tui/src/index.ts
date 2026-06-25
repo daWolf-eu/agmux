@@ -5,3 +5,4 @@ export { runManage, type RunManageOpts } from "./opentui/run-manage.tsx";
 export {
   type PreviewMode, type UsageSummary, type Handoff, type PreviewSource, type Actions,
 } from "./types.ts";
+export { type ActivityGroup, GROUPS, inGroup, groupRows, nextGroup, initialGroup } from "./shared/group.ts";

@@ -34,5 +34,5 @@ export interface PreviewSource {
 export interface Actions {
   attach(row: SessionRow): Promise<Handoff | null>;
   kill(row: SessionRow): Promise<void>;
-  resume(row: SessionRow): Promise<Handoff>;
+  resume(row: SessionRow): Promise<Handoff | null>;
 }

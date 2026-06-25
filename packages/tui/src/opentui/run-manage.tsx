@@ -7,12 +7,14 @@ import { PollingSessionFeed } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activePaneId } from "./attached.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
+import type { ActivityGroup } from "../shared/group.ts";
 
 export interface RunManageOpts {
   hubUrl: string;
   query: URLSearchParams;
   intervalMs: number;
   defaultPreview: PreviewMode;
+  initialGroup?: ActivityGroup;
   source: PreviewSource;
   actions: Actions;
 }
@@ -44,6 +46,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
       actions={o.actions}
       hubUrl={o.hubUrl}
       defaultPreview={o.defaultPreview}
+      initialGroup={o.initialGroup ?? "open"}
       intervalMs={o.intervalMs}
       activePane={activePane}
       onHandoff={(h) => { pending = h; }}

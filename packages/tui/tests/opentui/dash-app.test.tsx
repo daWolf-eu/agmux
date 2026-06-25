@@ -110,3 +110,74 @@ test("p toggles the preview pane; tab switches mirror ⇄ details", async () => 
   expect(det).toContain("2026-06-20T10:00:00");
   renderer.destroy();
 });
+
+test("f cycles the activity group; closed sessions are hidden until shown", async () => {
+  const rows = [
+    mkRow({ session_id: "agx-open111", status: "running", tmux_session: "main", tmux_window: "w1" }),
+    mkRow({ session_id: "agx-closed22", status: "ended" }),
+  ];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 24 },
+  );
+  await renderOnce();
+  // default group is "open": closed row hidden, open row shown
+  expect(captureCharFrame()).toContain("agx-open111");
+  expect(captureCharFrame()).not.toContain("agx-closed22");
+
+  await act(async () => { mockInput.pressKey("f"); }); // -> closed
+  await renderOnce();
+  expect(captureCharFrame()).toContain("agx-closed22");
+  expect(captureCharFrame()).not.toContain("agx-open111");
+
+  await act(async () => { mockInput.pressKey("f"); }); // -> all
+  await renderOnce();
+  expect(captureCharFrame()).toContain("agx-open111");
+  expect(captureCharFrame()).toContain("agx-closed22");
+
+  renderer.destroy();
+});
+
+test("Enter on a closed session resumes; Enter on a live session attaches", async () => {
+  const calls: string[] = [];
+  const spyActions: Actions = {
+    async attach() { calls.push("attach"); return null; },
+    async kill() {},
+    async resume() { calls.push("resume"); return { argv: [] }; },
+  };
+
+  const closed = [mkRow({ session_id: "agx-closed99", status: "lost" })];
+  const r1 = await testRender(
+    <DashApp
+      feed={fakeFeed(closed)} source={noSource} actions={spyActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      initialGroup="all" onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 24 },
+  );
+  await r1.renderOnce();
+  await act(async () => { (r1.mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await r1.renderOnce();
+  expect(calls).toEqual(["resume"]);
+  r1.renderer.destroy();
+
+  calls.length = 0;
+  const live = [mkRow({ session_id: "agx-live01", status: "running", tmux_session: "m", tmux_window: "w" })];
+  const r2 = await testRender(
+    <DashApp
+      feed={fakeFeed(live)} source={noSource} actions={spyActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 24 },
+  );
+  await r2.renderOnce();
+  await act(async () => { (r2.mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await r2.renderOnce();
+  expect(calls).toEqual(["attach"]);
+  r2.renderer.destroy();
+});

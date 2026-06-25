@@ -10,6 +10,15 @@ The single source of truth for the running version is
 
 ## [Unreleased]
 
+### Added
+- dash: activity-group filter — `f` cycles `open` / `closed` / `all`; the active
+  group and per-group counts show in the header. The `/` free-text match is now
+  labelled "search" to distinguish it from the filter.
+- dash: pressing Enter on a closed session resumes it into a new window of the
+  tmux session dash runs in (creating that session when dash runs outside tmux),
+  then switches the client onto it. Attach/resume failures surface as a footer
+  notice instead of a silent no-op.
+
 ## [0.1.0-alpha.1] — 2026-06-24
 
 First public alpha. Shareable: clone, build, and run.
