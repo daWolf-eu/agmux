@@ -128,6 +128,33 @@ Revert the full-env forwarding in `resumeIntoSession` back to the
 allowlist test). With the env now stored on the session and carried in
 `AGMUX_INLINE_PROFILE`, the allowlist is sufficient.
 
+## Wrapper re-exec path (folded in)
+
+The outer wrapper, when launched **outside** tmux (`agmux run …` from a bare
+shell), creates a tmux window and re-execs itself inside it
+(`packages/wrapper/src/index.ts:71-83`), forwarding only the same 6-key allowlist
+via tmux `-e`. An ad-hoc `agmux run claude` whose `CLAUDE_CONFIG_DIR` was set
+ambiently in the shell (not via a profile) loses it across the window boundary —
+the same class of bug on the initial-launch path.
+
+**Fix:** forward the outer wrapper's **full `process.env`** (filtered of
+`undefined`) to the inner window instead of the 6-key allowlist.
+
+**Why full-env here, but allowlist + stored-env for the dash?** They are different
+situations, not a contradiction:
+
+- The outer wrapper **is the launch** and already holds the exact ambient env the
+  user intends for the agent; only the tmux-window boundary severs it. Re-execing
+  with the full env is normal process-continuation semantics.
+- The dash **relaunches a dead session** whose env it never had, so it must restore
+  from env recorded on the session row (mechanisms A/B) — full-env forwarding there
+  is useless.
+
+**Secrets note:** this is transient tmux *window* env (process-env propagation to a
+child), not persistent storage. The allowlist-only capture constraint applies to
+what we **store on the session row** (the DB), which is unchanged here. So full-env
+re-exec does not widen the storage surface.
+
 ## Components touched
 
 - `packages/adapters/src/core/types.ts` — add `relaunchEnvKeys` to `Adapter`.
@@ -141,6 +168,8 @@ allowlist test). With the env now stored on the session and carried in
 - `packages/cli/src/relaunch.ts` — load + merge profile env on the native-resume
   branch; precedence captured < profile.
 - `packages/cli/src/dash-actions.ts` — revert full-env to allowlist.
+- `packages/wrapper/src/index.ts` — re-exec forwards full `process.env` instead of
+  the 6-key allowlist.
 - `packages/adapters/src/core/conformance.ts` — assert `relaunchEnvKeys` is a
   string array.
 
@@ -158,11 +187,10 @@ allowlist test). With the env now stored on the session and carried in
     over captured; command/args remain `claude --resume <id>` (env-only).
   - no profile, no captured env → unchanged fresh-relaunch behavior.
 - **Dash:** restore the allowlist test (`relaunchEnv` filters to the agmux keys).
+- **Wrapper re-exec:** the inner window receives the full outer env (a non-allowlist
+  var such as `CLAUDE_CONFIG_DIR` set ambiently is forwarded, not dropped).
 
 ## Out of scope
 
-- The wrapper re-exec env allowlist (`packages/wrapper/src/index.ts`) — same
-  allowlist pattern on the initial-launch path, but not part of this bug. Tracked
-  separately.
 - Mechanism-1 "profile matcher" (auto-matching native sessions to a profile by
   command/cwd heuristics) — rejected as fragile.
