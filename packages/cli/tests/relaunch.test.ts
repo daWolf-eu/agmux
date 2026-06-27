@@ -78,3 +78,26 @@ test("turnCount omitted (no usage data) keeps today's resume behavior", () => {
   const inline = JSON.parse(spec.env.AGMUX_INLINE_PROFILE!);
   expect(inline.args).toEqual(["resume", "native-xyz"]);
 });
+
+test("native resume merges profile env over captured env (profile wins)", () => {
+  const spec = buildRelaunchSpec(
+    row({ profile: "work", native_session_id: "n", env_overrides: { CLAUDE_CONFIG_DIR: "/captured", X: "1" } }),
+    {
+      hubUrl: "http://hub", wrapBin: "agmux-wrap", registry: fakeReg(), baseEnv: {}, turnCount: 3,
+      loadProfileEnv: (name) => (name === "work" ? { CLAUDE_CONFIG_DIR: "/profile" } : undefined),
+    },
+  );
+  const inline = JSON.parse(spec.env.AGMUX_INLINE_PROFILE!);
+  expect(inline.args).toEqual(["resume", "n"]);     // still a native resume
+  expect(inline.env.CLAUDE_CONFIG_DIR).toBe("/profile"); // profile wins over captured
+  expect(inline.env.X).toBe("1");                   // captured-only key preserved
+});
+
+test("native resume carries captured env when there is no profile loader", () => {
+  const spec = buildRelaunchSpec(
+    row({ profile: null, native_session_id: "n", env_overrides: { CLAUDE_CONFIG_DIR: "/captured" } }),
+    { hubUrl: "http://hub", wrapBin: "agmux-wrap", registry: fakeReg(), baseEnv: {}, turnCount: 3 },
+  );
+  const inline = JSON.parse(spec.env.AGMUX_INLINE_PROFILE!);
+  expect(inline.env.CLAUDE_CONFIG_DIR).toBe("/captured");
+});
