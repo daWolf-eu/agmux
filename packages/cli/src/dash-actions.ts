@@ -8,6 +8,7 @@ import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
+import { loadProfileEnv } from "./profile-env.ts";
 import { newWindow, newSession, hasSession, switchClient, readCurrentPane } from "./tmux-place.ts";
 
 // The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
@@ -111,7 +112,7 @@ export function makeActions(
       const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
       const spec = buildRelaunchSpec(session, {
         hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
-        turnCount: usage?.turn_count ?? 0,
+        turnCount: usage?.turn_count ?? 0, loadProfileEnv,
       });
       // Outside tmux: no client to switch — hand the terminal to the relaunched agent.
       if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };
