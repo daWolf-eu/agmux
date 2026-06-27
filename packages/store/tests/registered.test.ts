@@ -64,3 +64,16 @@ test("lineage: an unresolvable parent hint leaves parent_session_id null (no thr
     parent: { agent_kind: "claude", native_session_id: "missing" } }));
   expect(row(db, "s-orphan").parent_session_id).toBeNull();
 });
+
+test("mint: registered env_overrides is persisted into env_json", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-env", { native_session_id: "n-e", pid: 1, env_overrides: { CLAUDE_CONFIG_DIR: "/Users/u/.claude-chax" } }));
+  const r = row(db, "s-env");
+  expect(JSON.parse(r.env_json)).toEqual({ CLAUDE_CONFIG_DIR: "/Users/u/.claude-chax" });
+});
+
+test("mint: registered with no env_overrides stores an empty object", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-env0", { native_session_id: "n-e0", pid: 1 }));
+  expect(JSON.parse(row(db, "s-env0").env_json)).toEqual({});
+});
