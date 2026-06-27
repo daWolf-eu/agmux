@@ -180,7 +180,7 @@ test("claudeAdapter passes the framework conformance battery (real fs install)",
     makeContext: () => ({ agentKind: "claude", profile: null, profileEnv: { CLAUDE_CONFIG_DIR: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: cfg }),
     makeResumeContext: (nid) => ({ agentKind: "claude", profile: null, command: "claude", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
   });
-  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
 });
 
 test("identity mismatch (nested claude run) drops all events", () => {

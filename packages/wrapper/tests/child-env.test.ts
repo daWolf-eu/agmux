@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { buildChildEnv } from "../src/child-env.ts";
+import { buildChildEnv, reexecEnv } from "../src/child-env.ts";
 
 test("buildChildEnv injects session id, hub url, profile env, and AGMUX_PROFILE", () => {
   const env = buildChildEnv(
@@ -17,4 +17,17 @@ test("buildChildEnv injects session id, hub url, profile env, and AGMUX_PROFILE"
 test("buildChildEnv omits AGMUX_PROFILE for a bare (null-profile) run", () => {
   const env = buildChildEnv({}, { sessionId: "sid", hubUrl: "http://hub", profileEnv: {}, profileName: null });
   expect("AGMUX_PROFILE" in env).toBe(false);
+});
+
+test("reexecEnv forwards the full env (incl. non-agmux vars) and drops undefined", () => {
+  const out = reexecEnv({
+    CLAUDE_CONFIG_DIR: "/Users/u/.claude-chax",
+    PATH: "/bin",
+    AGMUX_INLINE_PROFILE: "{}",
+    GONE: undefined,
+  });
+  expect(out.CLAUDE_CONFIG_DIR).toBe("/Users/u/.claude-chax");
+  expect(out.PATH).toBe("/bin");
+  expect(out.AGMUX_INLINE_PROFILE).toBe("{}");
+  expect("GONE" in out).toBe(false);
 });

@@ -8,12 +8,16 @@ import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
+import { loadProfileEnv } from "./profile-env.ts";
 import { newWindow, newSession, hasSession, switchClient, readCurrentPane } from "./tmux-place.ts";
 
 // The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
 // new tmux window inherits only the tmux SERVER env, so agmux-specific vars
 // (esp. the hub URL and session id) must be forwarded, not assumed inherited.
-// Mirrors the allowlist in packages/wrapper/src/index.ts.
+// Unlike the wrapper's outside-tmux re-exec (which forwards the full ambient env
+// because it IS the launch), a dash resume restores agent config env from the
+// session row via AGMUX_INLINE_PROFILE, so only the agmux control vars need
+// forwarding here.
 const RELAUNCH_ENV_KEYS = [
   "AGMUX_INLINE_PROFILE",
   AGMUX_HUB_URL_ENV,
@@ -111,7 +115,7 @@ export function makeActions(
       const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
       const spec = buildRelaunchSpec(session, {
         hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
-        turnCount: usage?.turn_count ?? 0,
+        turnCount: usage?.turn_count ?? 0, loadProfileEnv,
       });
       // Outside tmux: no client to switch — hand the terminal to the relaunched agent.
       if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };

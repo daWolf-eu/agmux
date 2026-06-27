@@ -3,12 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
   AGMUX_SESSION_ID_ENV,
-  AGMUX_HUB_URL_ENV,
   AGMUX_TMUX_SESSION_ENV,
   AGMUX_TMUX_SESSION_DEFAULT,
-  AGMUX_PROFILE_ENV,
 } from "@agmux/protocol";
-import { buildChildEnv } from "./child-env.ts";
+import { buildChildEnv, reexecEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
 import type { ProfileConfig } from "./profile.ts";
 import { HubClient } from "./hub-client.ts";
@@ -65,21 +63,8 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     // We pass our own argv along to that inner invocation.
     const innerCmd = ["bun", import.meta.path.replace(/\/src\/index\.ts$/, "/bin/agmux-wrap.ts"),
       ...opts.argv];
-    // Forward agmux-relevant env vars per-window via `-e`. Session env is a snapshot at
-    // create time, so we can't rely on it for AGMUX_INLINE_PROFILE / AGMUX_SESSION_ID
-    // when the agmux tmux session already existed.
-    const innerEnv: Record<string, string> = {};
-    for (const k of [
-      "AGMUX_INLINE_PROFILE",
-      AGMUX_HUB_URL_ENV,
-      AGMUX_SESSION_ID_ENV,
-      AGMUX_TMUX_SESSION_ENV,
-      AGMUX_PROFILE_ENV,
-      "AGMUX_BIN",
-    ] as const) {
-      const v = process.env[k];
-      if (v) innerEnv[k] = v;
-    }
+    // Forward the full ambient env across the tmux-window boundary (see reexecEnv).
+    const innerEnv = reexecEnv(process.env);
     tmuxCoords = await newAgmuxWindow(tmuxSessionName, windowName, innerCmd, innerEnv);
     // Hand the user off to that window; on detach the outer wrapper exits 0.
     const { $ } = await import("bun");

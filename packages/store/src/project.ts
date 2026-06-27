@@ -183,7 +183,7 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         end_ts, exit_code, signal, status, origin
       ) VALUES (
         ?, ?, ?, ?,
-        ?, '[]', '{}', ?, ?,
+        ?, '[]', ?, ?, ?,
         ?, ?, ?, ?,
         NULL, NULL, ?, NULL,
         NULL, NULL, NULL, 'idle', 'native'
@@ -191,7 +191,7 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
       ON CONFLICT(session_id) DO NOTHING
     `).run(
       ev.session_id, p.agent_kind, p.profile ?? null, p.native_session_id,
-      p.command ?? p.agent_kind, p.cwd ?? "", p.pid ?? null,
+      p.command ?? p.agent_kind, JSON.stringify(p.env_overrides ?? {}), p.cwd ?? "", p.pid ?? null,
       p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.host,
       ev.ts,
     );

@@ -25,6 +25,7 @@ const CAPS: CapabilityMap = {
 export const fakeAdapter: Adapter = {
   agentKind: "claude",
   adapterVersion: "1",
+  relaunchEnvKeys: [],
 
   sources(_ctx): CapabilitySource[] {
     return [

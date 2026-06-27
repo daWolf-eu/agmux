@@ -329,7 +329,7 @@ test("codexAdapter passes the framework conformance battery (fake codex runner)"
       makeContext: () => ({ agentKind: "codex", profile: null, profileEnv: { CODEX_HOME: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state }),
       makeResumeContext: (nid) => ({ agentKind: "codex", profile: null, command: "codex", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
     });
-    expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+    expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
   } finally {
     setCodexRunner(null);
   }

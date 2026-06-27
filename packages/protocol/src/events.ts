@@ -111,6 +111,11 @@ export interface SessionRegisteredPayload {
   profile: string | null;
   agent_version: string | null;
   parent: NativeIdentity | null;
+  // Config-affecting env captured from the agent's hook env at registration —
+  // ONLY the adapter's declared relaunchEnvKeys (allowlist). Restored at relaunch
+  // so a native session resumes under the same config dir. Optional/absent on
+  // older emitters → treated as {}.
+  env_overrides?: Record<string, string>;
 }
 
 // Hub-emitted (pid-sweep) observation that a native session's pid is gone (spec §3).

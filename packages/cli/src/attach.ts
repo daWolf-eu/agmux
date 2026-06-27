@@ -4,6 +4,7 @@ import { LIVE_STATUSES } from "@agmux/protocol";
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { resolvePrefix } from "./id-resolve.ts";
+import { loadProfileEnv } from "./profile-env.ts";
 
 export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
@@ -70,6 +71,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     // native_session_id can only come from an attached adapter, so a missing
     // usage row safely means "watched, zero turns" — relaunch fresh.
     turnCount: usage?.turn_count ?? 0,
+    loadProfileEnv,
   });
   const child = Bun.spawn(spec.wrapArgv, {
     stdio: ["inherit", "inherit", "inherit"],

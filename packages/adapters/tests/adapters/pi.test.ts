@@ -223,5 +223,5 @@ test("piAdapter passes the framework conformance battery", () => {
     makeContext: () => ({ agentKind: "pi", profile: null, profileEnv: { PI_CODING_AGENT_DIR: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state }),
     makeResumeContext: (nid) => ({ agentKind: "pi", profile: null, command: "pi", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
   });
-  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
 });
