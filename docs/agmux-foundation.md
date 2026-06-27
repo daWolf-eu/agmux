@@ -47,7 +47,7 @@ In baseline (A) one process runs both roles on one machine. In (B), host-agents 
 
 Two layers feed the same ingest API:
 
-1. **Wrapper (primary).** `agmux run <preset>` launches the agent. Because it spawns the process it reliably captures the exact command, tmux pane/window/session coordinates, cwd, pid, start/end, and emits lifecycle events + heartbeats. PTY passthrough must be transparent (TTY, signals, resize/`SIGWINCH`, exit code). This is the reliable, agent-agnostic backbone — it even works for agents with no hook system.
+1. **Wrapper (primary).** `agmux run -p <profile>` launches the agent (or `agmux run <command>` for an inline, profile-less launch). Because it spawns the process it reliably captures the exact command, tmux pane/window/session coordinates, cwd, pid, start/end, and emits lifecycle events + heartbeats. PTY passthrough must be transparent (TTY, signals, resize/`SIGWINCH`, exit code). This is the reliable, agent-agnostic backbone — it even works for agents with no hook system.
 2. **Native hooks / adapters (optional enrichment).** Per-agent (Claude `SessionStart`, Codex/Gemini/opencode/pi equivalents) adding in-session events (prompts, tool calls, token usage) where the agent supports them. Additive per agent; never required.
 
 ## 5. Identity
@@ -63,7 +63,7 @@ Two layers feed the same ingest API:
 
 ## 6. Data Model
 
-- **One relational database.** SQLite for baseline; schema kept Postgres-portable for (B).
+- **One relational database.** SQLite for baseline, accessed directly via `bun:sqlite`. Postgres-portability for (B) is a deferred goal: the swap-to-Postgres interface is **not yet in place** (no dialect abstraction today). The schema is kept simple enough to keep the door open; the abstraction is introduced when (B) actually demands it.
 - **Append-only event log is the source of truth.** Every fact is an immutable event (`session.started`, `heartbeat`, `tool.used`, `prompt.sent`, `tmux.reattached`, `message.sent`, `session.ended`, …).
 - **Projection tables (`sessions`, `hosts`, …) are derived** from the log, maintained by the hub as events arrive, and rebuildable at any time. Consumers needing live state read the fast projection; analytics reads the raw log.
 - **Unified, not two stores.** Event log and projections live in the same DB and relate by key — every event carries a `session_id` FK into `sessions`. One datasource.
@@ -88,7 +88,7 @@ Events are typed and versioned. Evolution is **additive**. Unknown/future event 
 Recording flows wrapper/hooks → hub. Management flows the other way: list / inspect / kill / rejoin / switch go hub → host-agent, which acts locally on the target host.
 
 - **tmux is a first-class substrate, not an implementation detail.** The hub can *create* tmux panes/windows/sessions and inject input, not merely read coordinates.
-- **Agent-to-agent delegation.** A workflow can spawn a new tmux pane running `agmux run <preset>` (a different agent), inject a prompt, and the new session auto-announces with its injected id and a `parent_session_id` link back to the delegator. The delegation graph is queryable from day one.
+- **Agent-to-agent delegation.** A workflow can spawn a new tmux pane running `agmux run -p <profile>` (a different agent), inject a prompt, and the new session auto-announces with its injected id and a `parent_session_id` link back to the delegator. The delegation graph is queryable from day one.
 - **Remote attach/rejoin.** Since attaching needs a TTY on the target host, agmux hands the user the `ssh … tmux attach` invocation (or orchestrates it) rather than proxying a terminal stream through the hub.
 
 ## 8. Inter-Agent Communication
@@ -143,14 +143,14 @@ Each package is independently useful, communicates through a defined interface, 
 | Package | Responsibility |
 |---|---|
 | `@agmux/protocol` | Shared TS types + schema: event/session/host shapes, the `AGMUX_SESSION_ID` contract, event versioning/validation. Zero runtime. Everything imports it. |
-| `@agmux/store` | DB layer: schema, migrations, append-only log + projections, query API. SQLite baseline behind an interface that can swap to Postgres. No network code. |
+| `@agmux/store` | DB layer: schema, migrations, append-only log + projections, query API. SQLite baseline via `bun:sqlite`; the Postgres-swappable interface is deferred until (B) needs it (see §6). No network code. |
 | `@agmux/hub` | The daemon: ingest API, query API, projection maintenance, host-agent control role. |
 
 **Capture:**
 
 | Package | Responsibility |
 |---|---|
-| `@agmux/wrapper` | `agmux run <preset>` launcher: PTY passthrough, id minting, env injection, lifecycle + heartbeats, profile resolution. Isolated; perf-sensitive. |
+| `@agmux/wrapper` | `agmux run` launcher (`-p <profile>` or an inline command): PTY passthrough, id minting, env injection, lifecycle + heartbeats, profile resolution. Isolated; perf-sensitive. |
 | `@agmux/adapters` | Thin per-agent enrichment hooks, each stamping `AGMUX_SESSION_ID`. Optional, additive per agent. |
 
 **Consumers (all optional, all read the hub's query API):**
@@ -158,12 +158,18 @@ Each package is independently useful, communicates through a defined interface, 
 | Package | Responsibility |
 |---|---|
 | `@agmux/cli` | Management surface (list/inspect/kill/rejoin/switch) **and** orchestration verbs (spawn-into-tmux, delegate, inject-prompt). Orchestration lives here — the two are inseparable. |
-| `@agmux/tui` | Interactive terminal UI for live session management (Ink). |
-| `@agmux/dashboard` | Web usage/metrics dashboard. |
+| `@agmux/tui` | Interactive terminal UI for live session management, built on **opentui**. Ships `dash` — a navigable session table (sort/filter/search) with live mirror + detail panes and attach/kill — over the query API. |
+| `@agmux/stats` | Web analytics dashboard: usage stats, charts and graphs over the query API. Distinct from the TUI `dash` (live management) — this is the read-only metrics surface. (Was `@agmux/dashboard`.) Planned; not yet built. |
 | `@agmux/insights` | Analytics/queries over the event log (historical analysis, delegation graphs). |
 | `@agmux/comms` | Inter-agent communication: rooms/membership + an MCP server exposing send/ask/reply/notify and inbox tools, routed through the hub. Optional; turns recorded sessions into a messaging fabric. |
 
-A logging-only user installs `wrapper` + `hub` (which pull `store`/`protocol`). Dashboards, TUI, insights, comms, and orchestration are each opt-in.
+A logging-only user installs `wrapper` + `hub` (which pull `store`/`protocol`). The TUI, web stats, insights, comms, and orchestration are each opt-in.
+
+> **Update (2026-06-26):** Consumer-layer realignment recorded from the first alpha:
+>
+> - `@agmux/tui` is built on **opentui** (not Ink) and provides **`dash`** — an interactive, navigable terminal UI for live session management (sort/filter/search, live mirror + detail panes, attach/kill). This is the live-management TUI of §1.
+> - `@agmux/dashboard` → **`@agmux/stats`**, re-scoped to its original intent: a **web analytics dashboard** (usage stats, charts, graphs) — the usage dashboard of §1. It is separate from and unrelated to the TUI `dash`. Still planned; not yet built.
+> - `@agmux/store` ships **SQLite directly via `bun:sqlite`**; the Postgres-portable interface is deferred until (B) needs it (see §6).
 
 ### Repository layout
 
