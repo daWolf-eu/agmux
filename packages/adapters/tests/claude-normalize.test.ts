@@ -33,3 +33,26 @@ test("claim present + env matches stdin → passes", () => {
   });
   expect(out.events).toHaveLength(1);
 });
+
+test("session.registered captures CLAUDE_CONFIG_DIR into env_overrides", () => {
+  const out = normalizeClaude({
+    point: "session.registered", source: "hook-command",
+    raw: { session_id: "n-1", cwd: "/work" },
+    target: { agentKind: "claude", profile: null },
+    env: { CLAUDE_CONFIG_DIR: "/Users/u/.claude-chax", SECRET_TOKEN: "shhh" },
+  } as any);
+  expect(out.events).toHaveLength(1);
+  const p = out.events[0]!.payload as any;
+  expect(p.env_overrides).toEqual({ CLAUDE_CONFIG_DIR: "/Users/u/.claude-chax" });
+  expect(p.env_overrides.SECRET_TOKEN).toBeUndefined();
+});
+
+test("session.registered with no config dir yields empty env_overrides", () => {
+  const out = normalizeClaude({
+    point: "session.registered", source: "hook-command",
+    raw: { session_id: "n-2", cwd: "/work" },
+    target: { agentKind: "claude", profile: null },
+    env: {},
+  } as any);
+  expect((out.events[0]!.payload as any).env_overrides).toEqual({});
+});

@@ -1,5 +1,7 @@
 import * as fs from "node:fs";
 import type { NormalizeInput, NormalizeOutput, CanonicalEvent } from "../../core/types.ts";
+import { pickEnv } from "../../core/env-capture.ts";
+import { CLAUDE_RELAUNCH_ENV_KEYS } from "./caps.ts";
 
 interface ClaudeHookStdin {
   session_id?: string;
@@ -41,6 +43,7 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
           profile: env.AGMUX_PROFILE ?? null,
           agent_version: env.CLAUDE_CODE_VERSION ?? null,
           parent: null,                 // lineage hint wired by the future spawn path (spec §5)
+          env_overrides: pickEnv(CLAUDE_RELAUNCH_ENV_KEYS, env),
         },
       }] };
     }
