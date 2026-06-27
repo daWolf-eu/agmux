@@ -1,5 +1,5 @@
 import type { Adapter } from "../../core/types.ts";
-import { CLAUDE_SOURCES, CLAUDE_CAPABILITIES } from "./caps.ts";
+import { CLAUDE_SOURCES, CLAUDE_CAPABILITIES, CLAUDE_RELAUNCH_ENV_KEYS } from "./caps.ts";
 import { normalizeClaude } from "./normalize.ts";
 import { claudeResumePlan } from "./resume.ts";
 import { claudeInstall, claudeUninstall, claudeStatus, ADAPTER_VERSION } from "./install.ts";
@@ -10,6 +10,7 @@ import { claudeInstall, claudeUninstall, claudeStatus, ADAPTER_VERSION } from ".
 export const claudeAdapter: Adapter = {
   agentKind: "claude",
   adapterVersion: ADAPTER_VERSION,
+  relaunchEnvKeys: [...CLAUDE_RELAUNCH_ENV_KEYS],
   sources: () => CLAUDE_SOURCES,
   capabilities: () => CLAUDE_CAPABILITIES,
   install: claudeInstall,

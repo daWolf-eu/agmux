@@ -16,6 +16,10 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
   },
 ];
 
+// Restored verbatim at relaunch so `claude --resume <id>` finds the conversation
+// under the right config dir. Allowlist only (spec §6.4 / secrets guard).
+export const CLAUDE_RELAUNCH_ENV_KEYS = ["CLAUDE_CONFIG_DIR"] as const;
+
 // Finest-grain descriptors (spec §4). input.required is "partial" — Claude's
 // Notification hook is multi-purpose; the adapter discriminates by notification_type:
 // permission_prompt → permission, elicitation_dialog → prompt; idle_prompt, auth_success,

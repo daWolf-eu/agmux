@@ -12,6 +12,7 @@ import { codexInstall, codexUninstall, codexStatus, ADAPTER_VERSION } from "./in
 export const codexAdapter: Adapter = {
   agentKind: "codex",
   adapterVersion: ADAPTER_VERSION,
+  relaunchEnvKeys: [],
   sources: () => CODEX_SOURCES,
   capabilities: () => CODEX_CAPABILITIES,
   install: codexInstall,

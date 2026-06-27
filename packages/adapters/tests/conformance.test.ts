@@ -20,7 +20,7 @@ function harness() {
 
 test("the fake adapter passes the full conformance battery", () => {
   const passed = assertAdapterConformance(fakeAdapter, harness());
-  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+  expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
 });
 
 test("conformance rejects a capability not covered by any source", () => {
@@ -46,4 +46,9 @@ test("conformance rejects a resumable plan with no argv", () => {
     resumePlan: () => ({ resumable: true }), // resumable but no argv
   };
   expect(() => assertAdapterConformance(broken, harness())).toThrow(/non-empty argv/);
+});
+
+test("conformance rejects an adapter whose relaunchEnvKeys is not a string array", () => {
+  const broken: Adapter = { ...fakeAdapter, relaunchEnvKeys: ["ok", 5 as any] };
+  expect(() => assertAdapterConformance(broken, harness())).toThrow(/relaunchEnvKeys/);
 });

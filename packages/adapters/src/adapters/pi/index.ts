@@ -12,6 +12,7 @@ import { piInstall, piUninstall, piStatus, ADAPTER_VERSION } from "./install.ts"
 export const piAdapter: Adapter = {
   agentKind: "pi",
   adapterVersion: ADAPTER_VERSION,
+  relaunchEnvKeys: [],
   sources: () => PI_SOURCES,
   capabilities: () => PI_CAPABILITIES,
   install: piInstall,
