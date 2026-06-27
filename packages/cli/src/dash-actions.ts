@@ -14,7 +14,10 @@ import { newWindow, newSession, hasSession, switchClient, readCurrentPane } from
 // The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
 // new tmux window inherits only the tmux SERVER env, so agmux-specific vars
 // (esp. the hub URL and session id) must be forwarded, not assumed inherited.
-// Mirrors the allowlist in packages/wrapper/src/index.ts.
+// Unlike the wrapper's outside-tmux re-exec (which forwards the full ambient env
+// because it IS the launch), a dash resume restores agent config env from the
+// session row via AGMUX_INLINE_PROFILE, so only the agmux control vars need
+// forwarding here.
 const RELAUNCH_ENV_KEYS = [
   "AGMUX_INLINE_PROFILE",
   AGMUX_HUB_URL_ENV,

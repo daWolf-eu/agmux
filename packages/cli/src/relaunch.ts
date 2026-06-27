@@ -53,6 +53,10 @@ export function buildRelaunchSpec(session: SessionRow, opts: RelaunchOpts): Rela
       command = plan.argv[0]!;
       args = plan.argv.slice(1);
       if (plan.cwd) cwd = plan.cwd;
+      // plan.env merges last. For claude it equals the sessionEnv we passed in
+      // (profile-wins precedence already applied), so this is a no-op. An adapter that
+      // injects its OWN env in resumePlan would override profile env here — revisit the
+      // ordering if that ever happens.
       if (plan.env) extraEnv = { ...extraEnv, ...plan.env };
       resumed = true;
     }
