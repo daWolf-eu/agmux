@@ -157,6 +157,18 @@ test("leaves coords null when resolver returns null", async () => {
   expect(events[0].payload).toMatchObject({ tmux_session: null, tmux_window: null });
 });
 
+test("records tmux_socket from TMUX env even when resolution misses", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/sock,1234,0" }, async () => null);
+  expect(events[0].payload.tmux_socket).toBe("/tmp/sock");
+});
+
+test("tmux_socket is null on the ambient server (no TMUX socket field)", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
+  expect(events[0].payload.tmux_socket).toBeNull();
+});
+
 test("no-ops when not in tmux (no TMUX_PANE)", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: null } }] as any;
   await enrichTmuxCoords(events, {}, async () => ({ session: "x", window: "@1" }));

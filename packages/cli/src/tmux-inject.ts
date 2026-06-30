@@ -7,6 +7,7 @@
 
 // AgentKind keys the per-kind readiness glyph map added in a later task.
 import type { AgentKind } from "@agmux/protocol";
+import { tmuxSocketArgs } from "@agmux/protocol";
 
 export const DRAFT_NEEDLE_MAX_CHARS = 24;
 
@@ -87,7 +88,9 @@ export function computeNeedle(content: string): string {
 const PASTE_BUFFER_NAME = "agmux-paste";
 
 // Injectable tmux seams. Defaults shell out via Bun.spawn(["tmux", ...]),
-// matching tmux-place.ts:116. No `-S socket`: agmux uses the ambient server.
+// matching tmux-place.ts:116. The `-S socket` prefix is applied by
+// injectBootstrap to the default seams (so real injects hit the right server);
+// the ambient server is used only when socket is null.
 export type TmuxExec = (args: string[], stdin?: Uint8Array) => Promise<{ code: number; stdout: string }>;
 export type TmuxCapture = (pane: string) => Promise<string>;
 export type Sleep = (ms: number) => Promise<void>;
@@ -222,6 +225,7 @@ export interface InjectOpts {
   pane: string;
   text: string;
   agentKind?: AgentKind;
+  socket?: string | null;
   timeoutMs?: number;
   pollIntervalMs?: number;
   exec?: TmuxExec;
@@ -237,8 +241,9 @@ const SUBMIT_VERIFY_TIMEOUT_MS = 10_000;
 const SUBMIT_RETRY_INTERVAL_MS = 1_000;
 
 export async function injectBootstrap(opts: InjectOpts): Promise<InjectResult> {
-  const exec = opts.exec ?? defaultExec;
-  const captureFn = opts.capture ?? defaultCapture;
+  const sockArgs = tmuxSocketArgs(opts.socket);
+  const exec = opts.exec ?? ((args: string[], stdin?: Uint8Array) => defaultExec([...sockArgs, ...args], stdin));
+  const captureFn = opts.capture ?? ((pane: string) => defaultExec([...sockArgs, "capture-pane", "-p", "-t", pane]).then((r) => r.stdout));
   const sleep = opts.sleep ?? defaultSleep;
   const pollIntervalMs = opts.pollIntervalMs ?? POLL_INTERVAL_MS;
   const timeoutMs = opts.timeoutMs ?? READY_TIMEOUT_MS;

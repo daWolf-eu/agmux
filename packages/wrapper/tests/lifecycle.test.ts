@@ -12,7 +12,7 @@ test("buildStartedEvent has correct shape", () => {
     env_overrides: { X: "1" },
     cwd: "/",
     pid: 42,
-    tmux: { session: "agmux", window: "@1", pane: "%1" },
+    tmux: { session: "agmux", window: "@1", pane: "%1", socket: null },
     project: null,
   });
   expect(ev.kind).toBe("session.started");
@@ -44,7 +44,7 @@ test("buildEndedEvent reason='pane_closed' on SIGHUP-from-tmux explicit override
 });
 
 test("buildResumedEvent captures new pid + new tmux coords", () => {
-  const ev = buildResumedEvent({ sessionId: "x", host: "h", newPid: 99, tmux: { session: "agmux", window: "@2", pane: "%2" } });
+  const ev = buildResumedEvent({ sessionId: "x", host: "h", newPid: 99, tmux: { session: "agmux", window: "@2", pane: "%2", socket: null } });
   expect(ev.kind).toBe("session.resumed");
   expect(ev.payload.new_pid).toBe(99);
   expect(ev.payload.new_tmux_window).toBe("@2");

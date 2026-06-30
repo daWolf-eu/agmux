@@ -92,3 +92,7 @@ CREATE TABLE IF NOT EXISTS session_activity (
   activity_ts      TEXT
 );
 `;
+
+export const SCHEMA_V5 = `
+ALTER TABLE sessions ADD COLUMN tmux_socket TEXT;
+`;

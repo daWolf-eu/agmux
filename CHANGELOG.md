@@ -19,6 +19,15 @@ The single source of truth for the running version is
   then switches the client onto it. Attach/resume failures surface as a footer
   notice instead of a silent no-op.
 
+### Fixed
+- Multiple tmux servers: sessions now record the tmux server socket
+  (`tmux_socket`, parsed from `$TMUX`) alongside session/window/pane, and every
+  tmux command (`attach`, `switch-client`, `inject`, `capture-pane`, placement,
+  resume) targets it with `-S <socket>`. Previously all commands hit the ambient
+  server, so attaching to a session on a non-default server (`tmux -L name` /
+  `-S path`) failed. `null` socket = ambient/default server (unchanged behavior).
+  Also fixes native-session coord enrichment querying the wrong server.
+
 ## [0.1.0-alpha.1] — 2026-06-24
 
 First public alpha. Shareable: clone, build, and run.

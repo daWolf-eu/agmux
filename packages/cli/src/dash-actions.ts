@@ -51,7 +51,7 @@ export interface ResumePlacementDeps {
   hasSession: (name: string) => Promise<boolean>;
   newWindow: typeof newWindow;
   newSession: typeof newSession;
-  switchClient: (target: string) => Promise<void>;
+  switchClient: (target: string, socket?: string | null) => Promise<void>;
 }
 
 const defaultPlacementDeps: ResumePlacementDeps = { hasSession, newWindow, newSession, switchClient };
@@ -66,14 +66,15 @@ export async function resumeIntoSession(
   targetSession: string,
   label: string,
   deps: ResumePlacementDeps = defaultPlacementDeps,
+  socket: string | null = null,
 ): Promise<Handoff> {
   const windowName = `agmux:${label}`;
   const cmd = spec.wrapArgv;
   const env = relaunchEnv(spec.env);
   const coords = (await deps.hasSession(targetSession))
-    ? await deps.newWindow({ sessionName: targetSession, windowName, cmd, env, detach: true })
-    : await deps.newSession({ sessionName: targetSession, windowName, cmd, env });
-  await deps.switchClient(`${coords.session}:${coords.window}`);
+    ? await deps.newWindow({ sessionName: targetSession, windowName, cmd, env, detach: true, socket })
+    : await deps.newSession({ sessionName: targetSession, windowName, cmd, env, socket });
+  await deps.switchClient(`${coords.session}:${coords.window}`, socket);
   return { argv: [] };
 }
 
@@ -99,7 +100,7 @@ export function makeActions(
     async attach(row: SessionRow): Promise<Handoff | null> {
       if (!LIVE_STATUSES.includes(row.status) || !row.tmux_session || !row.tmux_window) return null;
       const coords: AttachCoords = {
-        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane,
+        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };
       if (popup) return attachInPopup(coords, deps.runTmux);
       const cmds = buildAttachCommands(coords, inTmux);
@@ -121,9 +122,10 @@ export function makeActions(
       if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };
       // In tmux (popup or inline): place the agent in a new window of the caller's
       // session and switch the client onto it.
-      const coords = await readCurrentPane().catch(() => null);
-      const target = coords?.session ?? session.tmux_session ?? "agmux";
-      const h = await resumeIntoSession(spec, target, row.session_id.slice(0, 8));
+      const here = await readCurrentPane().catch(() => null);
+      const target = here?.session ?? session.tmux_session ?? "agmux";
+      const socket = here?.socket ?? null;
+      const h = await resumeIntoSession(spec, target, row.session_id.slice(0, 8), defaultPlacementDeps, socket);
       // popup: exit sentinel closes the popup onto the agent. inline tmux: client
       // already switched, keep the dash alive (return null).
       return popup ? h : null;

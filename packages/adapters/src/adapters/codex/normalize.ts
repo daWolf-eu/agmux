@@ -32,6 +32,7 @@ export function normalizeCodex(input: NormalizeInput): NormalizeOutput {
           cwd: raw.cwd ?? env.PWD ?? null,
           tmux_session: null,
           tmux_window: null,
+          tmux_socket: null,            // Stage 2 enrichment fills the socket from the hook's $TMUX
           tmux_pane: env.TMUX_PANE ?? null,
           profile: env.AGMUX_PROFILE ?? null,
           agent_version: env.CODEX_VERSION ?? null,

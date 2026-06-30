@@ -25,6 +25,9 @@ export interface DashAppProps {
   onQuit: () => void;
   // best-effort active pane id from the parent tmux client (Task 15); null when unknown
   activePane?: string | null;
+  // tmux socket of the parent client; pane ids aren't unique across servers, so the
+  // attached-pane match compares socket + pane. null = ambient/default server.
+  activeSocket?: string | null;
 }
 
 // The dash has two preview tabs: mirror / detail.
@@ -66,7 +69,10 @@ export function DashApp(props: DashAppProps) {
     () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
     [rows, search, group, sortKey],
   );
-  const attachedId = useMemo(() => matchAttachedPane(visible, props.activePane ?? null), [visible, props.activePane]);
+  const attachedId = useMemo(
+    () => matchAttachedPane(visible, props.activePane ?? null, props.activeSocket ?? null),
+    [visible, props.activePane, props.activeSocket],
+  );
 
   const effectiveSelectedId =
     selectedId && visible.some((r) => r.session_id === selectedId)

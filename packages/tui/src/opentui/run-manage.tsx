@@ -6,6 +6,7 @@ import { createRoot } from "@opentui/react";
 import { PollingSessionFeed } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activePaneId } from "./attached.ts";
+import { tmuxSocketFromEnv } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
 
@@ -30,6 +31,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
   let pending: Handoff | null = null;
 
   const activePane = await activePaneId();
+  const activeSocket = tmuxSocketFromEnv(process.env.TMUX);
 
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
@@ -49,6 +51,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
       initialGroup={o.initialGroup ?? "open"}
       intervalMs={o.intervalMs}
       activePane={activePane}
+      activeSocket={activeSocket}
       onHandoff={(h) => { pending = h; }}
       onQuit={() => renderer.destroy()}
     />,

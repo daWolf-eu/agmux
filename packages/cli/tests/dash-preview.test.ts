@@ -6,7 +6,7 @@ function mkRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
     session_id: "s1", agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
-    tmux_session: "agmux", tmux_window: "@1", tmux_pane: "%1", host: "h", project: null,
+    tmux_session: "agmux", tmux_window: "@1", tmux_pane: "%1", tmux_socket: null, host: "h", project: null,
     parent_session_id: null, start_ts: "2026-06-11T10:00:00.000Z", last_heartbeat_ts: null,
     end_ts: null, exit_code: null, signal: null, status: "running", origin: "native",
     turn_count: null, last_tool: null, last_tool_detail: null, last_input_kind: null, activity_ts: null, ...over,
@@ -27,6 +27,15 @@ test("mirror returns '' for a dead or pane-less session (no tmux call)", async (
 test("mirror runs capture-pane for a live session", async () => {
   const src = makePreviewSource("http://h", async (args) => `ran ${args.join(" ")}`);
   expect(await src.mirror(mkRow())).toBe("ran capture-pane -p -t %1");
+});
+
+test("buildCapturePaneArgs prepends -S <socket> when given", () => {
+  expect(buildCapturePaneArgs("%9", "/tmp/sock")).toEqual(["-S", "/tmp/sock", "capture-pane", "-p", "-t", "%9"]);
+});
+
+test("mirror targets the session's server when tmux_socket is set", async () => {
+  const src = makePreviewSource("http://h", async (args) => `ran ${args.join(" ")}`);
+  expect(await src.mirror(mkRow({ tmux_socket: "/tmp/sock" }))).toBe("ran -S /tmp/sock capture-pane -p -t %1");
 });
 
 test("usage maps the hub usage row, null when absent", async () => {

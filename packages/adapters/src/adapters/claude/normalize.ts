@@ -39,6 +39,7 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
           cwd: raw.cwd ?? env.PWD ?? null,
           tmux_session: null,           // Stage 2 (attach flip) enriches tmux coords
           tmux_window: null,
+          tmux_socket: null,            // Stage 2 enrichment fills the socket from the hook's $TMUX
           tmux_pane: env.TMUX_PANE ?? null,
           profile: env.AGMUX_PROFILE ?? null,
           agent_version: env.CLAUDE_CODE_VERSION ?? null,

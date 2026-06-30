@@ -71,6 +71,7 @@ export interface SessionStartedPayload {
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  tmux_socket: string | null;
   project: string | null;
 }
 
@@ -84,6 +85,7 @@ export interface SessionResumedPayload {
   new_tmux_session: string | null;
   new_tmux_window: string | null;
   new_tmux_pane: string | null;
+  new_tmux_socket: string | null;
   reason: "cli_attach_after_death";
 }
 
@@ -108,6 +110,7 @@ export interface SessionRegisteredPayload {
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  tmux_socket: string | null;
   profile: string | null;
   agent_version: string | null;
   parent: NativeIdentity | null;

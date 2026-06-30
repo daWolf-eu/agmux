@@ -5,7 +5,7 @@ test("attachInPopup issues switch-client (+ select-pane) then returns the exit s
   const calls: string[][] = [];
   const runTmux = async (args: string[]) => { calls.push(args); };
   const h = await attachInPopup(
-    { tmux_session: "work", tmux_window: "@3", tmux_pane: "%5" },
+    { tmux_session: "work", tmux_window: "@3", tmux_pane: "%5", tmux_socket: null },
     runTmux,
   );
   expect(calls).toEqual([
@@ -18,17 +18,17 @@ test("attachInPopup issues switch-client (+ select-pane) then returns the exit s
 test("attachInPopup without a pane switches window only", async () => {
   const calls: string[][] = [];
   const runTmux = async (args: string[]) => { calls.push(args); };
-  await attachInPopup({ tmux_session: "work", tmux_window: "@3", tmux_pane: null }, runTmux);
+  await attachInPopup({ tmux_session: "work", tmux_window: "@3", tmux_pane: null, tmux_socket: null }, runTmux);
   expect(calls).toEqual([["switch-client", "-t", "work:@3"]]);
 });
 
 function placementSpy(exists: boolean) {
-  const calls: { newWindow: any[]; newSession: any[]; switched: string[] } = { newWindow: [], newSession: [], switched: [] };
+  const calls: { newWindow: any[]; newSession: any[]; switched: Array<[string, string | null | undefined]> } = { newWindow: [], newSession: [], switched: [] };
   const deps: ResumePlacementDeps = {
     hasSession: async () => exists,
-    newWindow: async (a: any) => { calls.newWindow.push(a); return { session: a.sessionName, window: "@7", pane: "%7" }; },
-    newSession: async (a: any) => { calls.newSession.push(a); return { session: a.sessionName, window: "@1", pane: "%1" }; },
-    switchClient: async (t: string) => { calls.switched.push(t); },
+    newWindow: async (a: any) => { calls.newWindow.push(a); return { session: a.sessionName, window: "@7", pane: "%7", socket: a.socket ?? null }; },
+    newSession: async (a: any) => { calls.newSession.push(a); return { session: a.sessionName, window: "@1", pane: "%1", socket: a.socket ?? null }; },
+    switchClient: async (t: string, s?: string | null) => { calls.switched.push([t, s]); },
   };
   return { calls, deps };
 }
@@ -49,8 +49,15 @@ test("resumeIntoSession opens a new window in an existing session and switches t
   // only the agmux env allowlist is forwarded (hub url + session id), PATH dropped
   expect(calls.newWindow[0].env).toEqual({ AGMUX_HUB_URL: "http://h", AGMUX_SESSION_ID: "abc12345" });
   expect(calls.newWindow[0].detach).toBe(true);
-  expect(calls.switched).toEqual(["work:@7"]);
+  expect(calls.switched).toEqual([["work:@7", null]]);
   expect(h).toEqual({ argv: [] });
+});
+
+test("resumeIntoSession threads the socket into newWindow and switchClient", async () => {
+  const { calls, deps } = placementSpy(true);
+  await resumeIntoSession(spec, "work", "abc12345", deps, "/sock");
+  expect(calls.newWindow[0].socket).toBe("/sock");
+  expect(calls.switched).toEqual([["work:@7", "/sock"]]);
 });
 
 test("resumeIntoSession creates the session when missing, then switches", async () => {
@@ -60,6 +67,6 @@ test("resumeIntoSession creates the session when missing, then switches", async 
   expect(calls.newWindow).toHaveLength(0);
   expect(calls.newSession[0].sessionName).toBe("gone");
   expect(calls.newSession[0].windowName).toBe("agmux:abc12345");
-  expect(calls.switched).toEqual(["gone:@1"]);
+  expect(calls.switched).toEqual([["gone:@1", null]]);
   expect(h).toEqual({ argv: [] });
 });
