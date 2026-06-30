@@ -12,3 +12,12 @@ test("no active pane → null", () => {
 test("no matching pane → null", () => {
   expect(matchAttachedPane([mkRow({ tmux_pane: "%3" })], "%9")).toBeNull();
 });
+test("socket-aware: same pane on different servers disambiguated by socket", () => {
+  // %3 is reused across two tmux servers; only socket distinguishes them.
+  const rows = [
+    mkRow({ session_id: "default", tmux_pane: "%3", tmux_socket: null }),
+    mkRow({ session_id: "demo1", tmux_pane: "%3", tmux_socket: "/tmp/demo1" }),
+  ];
+  expect(matchAttachedPane(rows, "%3", "/tmp/demo1")).toBe("demo1");
+  expect(matchAttachedPane(rows, "%3", null)).toBe("default");
+});

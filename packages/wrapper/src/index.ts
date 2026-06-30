@@ -95,7 +95,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   if (isResume) {
     await client.post(buildResumedEvent({
       sessionId, host, newPid: child.pid!,
-      tmux: { session: tmuxCoords.session, window: tmuxCoords.window, pane: tmuxCoords.pane },
+      tmux: { session: tmuxCoords.session, window: tmuxCoords.window, pane: tmuxCoords.pane, socket: tmuxCoords.socket },
     }));
   } else {
     await client.post(buildStartedEvent({

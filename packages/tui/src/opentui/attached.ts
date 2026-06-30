@@ -1,9 +1,20 @@
 import type { SessionRow } from "@agmux/protocol";
 
 // Pure matcher: which session id (if any) owns the given active pane.
-export function matchAttachedPane(rows: SessionRow[], activePane: string | null): string | null {
+// Pane ids (%N) are server-global but NOT unique across tmux servers, so when a
+// socket is known we must match on both socket + pane to avoid cross-server collisions.
+export function matchAttachedPane(
+  rows: SessionRow[],
+  activePane: string | null,
+  activeSocket?: string | null,
+): string | null {
   if (!activePane) return null;
-  return rows.find((r) => r.tmux_pane === activePane)?.session_id ?? null;
+  // Legacy/test callers pass no socket → pane-only match (current behavior).
+  if (activeSocket === undefined) {
+    return rows.find((r) => r.tmux_pane === activePane)?.session_id ?? null;
+  }
+  // Socket known (string OR null): require both to match.
+  return rows.find((r) => (r.tmux_socket ?? null) === activeSocket && r.tmux_pane === activePane)?.session_id ?? null;
 }
 
 // Side-effecting probe: the active pane of the parent client, or null when not in

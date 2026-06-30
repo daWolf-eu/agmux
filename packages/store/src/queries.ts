@@ -17,6 +17,7 @@ function decodeRow(raw: any): SessionRow {
     tmux_session: raw.tmux_session,
     tmux_window: raw.tmux_window,
     tmux_pane: raw.tmux_pane,
+    tmux_socket: raw.tmux_socket ?? null,
     host: raw.host,
     project: raw.project,
     parent_session_id: raw.parent_session_id,
