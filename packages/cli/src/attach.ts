@@ -1,10 +1,12 @@
 import { $ } from "bun";
 import type { SessionRow } from "@agmux/protocol";
-import { LIVE_STATUSES, tmuxSocketArgs } from "@agmux/protocol";
+import { LIVE_STATUSES, tmuxSocketArgs, AGMUX_TMUX_SESSION_DEFAULT } from "@agmux/protocol";
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { resolvePrefix } from "./id-resolve.ts";
 import { loadProfileEnv } from "./profile-env.ts";
+import { hasSession, readCurrentPane } from "./tmux-place.ts";
+import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 
 export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
@@ -31,6 +33,24 @@ export function buildAttachCommands(c: AttachCoords, inTmux: boolean): string[][
   return [argv];
 }
 
+// Decide whether a session can be re-focused in place (attach) or must be
+// relaunched (resume). Session status is only a LAGGING approximation of tmux
+// reality: a row can read LIVE (idle/running/waiting) while its tmux session is
+// already gone — e.g. a native row pinned live by pid reuse (spec §8), a
+// heartbeat not yet past the lost threshold, or the tmux server killed out from
+// under us. So a LIVE row is attachable only if its tmux session actually still
+// exists; otherwise we resume instead of running a doomed `tmux attach-session`
+// (which throws an uncaught ShellError and crashes the command).
+export async function decideAttach(
+  session: Pick<SessionRow, "status" | "tmux_session" | "tmux_window" | "tmux_socket">,
+  sessionExists: (name: string, socket: string | null) => Promise<boolean>,
+): Promise<"attach" | "resume"> {
+  const live = LIVE_STATUSES.includes(session.status) && !!session.tmux_session && !!session.tmux_window;
+  if (!live) return "resume";
+  if (!(await sessionExists(session.tmux_session!, session.tmux_socket))) return "resume";
+  return "attach";
+}
+
 export async function attachCmd(opts: AttachOpts): Promise<number> {
   const listR = await fetch(`${opts.hubUrl}/sessions?all=1&limit=1000`);
   if (!listR.ok) { console.error(`hub error ${listR.status}`); return 1; }
@@ -44,10 +64,11 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     usage: { turn_count: number } | null;
   };
 
-  if (LIVE_STATUSES.includes(session.status) && session.tmux_session && session.tmux_window) {
-    const inTmux = !!process.env.TMUX;
+  const inTmux = !!process.env.TMUX;
+
+  if ((await decideAttach(session, hasSession)) === "attach") {
     const cmds = buildAttachCommands(
-      { tmux_session: session.tmux_session, tmux_window: session.tmux_window, tmux_pane: session.tmux_pane, tmux_socket: session.tmux_socket },
+      { tmux_session: session.tmux_session!, tmux_window: session.tmux_window!, tmux_pane: session.tmux_pane, tmux_socket: session.tmux_socket },
       inTmux,
     );
     // !inTmux yields a single foreground attach (inherit stdio so it takes the
@@ -59,8 +80,9 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     return 0;
   }
 
-  // dead / lost: relaunch under the same session_id, resuming natively if the
-  // adapter supports it (spec §6.4). buildRelaunchSpec encapsulates the choice.
+  // dead / lost / stale-live (tmux gone): relaunch under the same session_id,
+  // resuming natively if the adapter supports it (spec §6.4). buildRelaunchSpec
+  // encapsulates the choice.
   const spec = buildRelaunchSpec(session, {
     hubUrl: opts.hubUrl,
     wrapBin: opts.wrapBin,
@@ -74,6 +96,19 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     turnCount: usage?.turn_count ?? 0,
     loadProfileEnv,
   });
+
+  // In tmux: place the resumed agent in a NEW window of the caller's current
+  // session and switch to it (mirrors the dash resume flow), rather than taking
+  // over the pane the user ran `attach` from. Outside tmux: hand the terminal to
+  // the relaunched agent — the wrapper creates/attaches the tmux session itself.
+  if (inTmux) {
+    const here = await readCurrentPane().catch(() => null);
+    const target = here?.session ?? session.tmux_session ?? AGMUX_TMUX_SESSION_DEFAULT;
+    const socket = here?.socket ?? null;
+    await resumeIntoSession(spec, target, session.session_id.slice(0, 8), defaultPlacementDeps, socket);
+    return 0;
+  }
+
   const child = Bun.spawn(spec.wrapArgv, {
     stdio: ["inherit", "inherit", "inherit"],
     env: spec.env,
