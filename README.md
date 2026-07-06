@@ -10,6 +10,8 @@ If you run more than one coding agent, you lose track of them fast: which sessio
 
 **Status:** alpha (`v0.1.0-alpha.1`). The foundation (`protocol + store + hub + wrapper`), agent adapters (`claude`, `codex`, `pi`), and the `cli` + `tui` consumers are implemented. macOS-verified; Linux portability is best-effort and unverified in CI. Expect rough edges and breaking changes between alpha releases.
 
+> **Heads-up — this project is heavily "vibed."** Nearly all code here is written by an AI coding agent. As a personal hobby project, I lean all the way into hands-off, agentic development as a field test of what current models produce with minimal human review. I stay hands-on for brainstorming, planning, and manual QA — but I barely read the code. So this does **not** reflect my professional standards for code quality or product design, and it shouldn't set that bar for you either. Don't expect that to change while it's in alpha. ;)
+
 ## Read first
 
 - [`docs/agmux-foundation.md`](docs/agmux-foundation.md) — vision, architecture, package decomposition, and standing principles. Every per-service design doc builds on this.
