@@ -225,3 +225,25 @@ test("piAdapter passes the framework conformance battery", () => {
   });
   expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
 });
+
+import { piSkillsDir } from "../../src/adapters/pi/install.ts";
+import { SKILLS as PI_SKILLS } from "../../src/skills/index.ts";
+
+test("install delivers self-doc skills into <configDir>/skills/agmux; uninstall removes them", () => {
+  const cfg = tmpCfg();
+  const ctx = { ...ictx(cfg, tmpState()), skills: true };
+  const rec = piInstall(ctx);
+  for (const s of PI_SKILLS) {
+    expect(fs.existsSync(path.join(piSkillsDir(cfg), s.name, "SKILL.md"))).toBe(true);
+  }
+  expect(rec.artifacts.some((a) => a.kind === "file" && a.path === piSkillsDir(cfg))).toBe(true);
+  piUninstall(ctx, rec);
+  expect(fs.existsSync(piSkillsDir(cfg))).toBe(false);
+});
+
+test("install --no-skills omits pi skills but still writes the extension", () => {
+  const cfg = tmpCfg();
+  piInstall({ ...ictx(cfg, tmpState()), skills: false });
+  expect(fs.existsSync(piSkillsDir(cfg))).toBe(false);
+  expect(fs.existsSync(path.join(extensionsDir(cfg), "agmux.ts"))).toBe(true);
+});
