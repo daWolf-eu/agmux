@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
-import { createRegistry, loadRecord } from "@agmux/adapters";
+import { createRegistry, loadRecord, createDefaultRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 
 function setup() {
@@ -97,4 +97,34 @@ test("adapter status without --config-dir leaves the override unset", async () =
   const reg = createRegistry(); reg.register(spy);
   await runAdapterCmd(["status", "work"], { ...s.deps, registry: reg });
   expect(seen.configDirOverride ?? null).toBeNull();
+});
+
+// --- --no-skills flag: uses the real claude adapter (pure filesystem, no
+// external binary) so these can assert the actual on-disk skills path. ---
+
+function tmp(prefix: string): string { return fs.mkdtempSync(path.join(os.tmpdir(), prefix)); }
+
+function makeDeps(stateDir: string) {
+  return {
+    registry: createDefaultRegistry(),
+    stateDir,
+    configPath: path.join(stateDir, "no-such-config.toml"), // absent => empty profiles
+    agmuxEmitPath: "/abs/agmux emit",
+    out: (_l: string) => {},
+  };
+}
+
+test("adapter install delivers skills by default (claude)", async () => {
+  const cfg = tmp("agmux-cli-cfg-");
+  const code = await runAdapterCmd(["install", "--kind", "claude", "--config-dir", cfg], makeDeps(tmp("agmux-cli-state-")));
+  expect(code).toBe(0);
+  expect(fs.existsSync(path.join(cfg, "skills", "agmux", "skills", "agmux-overview", "SKILL.md"))).toBe(true);
+});
+
+test("adapter install --no-skills omits skills but still installs the plugin", async () => {
+  const cfg = tmp("agmux-cli-cfg-");
+  const code = await runAdapterCmd(["install", "--kind", "claude", "--config-dir", cfg, "--no-skills"], makeDeps(tmp("agmux-cli-state-")));
+  expect(code).toBe(0);
+  expect(fs.existsSync(path.join(cfg, "skills", "agmux", ".claude-plugin", "plugin.json"))).toBe(true);
+  expect(fs.existsSync(path.join(cfg, "skills", "agmux", "skills"))).toBe(false);
 });
