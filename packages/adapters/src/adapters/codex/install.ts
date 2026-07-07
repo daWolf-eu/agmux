@@ -2,9 +2,10 @@ import * as cp from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { InstallContext, InstallRecord, InstallStatus } from "../../core/types.ts";
+import type { InstallContext, InstallRecord, InstallStatus, InstallArtifact } from "../../core/types.ts";
 import { CODEX_CAPABILITIES } from "./caps.ts";
 import { MARKETPLACE_FILES, PLUGIN_VERSION, MARKETPLACE_NAME, PLUGIN_NAME } from "./plugin-files.ts";
+import { writeSkills } from "../../skills/compose.ts";
 
 export const ADAPTER_VERSION = "1";
 const PLUGIN_REF = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`; // "agmux@agmux"
@@ -47,6 +48,13 @@ export function marketplaceDir(stateDir: string): string {
   return path.join(stateDir, "codex", "marketplace");
 }
 
+// Codex auto-discovers personal skills from $HOME/.agents/skills — NOT CODEX_HOME
+// (spec §3.2). Host-global, so it is shared across codex profiles. Reads
+// process.env.HOME first so tests can isolate to a temp home.
+export function codexSkillsDir(): string {
+  return path.join(process.env.HOME ?? os.homedir(), ".agents", "skills", "agmux");
+}
+
 function materialize(stateDir: string): string {
   const dest = marketplaceDir(stateDir);
   fs.rmSync(dest, { recursive: true, force: true }); // idempotent: refresh in place
@@ -65,23 +73,31 @@ export function codexInstall(ctx: InstallContext): InstallRecord {
   runCodex(["plugin", "marketplace", "add", mkt], env);
   runCodex(["plugin", "add", PLUGIN_REF], env);
   const configToml = path.join(configDir, "config.toml");
+  const artifacts: InstallArtifact[] = [
+    { kind: "config-key", path: configToml, detail: `plugin ${PLUGIN_REF}`, restore: null },
+    { kind: "config-key", path: configToml, detail: `marketplace ${MARKETPLACE_NAME}`, restore: null },
+  ];
+  if (ctx.skills !== false) {
+    artifacts.push({ kind: "file", path: writeSkills(codexSkillsDir()), detail: "codex skills agmux/" });
+  }
   return {
     agentKind: "codex",
     profile: ctx.profile,
     adapterVersion: ADAPTER_VERSION,
     isolationMode: "config-dir",
     capabilities: CODEX_CAPABILITIES,
-    artifacts: [
-      { kind: "config-key", path: configToml, detail: `plugin ${PLUGIN_REF}`, restore: null },
-      { kind: "config-key", path: configToml, detail: `marketplace ${MARKETPLACE_NAME}`, restore: null },
-    ],
+    artifacts,
   };
 }
 
-export function codexUninstall(ctx: InstallContext, _record: InstallRecord): void {
+export function codexUninstall(ctx: InstallContext, record: InstallRecord): void {
   const env = { CODEX_HOME: resolveConfigDir(ctx) };
   runner(["plugin", "remove", PLUGIN_REF], env);
   runner(["plugin", "marketplace", "remove", MARKETPLACE_NAME], env);
+  // Remove host-global skill files recorded in the ledger (last-uninstall-wins, spec §3.2).
+  for (const a of record.artifacts) {
+    if (a.kind === "file") fs.rmSync(a.path, { recursive: true, force: true });
+  }
 }
 
 export function codexStatus(ctx: InstallContext): InstallStatus {
