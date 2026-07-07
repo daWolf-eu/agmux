@@ -1,4 +1,5 @@
 export * from "./core/index.ts";
+export * from "./skills/index.ts";
 import { createRegistry, type Registry } from "./core/registry.ts";
 import { registerAll } from "./adapters/index.ts";
 
