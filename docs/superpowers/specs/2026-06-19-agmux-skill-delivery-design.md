@@ -193,6 +193,8 @@ Library/unit + conformance (Bun test, `packages/adapters/tests/`):
 
 **Live spike (Claude, the pitch's named deliverable):** install into a scratch `CLAUDE_CONFIG_DIR`, launch a real `claude` session, confirm `agmux:agmux-overview` and `agmux:agmux-troubleshooting` are listed and invocable, and that invoking `agmux-overview` yields guidance referencing `$AGMUX_SESSION_ID`.
 
+**Spike result (2026-07-08):** Mechanical half ✅ — `agmux adapter install --kind claude --config-dir <scratch>` (real CLI) materializes both `SKILL.md` files at `<configDir>/skills/agmux/skills/{agmux-overview,agmux-troubleshooting}/`, alongside the telemetry plugin (`.claude-plugin/plugin.json`, `hooks/`, `bin/`), with valid frontmatter (`name` + JSON-encoded `description`). In-session listing/invocation half **deferred (follow-up):** a scratch `CLAUDE_CONFIG_DIR` is unauthenticated (`claude -p` → "Not logged in"), and driving `/login` or installing into the real `~/.claude` are both outside what this verification should do unattended. Confirm labels + invocation manually in an authenticated config dir. Full unit + conformance suites green: adapters 111/111, cli 123/123, both typecheck clean, HOME-seam clean (no leak to real `~/.agents/skills`).
+
 ---
 
 ## 9. Deferred (B) — runner-bundling handoff
