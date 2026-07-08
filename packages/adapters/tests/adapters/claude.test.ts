@@ -260,3 +260,11 @@ test("install delivers self-doc skills inside the plugin; --no-skills omits them
   // The telemetry plugin is still installed.
   expect(fs.existsSync(path.join(skillsPluginDir(cfg2), ".claude-plugin", "plugin.json"))).toBe(true);
 });
+
+test("install delivers skills by default when ctx.skills is omitted (not just when explicitly true)", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg); // no `skills` field at all
+  expect("skills" in ctx).toBe(false);
+  claudeInstall(ctx as any);
+  expect(fs.existsSync(path.join(skillsPluginDir(cfg), "skills", "agmux-overview", "SKILL.md"))).toBe(true);
+});

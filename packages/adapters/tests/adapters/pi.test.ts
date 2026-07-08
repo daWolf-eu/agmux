@@ -247,3 +247,11 @@ test("install --no-skills omits pi skills but still writes the extension", () =>
   expect(fs.existsSync(piSkillsDir(cfg))).toBe(false);
   expect(fs.existsSync(path.join(extensionsDir(cfg), "agmux.ts"))).toBe(true);
 });
+
+test("install delivers skills by default when ctx.skills is omitted (not just when explicitly true)", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg, tmpState()); // no `skills` field at all
+  expect("skills" in ctx).toBe(false);
+  piInstall(ctx);
+  expect(fs.existsSync(path.join(piSkillsDir(cfg), "agmux-overview", "SKILL.md"))).toBe(true);
+});
