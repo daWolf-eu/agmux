@@ -2,14 +2,10 @@
 import type { SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
+import { tmuxTarget } from "../shared/yank.ts";
 
 function shortHeader(row: SessionRow): string {
   return `${row.session_id.slice(0, 13)} · ${row.agent_kind}${row.profile ? ` · ${row.profile}` : ""}`;
-}
-
-function tmuxFull(r: SessionRow): string {
-  if (!r.tmux_session || !r.tmux_window) return "—";
-  return `${r.tmux_session}:${r.tmux_window}${r.tmux_pane ? ` ${r.tmux_pane}` : ""}`;
 }
 
 function exitStr(r: SessionRow): string {
@@ -28,7 +24,7 @@ function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
     ["Agent", r.agent_kind],
     ["Profile", r.profile ?? "-"],
     ["Origin", r.origin],
-    ["TMUX", tmuxFull(r)],
+    ["TMUX", tmuxTarget(r) || "—"],
     ["PID", r.pid == null ? "-" : String(r.pid)],
     ["Host", r.host],
     ["Project", r.project ?? "-"],
