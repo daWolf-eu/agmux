@@ -7,6 +7,8 @@ import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from 
 import { sortRows, nextSort, type SortKey } from "../shared/sort.ts";
 import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
+import { yankFields } from "../shared/yank.ts";
+import { pad } from "../shared/columns.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
@@ -64,6 +66,8 @@ export function DashApp(props: DashAppProps) {
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [yankOpen, setYankOpen] = useState(false);
+  const [yankCursor, setYankCursor] = useState(0);
 
   const visible = useMemo(
     () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
@@ -114,6 +118,18 @@ export function DashApp(props: DashAppProps) {
     setSelectedId(visible[next]!.session_id);
   };
 
+  const doYank = (i: number) => {
+    if (!selected) return;
+    const field = yankFields(selected)[i];
+    setYankOpen(false);
+    if (!field) return;
+    if (field.empty) { setNotice(`${field.label} is empty`); return; }
+    void props.actions
+      .copy(field.value)
+      .then(() => setNotice(`copied ${field.label}`))
+      .catch((e) => setNotice(`copy failed: ${e?.message ?? String(e)}`));
+  };
+
   useKeyboard((key) => {
     if (searching) {
       if (key.name === "return" || key.name === "escape") { setSearching(false); return; }
@@ -128,11 +144,21 @@ export function DashApp(props: DashAppProps) {
     }
     if (showHelp) { if (key.name === "escape" || key.name === "q" || key.name === "?") setShowHelp(false); return; }
 
+    if (yankOpen) {
+      if (key.name === "escape" || key.name === "q" || key.name === "y") { setYankOpen(false); return; }
+      if (key.name === "j" || key.name === "down") { setYankCursor((c) => Math.min(9, c + 1)); return; }
+      if (key.name === "k" || key.name === "up") { setYankCursor((c) => Math.max(0, c - 1)); return; }
+      if (key.name === "return") { doYank(yankCursor); return; }
+      if (key.name && /^[0-9]$/.test(key.name)) { doYank(key.name === "0" ? 9 : Number(key.name) - 1); return; }
+      return;
+    }
+
     // Any key dismisses a lingering notice (a failed attach/resume message).
     if (notice) setNotice(null);
 
     if (key.name === "q") { props.onQuit(); return; }
     if (key.name === "?") { setShowHelp(true); return; }
+    if (key.name === "y" && selected) { setYankCursor(0); setYankOpen(true); return; }
     if (key.name === "j" || key.name === "down") { move(1); return; }
     if (key.name === "k" || key.name === "up") { move(-1); return; }
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
@@ -162,8 +188,28 @@ export function DashApp(props: DashAppProps) {
       <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
         <text>j/k move · g/G top/bottom · s sort · f filter · / search</text>
         <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
-        <text>x kill · ? help · q quit</text>
+        <text>y yank field · x kill · ? help · q quit</text>
         <text fg="#6c7086">? or esc to close</text>
+      </box>
+    );
+  }
+
+  if (yankOpen && selected) {
+    const fields = yankFields(selected);
+    const lw = fields.reduce((m, f) => Math.max(m, f.label.length), 0);
+    const digit = (i: number) => (i === 9 ? "0" : String(i + 1));
+    return (
+      <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" yank field ">
+        {fields.map((f, i) => {
+          const cursor = i === yankCursor;
+          const fg = cursor ? "#cdd6f4" : f.empty ? "#45475a" : "#a6adc8";
+          return (
+            <text key={i} fg={fg}>
+              {`${cursor ? "›" : " "} ${digit(i)}  ${pad(f.label, lw, "left")}  ${f.empty ? "—" : f.value}`}
+            </text>
+          );
+        })}
+        <text fg="#6c7086">1-0/⏎ copy · j/k move · esc close</text>
       </box>
     );
   }
