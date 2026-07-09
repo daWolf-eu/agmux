@@ -131,3 +131,8 @@ test("resumeIntoSession creates the session when missing, then switches", async 
   expect(calls.switched).toEqual([["gone:@1", null]]);
   expect(h).toEqual({ argv: [] });
 });
+
+test("makeActions exposes a copy() method", () => {
+  const actions = makeActions("http://localhost:0", "agmux", false);
+  expect(typeof actions.copy).toBe("function");
+});
