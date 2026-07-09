@@ -66,9 +66,9 @@ test("osc52 encodes base64 and terminates with BEL", () => {
 
 test("osc52 wraps in tmux passthrough (inner ESC doubled) when tmux=true", () => {
   const b64 = Buffer.from("hi", "utf8").toString("base64");
-  const inner = `\x1b]52;c;${b64}\x07`;
-  const doubled = inner.replace(/\x1b/g, "\x1b\x1b");
-  expect(osc52("hi", true)).toBe(`\x1bPtmux;\x1b${doubled}\x1b\\`);
+  // Canonical: ESC Ptmux ; <OSC52 with its single ESC doubled> ESC backslash.
+  // Exactly two ESC bytes after "Ptmux;" (not three).
+  expect(osc52("hi", true)).toBe(`\x1bPtmux;\x1b\x1b]52;c;${b64}\x07\x1b\\`);
 });
 
 test("copyToClipboard uses tmux-wrapped OSC 52 when $TMUX is set and no native tool", async () => {

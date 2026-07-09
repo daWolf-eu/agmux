@@ -126,6 +126,8 @@ export function DashApp(props: DashAppProps) {
     if (field.empty) { setNotice(`${field.label} is empty`); return; }
     void props.actions
       .copy(field.value)
+      // Best-effort on the OSC 52 fallback path: the write is fire-and-forget with
+      // no terminal ack, so "copied" here just means the escape was sent, not confirmed.
       .then(() => setNotice(`copied ${field.label}`))
       .catch((e) => setNotice(`copy failed: ${e?.message ?? String(e)}`));
   };

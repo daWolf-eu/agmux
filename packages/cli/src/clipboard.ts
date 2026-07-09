@@ -46,7 +46,7 @@ export function osc52(text: string, tmux: boolean): string {
   const b64 = Buffer.from(text, "utf8").toString("base64");
   const seq = `\x1b]52;c;${b64}\x07`;
   if (!tmux) return seq;
-  return `\x1bPtmux;\x1b${seq.replace(/\x1b/g, "\x1b\x1b")}\x1b\\`;
+  return `\x1bPtmux;${seq.replace(/\x1b/g, "\x1b\x1b")}\x1b\\`;
 }
 
 export async function copyToClipboard(text: string, deps: ClipboardDeps = defaultDeps): Promise<void> {
