@@ -19,6 +19,7 @@ const noActions: Actions = {
   async attach() { return null; },
   async kill() {},
   async resume() { return { argv: [] }; },
+  async copy() {},
 };
 
 test("renders the table and j/k moves the selection", async () => {
@@ -148,6 +149,7 @@ test("Enter on a closed session resumes; Enter on a live session attaches", asyn
     async attach() { calls.push("attach"); return null; },
     async kill() {},
     async resume() { calls.push("resume"); return { argv: [] }; },
+    async copy() {},
   };
 
   const closed = [mkRow({ session_id: "agx-closed99", status: "lost" })];
@@ -180,4 +182,98 @@ test("Enter on a closed session resumes; Enter on a live session attaches", asyn
   await r2.renderOnce();
   expect(calls).toEqual(["attach"]);
   r2.renderer.destroy();
+});
+
+test("y opens the yank popup listing digit-prefixed fields", async () => {
+  const rows = [mkRow({ session_id: "agx-yank-1", cwd: "/work/proj" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("y"); });
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("yank field");
+  expect(frame).toContain("1");
+  expect(frame).toContain("Session ID");
+  expect(frame).toContain("CWD");
+  renderer.destroy();
+});
+
+test("pressing a digit copies that field and shows a notice", async () => {
+  const copied: string[] = [];
+  const actions: Actions = { ...noActions, async copy(t) { copied.push(t); } };
+  const rows = [mkRow({ session_id: "agx-yank-2", cwd: "/work/proj" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("y"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("1"); }); // 1 = Session ID
+  await renderOnce();
+  expect(copied).toEqual(["agx-yank-2"]);
+  const frame = captureCharFrame();
+  expect(frame).toContain("copied Session ID");
+  expect(frame).not.toContain("yank field"); // popup closed
+  renderer.destroy();
+});
+
+test("yanking an empty field shows an is-empty notice and does not copy", async () => {
+  const copied: string[] = [];
+  const actions: Actions = { ...noActions, async copy(t) { copied.push(t); } };
+  // native_session_id defaults to null -> Native ID (digit 2) is empty.
+  const rows = [mkRow({ session_id: "agx-yank-3", native_session_id: null })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("y"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("2"); }); // 2 = Native ID (empty)
+  await renderOnce();
+  expect(copied).toEqual([]);
+  expect(captureCharFrame()).toContain("Native ID is empty");
+  renderer.destroy();
+});
+
+test("escape closes the yank popup without copying", async () => {
+  const copied: string[] = [];
+  const actions: Actions = { ...noActions, async copy(t) { copied.push(t); } };
+  const rows = [mkRow({ session_id: "agx-yank-4" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("y"); });
+  await renderOnce();
+  expect(captureCharFrame()).toContain("yank field");
+  await act(async () => { (mockInput as unknown as { pressEscape: () => void }).pressEscape(); });
+  // A lone ESC byte is ambiguous with the start of an arrow-key sequence, so the
+  // stdin parser holds it pending for ~20ms before flushing it as "escape".
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+  await renderOnce();
+  expect(captureCharFrame()).not.toContain("yank field");
+  expect(copied).toEqual([]);
+  renderer.destroy();
 });

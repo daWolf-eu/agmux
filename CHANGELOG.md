@@ -18,6 +18,8 @@ The single source of truth for the running version is
   tmux session dash runs in (creating that session when dash runs outside tmux),
   then switches the client onto it. Attach/resume failures surface as a footer
   notice instead of a silent no-op.
+- dash: `y` yanks a field of the selected session to the system clipboard via a
+  digit-prefixed popup (autodetects pbcopy/wl-copy/xclip/xsel, OSC 52 fallback).
 
 ### Fixed
 - Multiple tmux servers: sessions now record the tmux server socket

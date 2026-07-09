@@ -35,4 +35,6 @@ export interface Actions {
   attach(row: SessionRow): Promise<Handoff | null>;
   kill(row: SessionRow): Promise<void>;
   resume(row: SessionRow): Promise<Handoff | null>;
+  // Copy arbitrary text to the system clipboard (yank). Concrete impl in cli.
+  copy(text: string): Promise<void>;
 }

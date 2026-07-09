@@ -8,6 +8,7 @@ import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileEnv } from "./profile-env.ts";
 import { readCurrentPane, hasSession } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
+import { copyToClipboard } from "./clipboard.ts";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
 // `attach` command can share them without an import cycle (dash-actions already
@@ -89,5 +90,8 @@ export function makeActions(
       try { process.kill(row.pid, "SIGTERM"); } catch { /* already gone */ }
     },
     resume,
+    async copy(text: string): Promise<void> {
+      await copyToClipboard(text);
+    },
   };
 }

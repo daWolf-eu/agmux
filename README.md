@@ -113,7 +113,7 @@ status = "open"     # active | open | closed | comma-separated statuses
 ```
 
 `dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `/` filter · `tab` preview tab ·
-`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `?` help · `q` quit.
+`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field · `?` help · `q` quit.
 Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `status`, `sort`.
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
 
