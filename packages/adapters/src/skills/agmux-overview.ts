@@ -17,11 +17,15 @@ record:
 ## Seeing sessions
 
     agmux ls            # list recorded sessions, most recent first
-    agmux watch         # live activity view (TUI)
-    agmux dash          # usage / metrics dashboard (TUI)
+    agmux watch         # fullscreen live view of the session list (TUI)
     agmux inspect <id>  # full detail for one session
 
-All of the above are read-only and safe to run at any time.
+Those three are read-only and safe to run at any time.
+
+    agmux dash          # interactive session browser (TUI): grouped sessions + live preview
+
+dash is interactive, not just a viewer - from it you can attach to, kill, or
+resume a session, so use it deliberately.
 
 ## Concepts
 
