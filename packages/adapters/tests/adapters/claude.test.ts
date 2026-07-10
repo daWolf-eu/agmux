@@ -241,6 +241,34 @@ test("claude nativeIdFromEnv reads CLAUDE_CODE_SESSION_ID", () => {
   expect(claudeAdapter.nativeIdFromEnv!({})).toBeNull();
 });
 
+import { SKILLS } from "../../src/skills/index.ts";
+
+test("install delivers self-doc skills inside the plugin; --no-skills omits them", () => {
+  const cfg = tmpCfg();
+  const rec = claudeInstall({ ...ictx(cfg), skills: true } as any);
+  const skillsRoot = path.join(skillsPluginDir(cfg), "skills");
+  for (const s of SKILLS) {
+    expect(fs.existsSync(path.join(skillsRoot, s.name, "SKILL.md"))).toBe(true);
+  }
+  // Removed with the plugin dir on uninstall.
+  claudeUninstall(ictx(cfg) as any, rec);
+  expect(fs.existsSync(skillsRoot)).toBe(false);
+
+  const cfg2 = tmpCfg();
+  claudeInstall({ ...ictx(cfg2), skills: false } as any);
+  expect(fs.existsSync(path.join(skillsPluginDir(cfg2), "skills"))).toBe(false);
+  // The telemetry plugin is still installed.
+  expect(fs.existsSync(path.join(skillsPluginDir(cfg2), ".claude-plugin", "plugin.json"))).toBe(true);
+});
+
+test("install delivers skills by default when ctx.skills is omitted (not just when explicitly true)", () => {
+  const cfg = tmpCfg();
+  const ctx = ictx(cfg); // no `skills` field at all
+  expect("skills" in ctx).toBe(false);
+  claudeInstall(ctx as any);
+  expect(fs.existsSync(path.join(skillsPluginDir(cfg), "skills", "agmux-overview", "SKILL.md"))).toBe(true);
+});
+
 test("compaction maps PreCompact trigger; defaults to null when absent", () => {
   expect(normalizeClaude({ point: "compaction", source: "hook-command", raw: { trigger: "manual" }, target }).events[0])
     .toEqual({ kind: "compaction", payload: { trigger: "manual" } });

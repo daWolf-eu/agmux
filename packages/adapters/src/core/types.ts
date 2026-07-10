@@ -43,6 +43,9 @@ export interface InstallContext {
   stateDir: string;                  // ~/.agmux
   configDirOverride?: string | null; // explicit --config-dir from the CLI; the adapter
                                      // interprets it (highest-priority config-dir source)
+  // Deliver agmux's self-documentation skills alongside the telemetry payload
+  // (default: undefined/true). The CLI `--no-skills` flag sets this false.
+  skills?: boolean;
 }
 
 // Everything an adapter needs to compute a native resume invocation (spec §6.4).

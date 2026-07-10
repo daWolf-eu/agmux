@@ -36,11 +36,11 @@ function resolveTarget(args: string[], cfg: AgmuxConfig): Target | { error: stri
   return { agentKind: p.agent_kind, profile, profileEnv: p.env };
 }
 
-function ctxFor(t: Target, deps: AdapterCmdDeps, configDirOverride: string | null): InstallContext {
+function ctxFor(t: Target, deps: AdapterCmdDeps, configDirOverride: string | null, skills: boolean = true): InstallContext {
   return {
     agentKind: t.agentKind, profile: t.profile, profileEnv: t.profileEnv,
     agmuxEmitPath: deps.agmuxEmitPath, stateDir: deps.stateDir,
-    configDirOverride,
+    configDirOverride, skills,
   };
 }
 
@@ -51,6 +51,13 @@ function takeConfigDir(args: string[]): { rest: string[]; configDir: string | nu
   if (i < 0) return { rest: args, configDir: null };
   const v = args[i + 1] ?? null;
   return { rest: [...args.slice(0, i), ...args.slice(i + 2)], configDir: v ? expandTilde(v) : null };
+}
+
+// Strip a boolean flag and report whether it was present.
+function takeFlag(args: string[], flag: string): { rest: string[]; present: boolean } {
+  const i = args.indexOf(flag);
+  if (i < 0) return { rest: args, present: false };
+  return { rest: [...args.slice(0, i), ...args.slice(i + 1)], present: true };
 }
 
 function label(t: { agentKind: AgentKind; profile: string | null }): string {
@@ -81,12 +88,13 @@ export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promi
   }
 
   if (sub === "install" || sub === "uninstall" || sub === "status") {
-    const { rest: targetArgs, configDir } = takeConfigDir(rest);
+    const { rest: afterCfg, configDir } = takeConfigDir(rest);
+    const { rest: targetArgs, present: noSkills } = takeFlag(afterCfg, "--no-skills");
     const t = resolveTarget(targetArgs, cfg);
     if ("error" in t) { deps.out(t.error); return 2; }
     const adapter = deps.registry.lookup(t.agentKind);
     if (!adapter) { deps.out(`no adapter registered for kind '${t.agentKind}'`); return 1; }
-    const ctx = ctxFor(t, deps, configDir);
+    const ctx = ctxFor(t, deps, configDir, !noSkills);
 
     if (sub === "install") {
       const rec = installAdapter(adapter, ctx);
@@ -104,6 +112,6 @@ export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promi
     return 0;
   }
 
-  deps.out("usage: agmux adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]");
+  deps.out("usage: agmux adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>] [--no-skills]");
   return 2;
 }

@@ -182,7 +182,7 @@ test("hooks are synchronous + self-backgrounding (codex 0.135 skips async:true)"
   }
 });
 
-import { resolveConfigDir, marketplaceDir, codexInstall, codexUninstall, codexStatus, setCodexRunner, ADAPTER_VERSION, type CodexRunner } from "../../src/adapters/codex/install.ts";
+import { resolveConfigDir, marketplaceDir, codexSkillsDir, codexInstall, codexUninstall, codexStatus, setCodexRunner, ADAPTER_VERSION, type CodexRunner } from "../../src/adapters/codex/install.ts";
 import * as os from "node:os";
 import * as fs from "node:fs";
 
@@ -215,7 +215,7 @@ function tmpState(): string { return fs.mkdtempSync(path.join(os.tmpdir(), "agmu
 const ictx = (configDir: string | undefined, stateDir: string, profile: string | null = null, override: string | null = null) => ({
   agentKind: "codex" as const, profile,
   profileEnv: (configDir ? { CODEX_HOME: configDir } : {}) as Record<string, string>,
-  agmuxEmitPath: "/abs/agmux emit", stateDir,
+  agmuxEmitPath: "/abs/agmux emit", stateDir, skills: false,
   ...(override ? { configDirOverride: override } : {}),
 });
 
@@ -326,7 +326,7 @@ test("codexAdapter passes the framework conformance battery (fake codex runner)"
     const cfg = tmpCfg();
     const state = tmpState();
     const passed = assertAdapterConformance(codexAdapter, {
-      makeContext: () => ({ agentKind: "codex", profile: null, profileEnv: { CODEX_HOME: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state }),
+      makeContext: () => ({ agentKind: "codex", profile: null, profileEnv: { CODEX_HOME: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state, skills: false }),
       makeResumeContext: (nid) => ({ agentKind: "codex", profile: null, command: "codex", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
     });
     expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
@@ -346,6 +346,44 @@ test("status parses the real `installed, enabled` STATUS phrase without false dr
     expect(st.installed).toBe(true);
     expect(st.drift).toBe(false); // VERSION column parsed correctly, not ","
   } finally {
+    setCodexRunner(null);
+  }
+});
+
+import { SKILLS as CODEX_SKILLS } from "../../src/skills/index.ts";
+
+test("install delivers self-doc skills to $HOME/.agents/skills; uninstall removes them", () => {
+  const fake = makeFakeCodex();
+  setCodexRunner(fake.run);
+  const origHome = process.env.HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-codex-home-"));
+  process.env.HOME = home;
+  try {
+    const ctx = { ...ictx(tmpCfg(), tmpState()), skills: true };
+    const rec = codexInstall(ctx);
+    for (const s of CODEX_SKILLS) {
+      expect(fs.existsSync(path.join(home, ".agents", "skills", "agmux", s.name, "SKILL.md"))).toBe(true);
+    }
+    expect(rec.artifacts.some((a) => a.kind === "file" && a.path === codexSkillsDir())).toBe(true);
+    codexUninstall(ctx, rec);
+    expect(fs.existsSync(path.join(home, ".agents", "skills", "agmux"))).toBe(false);
+  } finally {
+    process.env.HOME = origHome;
+    setCodexRunner(null);
+  }
+});
+
+test("install --no-skills omits codex skills", () => {
+  const fake = makeFakeCodex();
+  setCodexRunner(fake.run);
+  const origHome = process.env.HOME;
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-codex-home-"));
+  process.env.HOME = home;
+  try {
+    codexInstall({ ...ictx(tmpCfg(), tmpState()), skills: false });
+    expect(fs.existsSync(path.join(home, ".agents", "skills", "agmux"))).toBe(false);
+  } finally {
+    process.env.HOME = origHome;
     setCodexRunner(null);
   }
 });

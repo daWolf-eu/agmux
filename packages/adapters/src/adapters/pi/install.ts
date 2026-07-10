@@ -1,9 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { InstallContext, InstallRecord, InstallStatus } from "../../core/types.ts";
+import type { InstallContext, InstallRecord, InstallStatus, InstallArtifact } from "../../core/types.ts";
 import { PI_CAPABILITIES } from "./caps.ts";
 import { EXTENSION_FILES, EXTENSION_FILENAME, PLUGIN_VERSION } from "./extension-files.ts";
+import { writeSkills } from "../../skills/compose.ts";
 
 export const ADAPTER_VERSION = "1";
 
@@ -26,6 +27,12 @@ function extensionPath(configDir: string): string {
   return path.join(extensionsDir(configDir), EXTENSION_FILENAME);
 }
 
+// Pi auto-discovers skills from <configDir>/skills/ recursively (spec §3.3) —
+// config-dir isolated, like Claude. Group under agmux/ for a single uninstall artifact.
+export function piSkillsDir(configDir: string): string {
+  return path.join(configDir, "skills", "agmux");
+}
+
 // Read the version stamped in the extension's marker line (the analogue of
 // reading plugin.json's version). null = not installed / unreadable.
 function readInstalledVersion(file: string): string | null {
@@ -45,21 +52,27 @@ export function piInstall(ctx: InstallContext): InstallRecord {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, f.content, { mode: f.mode });
   }
+  const artifacts: InstallArtifact[] = [
+    { kind: "file", path: extensionPath(configDir), detail: "pi extension agmux.ts" },
+  ];
+  if (ctx.skills !== false) {
+    artifacts.push({ kind: "file", path: writeSkills(piSkillsDir(configDir)), detail: "pi skills agmux/" });
+  }
   return {
     agentKind: "pi",
     profile: ctx.profile,
     adapterVersion: ADAPTER_VERSION,
     isolationMode: "config-dir",
     capabilities: PI_CAPABILITIES,
-    artifacts: [{ kind: "file", path: extensionPath(configDir), detail: "pi extension agmux.ts" }],
+    artifacts,
   };
 }
 
 export function piUninstall(_ctx: InstallContext, record: InstallRecord): void {
-  // Remove only the extension file — never the extensions/ dir, which may hold
-  // user/other-profile extensions.
+  // Remove only recorded artifacts (extension file + skills dir) — never the
+  // extensions/ dir itself, which may hold user/other-profile extensions.
   for (const a of record.artifacts) {
-    if (a.kind === "file") fs.rmSync(a.path, { force: true });
+    if (a.kind === "file") fs.rmSync(a.path, { recursive: true, force: true });
   }
 }
 

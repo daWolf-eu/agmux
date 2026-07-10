@@ -4,6 +4,7 @@ import * as path from "node:path";
 import type { InstallContext, InstallRecord, InstallStatus } from "../../core/types.ts";
 import { CLAUDE_CAPABILITIES } from "./caps.ts";
 import { PLUGIN_FILES, PLUGIN_VERSION } from "./plugin-files.ts";
+import { writeSkills } from "../../skills/compose.ts";
 
 export const ADAPTER_VERSION = "1";
 
@@ -38,6 +39,9 @@ export function claudeInstall(ctx: InstallContext): InstallRecord {
     fs.mkdirSync(path.dirname(target), { recursive: true });
     fs.writeFileSync(target, f.content, { mode: f.mode });
   }
+  // Deliver agmux self-doc skills inside the plugin's skills/ dir (label agmux:<name>).
+  // They live under `dest`, so the existing uninstall (rm -rf dest) removes them too.
+  if (ctx.skills !== false) writeSkills(path.join(dest, "skills"));
   return {
     agentKind: "claude",
     profile: ctx.profile,
