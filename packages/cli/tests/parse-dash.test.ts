@@ -1,11 +1,11 @@
 import { test, expect } from "bun:test";
 import { parseDashArgs } from "../src/parse-dash.ts";
 
-test("defaults: events preview, 1s interval, open status, started sort", () => {
+test("defaults: mirror preview, 1s interval, open status, started sort", () => {
   const p = parseDashArgs([], {});
   expect(p.kind).toBe("ok");
   if (p.kind !== "ok") return;
-  expect(p.opts.preview).toBe("events");
+  expect(p.opts.preview).toBe("mirror");
   expect(p.opts.intervalMs).toBe(1000);
   expect(p.opts.status).toBe("open");
   expect(p.opts.sort).toBe("started");

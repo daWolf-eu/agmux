@@ -53,5 +53,10 @@ export function assertAdapterConformance(adapter: Adapter, h: ConformanceHarness
   }
   passed.push("resumePlan");
 
+  if (!Array.isArray(adapter.relaunchEnvKeys) || adapter.relaunchEnvKeys.some((k) => typeof k !== "string")) {
+    throw new Error("conformance: relaunchEnvKeys must be a string[]");
+  }
+  passed.push("relaunch-env-keys");
+
   return passed;
 }

@@ -19,6 +19,7 @@ export const EVENT_KINDS_ADAPTER = [
   "usage.reported",
   "tool.used",
   "prompt.sent",
+  "compaction",
   "session.adapter_attached",
 ] as const;
 export type AdapterEventKind = (typeof EVENT_KINDS_ADAPTER)[number];
@@ -70,6 +71,7 @@ export interface SessionStartedPayload {
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  tmux_socket: string | null;
   project: string | null;
 }
 
@@ -83,6 +85,7 @@ export interface SessionResumedPayload {
   new_tmux_session: string | null;
   new_tmux_window: string | null;
   new_tmux_pane: string | null;
+  new_tmux_socket: string | null;
   reason: "cli_attach_after_death";
 }
 
@@ -107,9 +110,15 @@ export interface SessionRegisteredPayload {
   tmux_session: string | null;
   tmux_window: string | null;
   tmux_pane: string | null;
+  tmux_socket: string | null;
   profile: string | null;
   agent_version: string | null;
   parent: NativeIdentity | null;
+  // Config-affecting env captured from the agent's hook env at registration —
+  // ONLY the adapter's declared relaunchEnvKeys (allowlist). Restored at relaunch
+  // so a native session resumes under the same config dir. Optional/absent on
+  // older emitters → treated as {}.
+  env_overrides?: Record<string, string>;
 }
 
 // Hub-emitted (pid-sweep) observation that a native session's pid is gone (spec §3).
@@ -145,6 +154,14 @@ export interface PromptSentPayload {
   redacted: true;
 }
 
+// A context compaction happened mid-session (Claude PreCompact). Log-only: the
+// fact is queryable from the event log; identity rotation is handled separately by
+// SessionStart re-registration (resolve.ts rule 3). `trigger` is the provider's
+// cause when known ("manual" = user /compact, "auto" = auto-compaction).
+export interface CompactionPayload {
+  trigger?: "manual" | "auto" | null;
+}
+
 export type UsageReportedPayload = UsageReport;
 
 export interface AdapterAttachedPayload {
@@ -169,6 +186,7 @@ export type InputReceivedEvent = EventEnvelope<InputReceivedPayload> & { kind: "
 export type UsageReportedEvent = EventEnvelope<UsageReportedPayload> & { kind: "usage.reported" };
 export type ToolUsedEvent = EventEnvelope<ToolUsedPayload> & { kind: "tool.used" };
 export type PromptSentEvent = EventEnvelope<PromptSentPayload> & { kind: "prompt.sent" };
+export type CompactionEvent = EventEnvelope<CompactionPayload> & { kind: "compaction" };
 export type AdapterAttachedEvent = EventEnvelope<AdapterAttachedPayload> & { kind: "session.adapter_attached" };
 
 export type KnownEvent =
@@ -186,4 +204,5 @@ export type KnownEvent =
   | UsageReportedEvent
   | ToolUsedEvent
   | PromptSentEvent
+  | CompactionEvent
   | AdapterAttachedEvent;

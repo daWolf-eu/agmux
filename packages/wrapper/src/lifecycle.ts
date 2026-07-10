@@ -17,7 +17,7 @@ export interface BuildStartedArgs {
   env_overrides: Record<string, string>;
   cwd: string;
   pid: number;
-  tmux: { session: string | null; window: string | null; pane: string | null };
+  tmux: { session: string | null; window: string | null; pane: string | null; socket: string | null };
   project: string | null;
 }
 
@@ -40,6 +40,7 @@ export function buildStartedEvent(a: BuildStartedArgs): SessionStartedEvent {
       tmux_session: a.tmux.session,
       tmux_window: a.tmux.window,
       tmux_pane: a.tmux.pane,
+      tmux_socket: a.tmux.socket,
       project: a.project,
     },
   };
@@ -78,7 +79,7 @@ export function buildEndedEvent(a: {
 
 export function buildResumedEvent(a: {
   sessionId: string; host: string; newPid: number;
-  tmux: { session: string | null; window: string | null; pane: string | null };
+  tmux: { session: string | null; window: string | null; pane: string | null; socket: string | null };
 }): SessionResumedEvent {
   return {
     event_id: mintEventId(),
@@ -92,6 +93,7 @@ export function buildResumedEvent(a: {
       new_tmux_session: a.tmux.session,
       new_tmux_window: a.tmux.window,
       new_tmux_pane: a.tmux.pane,
+      new_tmux_socket: a.tmux.socket,
       reason: "cli_attach_after_death",
     },
   };

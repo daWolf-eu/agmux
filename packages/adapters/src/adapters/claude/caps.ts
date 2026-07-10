@@ -7,7 +7,7 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
   {
     type: "hook-command",
     activation: "event-triggered",
-    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent"],
+    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent", "compaction"],
   },
   {
     type: "transcript-delta",
@@ -15,6 +15,10 @@ export const CLAUDE_SOURCES: CapabilitySource[] = [
     points: ["usage.reported"],
   },
 ];
+
+// Restored verbatim at relaunch so `claude --resume <id>` finds the conversation
+// under the right config dir. Allowlist only (spec §6.4 / secrets guard).
+export const CLAUDE_RELAUNCH_ENV_KEYS = ["CLAUDE_CONFIG_DIR"] as const;
 
 // Finest-grain descriptors (spec §4). input.required is "partial" — Claude's
 // Notification hook is multi-purpose; the adapter discriminates by notification_type:
@@ -30,4 +34,5 @@ export const CLAUDE_CAPABILITIES: CapabilityMap = {
   "usage.reported": { fulfil: "yes", source: "transcript-delta", liveness: "backfilled" },
   "tool.used": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "prompt.sent": { fulfil: "yes", source: "hook-command", liveness: "live" },
+  "compaction": { fulfil: "yes", source: "hook-command", liveness: "live" },
 };

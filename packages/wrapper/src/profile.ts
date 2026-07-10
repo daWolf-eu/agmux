@@ -112,7 +112,7 @@ export function loadLsConfig(configPath: string): LsConfig {
 }
 
 export interface DashConfig {
-  preview?: "mirror" | "events" | "detail";
+  preview?: "mirror" | "detail";
   interval?: number; // seconds
   status?: string;   // group alias or comma-separated statuses (pre-validated)
   sort?: "started" | "activity";
@@ -124,8 +124,8 @@ export function parseDashSection(raw: unknown): DashConfig {
   const r = raw as Record<string, unknown>;
   const out: DashConfig = {};
   if (r.preview !== undefined) {
-    if (r.preview !== "mirror" && r.preview !== "events" && r.preview !== "detail")
-      throw new Error(`[dash] preview must be 'mirror', 'events' or 'detail', got ${JSON.stringify(r.preview)}`);
+    if (r.preview !== "mirror" && r.preview !== "detail")
+      throw new Error(`[dash] preview must be 'mirror' or 'detail', got ${JSON.stringify(r.preview)}`);
     out.preview = r.preview;
   }
   if (r.interval !== undefined) {

@@ -1,36 +1,19 @@
 import { $ } from "bun";
 import type { SessionRow } from "@agmux/protocol";
-import {
-  LIVE_STATUSES,
-  AGMUX_HUB_URL_ENV, AGMUX_SESSION_ID_ENV, AGMUX_PROFILE_ENV, AGMUX_TMUX_SESSION_ENV,
-} from "@agmux/protocol";
 import type { Actions, Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
+import { LIVE_STATUSES } from "@agmux/protocol";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
-import { buildRelaunchSpec, type RelaunchSpec } from "./relaunch.ts";
-import { newWindow, readCurrentPane } from "./tmux-place.ts";
+import { buildRelaunchSpec } from "./relaunch.ts";
+import { loadProfileEnv } from "./profile-env.ts";
+import { readCurrentPane, hasSession } from "./tmux-place.ts";
+import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
+import { copyToClipboard } from "./clipboard.ts";
 
-// The agmux env keys a relaunched window must carry explicitly via tmux `-e`. A
-// new tmux window inherits only the tmux SERVER env, so agmux-specific vars
-// (esp. the hub URL and session id) must be forwarded, not assumed inherited.
-// Mirrors the allowlist in packages/wrapper/src/index.ts.
-const RELAUNCH_ENV_KEYS = [
-  "AGMUX_INLINE_PROFILE",
-  AGMUX_HUB_URL_ENV,
-  AGMUX_SESSION_ID_ENV,
-  AGMUX_TMUX_SESSION_ENV,
-  AGMUX_PROFILE_ENV,
-  "AGMUX_BIN",
-] as const;
-
-export function relaunchEnv(specEnv: Record<string, string>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const k of RELAUNCH_ENV_KEYS) {
-    const v = specEnv[k];
-    if (v) out[k] = v;
-  }
-  return out;
-}
+// Resume-placement helpers live in ./resume-place.ts so both dash and the plain
+// `attach` command can share them without an import cycle (dash-actions already
+// depends on attach.ts for buildAttachCommands). Re-exported for callers/tests.
+export { relaunchEnv, resumeIntoSession, defaultPlacementDeps, type ResumePlacementDeps } from "./resume-place.ts";
 
 // Popup-mode attach: retarget the parent client inline, then exit dash (empty
 // argv) so the `display-popup -E` closes and reveals the agent's window.
@@ -42,31 +25,16 @@ export async function attachInPopup(
   return { argv: [] };
 }
 
-// Popup-mode resume: relaunch the agent in a NEW tmux window (non-detached, so the
-// parent client switches to it), forwarding only the agmux env keys explicitly,
-// then exit dash (empty argv) so the popup closes onto the freshly relaunched agent.
-export async function resumeIntoNewWindow(
-  spec: RelaunchSpec,
-  sessionName: string,
-  label: string,
-  newWindowFn: typeof newWindow = newWindow,
-): Promise<Handoff> {
-  await newWindowFn({
-    sessionName,
-    windowName: `agmux:${label}`,
-    cmd: spec.wrapArgv,
-    env: relaunchEnv(spec.env),
-    detach: false,
-  });
-  return { argv: [] };
-}
-
 export interface ActionDeps {
   runTmux: (args: string[]) => Promise<void>;
+  // Probe whether a tmux session still exists — injectable for tests. Defaults
+  // to the real tmux `has-session`. Used to catch stale-live rows (see attach).
+  sessionExists?: (name: string, socket: string | null) => Promise<boolean>;
 }
 
 const defaultActionDeps: ActionDeps = {
   runTmux: async (args) => { await $`tmux ${args}`.quiet(); },
+  sessionExists: hasSession,
 };
 
 export function makeActions(
@@ -76,14 +44,41 @@ export function makeActions(
   deps: ActionDeps = defaultActionDeps,
 ): Actions {
   const inTmux = !!process.env.TMUX;
+  const sessionExists = deps.sessionExists ?? hasSession;
+
+  async function resume(row: SessionRow): Promise<Handoff | null> {
+    const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
+    const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
+    const spec = buildRelaunchSpec(session, {
+      hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
+      turnCount: usage?.turn_count ?? 0, loadProfileEnv,
+    });
+    // Outside tmux: no client to switch — hand the terminal to the relaunched agent.
+    if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };
+    // In tmux (popup or inline): place the agent in a new window of the caller's
+    // session and switch the client onto it.
+    const here = await readCurrentPane().catch(() => null);
+    const target = here?.session ?? session.tmux_session ?? "agmux";
+    const socket = here?.socket ?? null;
+    const h = await resumeIntoSession(spec, target, row.session_id.slice(0, 8), defaultPlacementDeps, socket);
+    // popup: exit sentinel closes the popup onto the agent. inline tmux: client
+    // already switched, keep the dash alive (return null).
+    return popup ? h : null;
+  }
+
   return {
     // In tmux → switch-client inline (TUI stays alive), return null.
     // Not in tmux → return a Handoff so the entry hands the terminal to a
     // blocking attach-session after ink unmounts.
     async attach(row: SessionRow): Promise<Handoff | null> {
+      // No tmux target to focus → nothing to attach to (unchanged no-op).
       if (!LIVE_STATUSES.includes(row.status) || !row.tmux_session || !row.tmux_window) return null;
+      // Status is only a lagging approximation of tmux reality: a LIVE row whose
+      // tmux session is gone (e.g. pinned live by pid reuse, spec §8) would make
+      // a doomed attach that errors out — resume it instead of failing.
+      if (!(await sessionExists(row.tmux_session, row.tmux_socket))) return resume(row);
       const coords: AttachCoords = {
-        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane,
+        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };
       if (popup) return attachInPopup(coords, deps.runTmux);
       const cmds = buildAttachCommands(coords, inTmux);
@@ -94,17 +89,9 @@ export function makeActions(
       if (!row.pid) return;
       try { process.kill(row.pid, "SIGTERM"); } catch { /* already gone */ }
     },
-    async resume(row: SessionRow): Promise<Handoff> {
-      const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
-      const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
-      const spec = buildRelaunchSpec(session, {
-        hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
-        turnCount: usage?.turn_count ?? 0,
-      });
-      if (!popup) return { argv: spec.wrapArgv, env: spec.env };
-      const coords = await readCurrentPane().catch(() => null);
-      const sessionName = coords?.session ?? session.tmux_session ?? "agmux";
-      return resumeIntoNewWindow(spec, sessionName, row.session_id.slice(0, 8));
+    resume,
+    async copy(text: string): Promise<void> {
+      await copyToClipboard(text);
     },
   };
 }

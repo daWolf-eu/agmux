@@ -1,0 +1,472 @@
+<title>agmux — Foundation Alignment Report</title>
+<style>
+  :root{
+    --paper:#f4f5f2; --ink:#15181d; --surface:#ffffff; --surface-2:#fbfbf9;
+    --text:#1b1e24; --muted:#5b616b; --faint:#8a909a; --line:#e3e5e0; --line-2:#eceee9;
+    --accent:#0e7c6f; --accent-soft:#0e7c6f1a;
+    --good:#2f8b58;  --good-bg:#eaf3ec;  --good-ink:#1f6b41;
+    --track:#34679e; --track-bg:#e8eef6; --track-ink:#264f7c;
+    --defer:#6b7280; --defer-bg:#eef0f1; --defer-ink:#474d56;
+    --diverge:#bf7326; --diverge-bg:#f6ecdd; --diverge-ink:#8c5316;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Monaco, "Cascadia Code", Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--text);font-family:var(--sans);
+    line-height:1.6;-webkit-font-smoothing:antialiased;font-size:16px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 24px}
+  a{color:var(--accent);text-decoration:none;border-bottom:1px solid var(--accent-soft)}
+  a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---------- header ---------- */
+  header.masthead{background:var(--ink);color:#eef0ee;
+    border-bottom:3px solid var(--accent);position:relative;overflow:hidden}
+  header.masthead::after{content:"";position:absolute;inset:0;pointer-events:none;
+    background:radial-gradient(140% 80% at 88% -10%, #0e7c6f33, transparent 60%)}
+  .masthead .wrap{padding:40px 24px 34px;position:relative;z-index:1}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase}
+  .masthead .eyebrow{color:#7fd8cc;display:flex;align-items:center;gap:10px}
+  .rec{width:9px;height:9px;border-radius:50%;background:#19c5b0;
+    box-shadow:0 0 0 0 #19c5b066;animation:pulse 2.4s ease-out infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 #19c5b066}70%{box-shadow:0 0 0 8px #19c5b000}100%{box-shadow:0 0 0 0 #19c5b000}}
+  @media (prefers-reduced-motion: reduce){.rec{animation:none}}
+  h1{font-family:var(--mono);font-weight:600;font-size:clamp(28px,4.4vw,42px);
+    margin:14px 0 8px;letter-spacing:-.01em;text-wrap:balance;color:#fff}
+  h1 .sub{color:#9aa0a8;font-weight:400}
+  .lede{color:#c3c8cc;max-width:62ch;margin:0;font-size:16.5px}
+  .meta{display:flex;flex-wrap:wrap;gap:8px 10px;margin-top:22px;font-family:var(--mono);font-size:12.5px}
+  .meta span{background:#ffffff10;border:1px solid #ffffff1f;color:#c8cdd2;
+    padding:5px 10px;border-radius:5px;white-space:nowrap}
+  .meta b{color:#fff;font-weight:600}
+
+  /* ---------- scoreboard ---------- */
+  section.board{margin-top:-26px;position:relative;z-index:2}
+  .scorecards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  @media (max-width:760px){.scorecards{grid-template-columns:repeat(2,1fr)}}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:18px 18px 16px;box-shadow:0 1px 2px #1518200a,0 8px 24px -18px #15182040;
+    border-top:3px solid var(--c)}
+  .card .num{font-family:var(--mono);font-size:40px;font-weight:600;line-height:1;
+    color:var(--c);font-variant-numeric:tabular-nums}
+  .card .lab{font-family:var(--mono);font-size:12px;letter-spacing:.1em;text-transform:uppercase;
+    margin-top:10px;color:var(--text);font-weight:600}
+  .card .gloss{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.45}
+  .card.good{--c:var(--good)} .card.track{--c:var(--track)}
+  .card.defer{--c:var(--defer)} .card.diverge{--c:var(--diverge)}
+
+  /* ---------- verdict line ---------- */
+  .verdict{margin:34px 0 6px;padding:20px 22px;background:var(--surface);
+    border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:8px}
+  .verdict p{margin:0;font-size:16.5px}
+  .verdict strong{color:var(--ink)}
+
+  /* ---------- section groups ---------- */
+  .group{margin-top:46px}
+  .group-head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding-bottom:12px;border-bottom:2px solid var(--gc);margin-bottom:4px}
+  .group-head h2{font-family:var(--mono);font-size:19px;font-weight:600;margin:0;color:var(--ink);letter-spacing:-.01em}
+  .group-head .tag{font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:#fff;background:var(--gc);padding:3px 9px;border-radius:5px}
+  .group-head .desc{color:var(--muted);font-size:14px;margin-left:auto}
+  .g-good{--gc:var(--good)} .g-track{--gc:var(--track)}
+  .g-defer{--gc:var(--defer)} .g-diverge{--gc:var(--diverge)}
+
+  .rows{display:flex;flex-direction:column;gap:1px;background:var(--line-2);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:16px}
+  .row{display:grid;grid-template-columns:128px 1fr;gap:18px;
+    background:var(--surface);padding:16px 18px;border-left:3px solid var(--gc)}
+  .row:hover{background:var(--surface-2)}
+  @media (max-width:680px){.row{grid-template-columns:1fr;gap:8px}}
+  .ref{font-family:var(--mono);font-size:12px;color:var(--gc);font-weight:600;
+    padding-top:2px;letter-spacing:.02em}
+  .ref small{display:block;color:var(--faint);font-weight:400;margin-top:3px;letter-spacing:0}
+  .body .t{font-weight:600;color:var(--ink);font-size:15.5px;line-height:1.4}
+  .body .n{color:var(--muted);font-size:14px;margin-top:5px}
+  .ev{margin-top:9px;display:flex;flex-wrap:wrap;gap:6px}
+  .ev code{font-family:var(--mono);font-size:11.5px;background:#1518200c;color:#3a4049;
+    border:1px solid var(--line);padding:2px 7px;border-radius:4px;
+    word-break:break-all;line-height:1.5}
+
+  /* ---------- bottom line ---------- */
+  .bottom{margin:52px 0 0;background:var(--ink);color:#dfe3e3;border-radius:12px;
+    padding:30px 28px;border-top:3px solid var(--accent)}
+  .bottom h2{font-family:var(--mono);font-size:16px;letter-spacing:.08em;text-transform:uppercase;
+    color:#7fd8cc;margin:0 0 12px}
+  .bottom p{margin:0 0 12px;color:#cdd2d4;max-width:74ch}
+  .bottom p:last-child{margin-bottom:0}
+  .bottom strong{color:#fff}
+
+  footer{margin:30px 0 60px;color:var(--faint);font-family:var(--mono);font-size:12px;text-align:center}
+  footer .rule{height:1px;background:var(--line);margin:0 0 18px}
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <div class="eyebrow"><span class="rec" aria-hidden="true"></span>Architecture audit · docs vs. code</div>
+    <h1>agmux <span class="sub">— Foundation Alignment</span></h1>
+    <p class="lede">How the shipped codebase stacks up against <em>agmux — Foundation</em>: where it lands on point, where it's on a good path, what was deferred, and where it has chosen a different trajectory than the document describes.</p>
+    <div class="meta">
+      <span>foundation <b>2026-05-27</b> (+06-08/09 supersessions)</span>
+      <span>code <b>v0.1.0-alpha.1</b></span>
+      <span>branch <b>docs/realign-foundation</b></span>
+      <span>reviewed <b>2026-06-26</b></span>
+    </div>
+  </div>
+</header>
+
+<section class="board">
+  <div class="wrap">
+    <div class="scorecards">
+      <div class="card good">
+        <div class="num">13</div>
+        <div class="lab">On point</div>
+        <div class="gloss">Built as the doc describes</div>
+      </div>
+      <div class="card track">
+        <div class="num">5</div>
+        <div class="lab">Good path</div>
+        <div class="gloss">Right direction, partway there</div>
+      </div>
+      <div class="card defer">
+        <div class="num">7</div>
+        <div class="lab">Deferred</div>
+        <div class="gloss">Designed, not yet built</div>
+      </div>
+      <div class="card diverge">
+        <div class="num">4</div>
+        <div class="lab">Diverged</div>
+        <div class="gloss">Went another way</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="wrap">
+
+  <div class="verdict">
+    <p><strong>Verdict:</strong> the foundational spine is built faithfully and well. The non-optional core (<code style="font-family:var(--mono);font-size:13px">protocol · store · hub · wrapper</code>) plus the first consumers (<code style="font-family:var(--mono);font-size:13px">cli · tui</code>) are real and match the document closely. Everything still missing is an <em>optional consumer</em> or the <em>distributed (B)</em> tier — explicitly deferred by the doc, not designed out. The divergences are pragmatic substitutions (a TUI dash for the web dashboard, opentui for Ink) rather than departures from the vision.</p>
+  </div>
+
+  <!-- ON POINT -->
+  <div class="group g-good">
+    <div class="group-head">
+      <span class="tag">On point</span>
+      <h2>Built as the foundation describes</h2>
+      <span class="desc">The spine, exactly as specified</span>
+    </div>
+    <div class="rows">
+
+      <div class="row">
+        <div class="ref">§6 · §14.3<small>data model</small></div>
+        <div class="body">
+          <div class="t">Append-only event log is the source of truth</div>
+          <div class="n">Single immutable <code style="font-family:var(--mono);font-size:12px">events</code> table; projections are derived and fully rebuildable by replaying the log.</div>
+          <div class="ev"><code>store/src/schema.ts</code><code>store/src/project.ts → rebuildProjections()</code><code>store/src/index.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§6<small>data model</small></div>
+        <div class="body">
+          <div class="t">One unified SQLite DB; projections derived as events arrive</div>
+          <div class="n">Log and projections (<code style="font-family:var(--mono);font-size:12px">sessions · session_usage · session_activity</code>) live in one DB, related by <code style="font-family:var(--mono);font-size:12px">session_id</code>; maintained in the same transaction as the append.</div>
+          <div class="ev"><code>store/src/project.ts → applyEventToProjection()</code><code>store/src/queries.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§5 · §14.2<small>identity</small></div>
+        <div class="body">
+          <div class="t">Canonical UUID minted and injected via AGMUX_SESSION_ID</div>
+          <div class="n">Wrapper mints a UUIDv7, injects <code style="font-family:var(--mono);font-size:12px">AGMUX_SESSION_ID</code> into the child env; native id stored as the <code style="font-family:var(--mono);font-size:12px">native_session_id</code> attribute, never the PK.</div>
+          <div class="ev"><code>wrapper/src/child-env.ts</code><code>protocol/src/env.ts</code><code>protocol/src/ids.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§6<small>schema</small></div>
+        <div class="body">
+          <div class="t">Session schema carries every key attribute</div>
+          <div class="n"><code style="font-family:var(--mono);font-size:12px">agent_kind · profile · native_session_id · command · cwd · pid · tmux_{session,window,pane} · host · start/end · status · parent_session_id</code> — all present, plus <code style="font-family:var(--mono);font-size:12px">origin</code> and <code style="font-family:var(--mono);font-size:12px">last_heartbeat_ts</code>.</div>
+          <div class="ev"><code>protocol/src/session.ts</code><code>store/src/schema.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§6 · §14.7<small>evolution</small></div>
+        <div class="body">
+          <div class="t">Additive evolution; unknown event kinds stored raw</div>
+          <div class="n">Events are versioned; validators accept unknown kinds and the projector treats them as log-only — no out-of-date adapter can drop or corrupt log data.</div>
+          <div class="ev"><code>protocol/src/validators.ts</code><code>protocol/tests/validators.test.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§12<small>protocol</small></div>
+        <div class="body">
+          <div class="t">@agmux/protocol is the zero-runtime contract</div>
+          <div class="n">Pure TS types + the <code style="font-family:var(--mono);font-size:12px">AGMUX_SESSION_ID</code> contract + event versioning/validation, no dependencies. Everything imports it.</div>
+          <div class="ev"><code>protocol/src/{events,session,env,validators,ids}.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§3 · §14.3<small>spine</small></div>
+        <div class="body">
+          <div class="t">Hub daemon = sole writer, ingest + query API</div>
+          <div class="n">Long-running singleton owns the store; HTTP <code style="font-family:var(--mono);font-size:12px">POST /ingest</code> (events in) and <code style="font-family:var(--mono);font-size:12px">GET /sessions·/events·/health</code> (reads out); event-driven projection maintenance.</div>
+          <div class="ev"><code>hub/bin/agmux-hub.ts</code><code>hub/src/server.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4 · §9<small>capture / PTY</small></div>
+        <div class="body">
+          <div class="t">Fully transparent PTY wrapper — the spike, realized</div>
+          <div class="n"><code style="font-family:var(--mono);font-size:12px">openpty()</code> via <code style="font-family:var(--mono);font-size:12px">bun:ffi</code>, a runtime <code style="font-family:var(--mono);font-size:12px">cc()</code> ioctl shim for window-size, full signal / SIGWINCH / raw-key / exit-code fidelity. Darwin + Linux FFI both present.</div>
+          <div class="ev"><code>wrapper/src/pty.ts</code><code>wrapper/src/ffi-{darwin,linux}.ts</code><code>wrapper/src/index.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4<small>capture (layered)</small></div>
+        <div class="body">
+          <div class="t">Two-layer capture: wrapper backbone + native adapters</div>
+          <div class="n">Agent-agnostic wrapper plus optional per-agent enrichment hooks (prompts, tool calls, token usage) for claude, codex and pi — additive, never required.</div>
+          <div class="ev"><code>adapters/src/adapters/{claude,codex,pi}/</code><code>wrapper/src/lifecycle.ts · heartbeat.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§8 · §10<small>profiles</small></div>
+        <div class="body">
+          <div class="t">Profile-aware launcher; agent_kind ≠ profile, both first-class</div>
+          <div class="n">Named TOML presets resolve to binary + config dir + env + flags; many profiles map to one <code style="font-family:var(--mono);font-size:12px">agent_kind</code>, and both are distinct schema fields for grouping/filtering.</div>
+          <div class="ev"><code>wrapper/src/profile.ts</code><code>~/.config/agmux/config.toml</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§9 · §12<small>runtime</small></div>
+        <div class="body">
+          <div class="t">TypeScript on Bun; wrapper isolated for a future Go swap</div>
+          <div class="n">Single Bun-workspace monorepo under <code style="font-family:var(--mono);font-size:12px">packages/*</code>; <code style="font-family:var(--mono);font-size:12px">bun build --compile</code> binaries; the perf-sensitive wrapper depends only on protocol.</div>
+          <div class="ev"><code>package.json (workspaces)</code><code>wrapper/package.json</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§11 · §14.1<small>security</small></div>
+        <div class="body">
+          <div class="t">Hub binds localhost only; no public surface, no baseline auth</div>
+          <div class="n">Hardcoded <code style="font-family:var(--mono);font-size:12px">127.0.0.1</code> bind, HTTP only, no token/TLS — exactly the baseline (A) stance; remote (B) is left to the user's own tunnel.</div>
+          <div class="ev"><code>hub/src/server.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§13<small>MVP slice</small></div>
+        <div class="body">
+          <div class="t">MVP milestone shipped — and exceeded</div>
+          <div class="n">“Launch through the wrapper, record it, query it back” works end-to-end (<code style="font-family:var(--mono);font-size:12px">protocol+store+hub+wrapper</code>), with cli, tui and adapters already layered on top.</div>
+          <div class="ev"><code>tests/ (run-ls-attach-kill, resume-after-death, lost-detection)</code></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- GOOD PATH -->
+  <div class="group g-track">
+    <div class="group-head">
+      <span class="tag">Good path</span>
+      <h2>Right direction, partway there</h2>
+      <span class="desc">Seams in place; not yet complete</span>
+    </div>
+    <div class="rows">
+
+      <div class="row">
+        <div class="ref">§2 · §14.4<small>deployment</small></div>
+        <div class="body">
+          <div class="t">Baseline (A) shipped; distributed (B) reachable, not built</div>
+          <div class="n">Schema carries <code style="font-family:var(--mono);font-size:12px">host</code> and the hub sweeps native pids — but only on its own host. (B) is left open, exactly as the doc requires, just unrealized.</div>
+          <div class="ev"><code>hub/src/liveness.ts</code><code>protocol/src/session.ts (host)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4 · §5<small>identity model</small></div>
+        <div class="body">
+          <div class="t">Native-first supersession partially realized; coexists with wrapper-minted ids</div>
+          <div class="n">Both paths exist — <code style="font-family:var(--mono);font-size:12px">session.registered</code> + hub-side resolve (native-first) and wrapper-injected <code style="font-family:var(--mono);font-size:12px">AGMUX_SESSION_ID</code> (claim). The 06-08/09 “native-first supersedes” stance isn't fully the primary path yet.</div>
+          <div class="ev"><code>hub/src/resolve.ts</code><code>cli/src/emit.ts</code><code>adapters/src/core/types.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§7<small>control</small></div>
+        <div class="body">
+          <div class="t">Management verbs work locally; hub→host-agent push not yet</div>
+          <div class="n"><code style="font-family:var(--mono);font-size:12px">ls · inspect · kill · attach</code> all function, but execute locally (signal local pid, local <code style="font-family:var(--mono);font-size:12px">tmux</code>). The doc's hub→host-agent control channel is absent — fine for (A).</div>
+          <div class="ev"><code>cli/src/{ls,inspect,kill,attach}.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§7<small>tmux orchestration</small></div>
+        <div class="body">
+          <div class="t">tmux is a first-class substrate</div>
+          <div class="n">agmux creates sessions/windows/panes, captures coordinates, injects bootstrap prompts, switches client on attach, and ships a TPM plugin (popup dash). Delegation spawn is the missing piece (see below).</div>
+          <div class="ev"><code>wrapper/src/tmux.ts</code><code>cli/src/tmux-{place,inject}.ts</code><code>agmux.tmux</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§7 · §6<small>lineage</small></div>
+        <div class="body">
+          <div class="t">Delegation lineage modelled; spawn-graph not wired</div>
+          <div class="n"><code style="font-family:var(--mono);font-size:12px">parent_session_id</code> exists in the schema and the events resolve it, so the delegation graph is queryable — but no verb actually spawns a child agent and links it yet.</div>
+          <div class="ev"><code>protocol/src/session.ts (parent_session_id)</code></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- DEFERRED -->
+  <div class="group g-defer">
+    <div class="group-head">
+      <span class="tag">Deferred</span>
+      <h2>Designed, not yet built</h2>
+      <span class="desc">Optional consumers &amp; the (B) tier</span>
+    </div>
+    <div class="rows">
+
+      <div class="row">
+        <div class="ref">§8 · §12<small>comms</small></div>
+        <div class="body">
+          <div class="t">@agmux/comms — inter-agent messaging fabric</div>
+          <div class="n">No package, no MCP server (<code style="font-family:var(--mono);font-size:12px">send_message/ask/reply/notify</code>), no rooms/membership schema, no <code style="font-family:var(--mono);font-size:12px">message.* / question.* / answer.*</code> event kinds. Fully designed in §8; entirely unbuilt. A TUI feed seam already anticipates the SSE swap-in.</div>
+          <div class="ev"><code>tui/src/feed.ts (comment: comms milestone)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§12<small>insights</small></div>
+        <div class="body">
+          <div class="t">@agmux/insights — analytics over the event log</div>
+          <div class="n">No package. The hub query API exposes the raw log and projections it would read; the consumer itself is deferred.</div>
+          <div class="ev"><code>— (no packages/insights)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§2 · §3<small>distributed (B)</small></div>
+        <div class="body">
+          <div class="t">Host-agent role &amp; multi-host control</div>
+          <div class="n">The “same binary runs a host-agent role on remote hosts” design is unstarted; the daemon is hub-only and all control is single-host.</div>
+          <div class="ev"><code>— (hub has no host-agent role)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§7<small>orchestration</small></div>
+        <div class="body">
+          <div class="t">Agent-to-agent delegation spawn</div>
+          <div class="n">Spawn-a-new-agent-into-tmux-and-inject-a-prompt-with-a-parent-link isn't wired, although every primitive it needs (tmux create, inject, <code style="font-family:var(--mono);font-size:12px">parent_session_id</code>) exists.</div>
+          <div class="ev"><code>cli/src/run.ts · tmux-inject.ts (primitives present)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§7<small>cli verbs</small></div>
+        <div class="body">
+          <div class="t">Distinct <code style="font-family:var(--mono);font-size:13px">rejoin</code> / <code style="font-family:var(--mono);font-size:13px">switch</code> verbs</div>
+          <div class="n">The doc lists rejoin and switch as management verbs; in practice both are folded into <code style="font-family:var(--mono);font-size:12px">attach</code> (live → switch-client, dead → relaunch). Functionally covered, nominally absent.</div>
+          <div class="ev"><code>cli/src/attach.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4 · §1<small>adapters</small></div>
+        <div class="body">
+          <div class="t">gemini / opencode adapters</div>
+          <div class="n">The vision names claude, codex, gemini, opencode and pi. Only claude, codex and pi are registered. The adapter framework is agent-agnostic, so these are additions, not redesigns.</div>
+          <div class="ev"><code>adapters/src/adapters/index.ts (registerAll)</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4<small>enrichment</small></div>
+        <div class="body">
+          <div class="t">Full session output capture</div>
+          <div class="n">Lifecycle, turns, tool calls, prompts and usage are captured; full terminal-output capture is called out in the README as not-yet-built.</div>
+          <div class="ev"><code>README.md (Status &amp; roadmap)</code></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- DIVERGED -->
+  <div class="group g-diverge">
+    <div class="group-head">
+      <span class="tag">Diverged</span>
+      <h2>Went another way than the doc</h2>
+      <span class="desc">Pragmatic substitutions</span>
+    </div>
+    <div class="rows">
+
+      <div class="row">
+        <div class="ref">§12<small>dashboard</small></div>
+        <div class="body">
+          <div class="t">Web dashboard → an interactive TUI “dash”</div>
+          <div class="n">The doc's <code style="font-family:var(--mono);font-size:12px">@agmux/dashboard</code> is a <em>web</em> usage/metrics dashboard. No web package exists; instead a terminal dashboard (sortable/filterable table, live mirror + detail panes, kill/attach) ships inside the TUI. Same query API, different surface.</div>
+          <div class="ev"><code>tui/src/opentui/DashApp.tsx</code><code>cli/src/dash.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§12<small>tui engine</small></div>
+        <div class="body">
+          <div class="t">TUI on opentui, not Ink</div>
+          <div class="n">§12 specifies the TUI is built with Ink; the codebase refactored to <code style="font-family:var(--mono);font-size:12px">@opentui/react</code> as the sole implementation (Ink dash code dropped, per recent commits). Legacy Ink watch view lingers.</div>
+          <div class="ev"><code>tui/src/opentui/run-manage.tsx</code><code>git log f05cb3c</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§6 · §12<small>store portability</small></div>
+        <div class="body">
+          <div class="t">No Postgres-portable interface yet — SQLite is hardcoded</div>
+          <div class="n">The doc keeps the store “behind an interface that can swap to Postgres.” Today raw <code style="font-family:var(--mono);font-size:12px">bun:sqlite</code> SQL and SQLite-only pragmas are used directly, with no dialect abstraction. Reversible, but a real divergence from the (B)-ready stance.</div>
+          <div class="ev"><code>store/src/index.ts · migrations.ts · schema.ts</code></div>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="ref">§4 · §12<small>launcher ergonomics</small></div>
+        <div class="body">
+          <div class="t"><code style="font-family:var(--mono);font-size:13px">agmux run -p &lt;name&gt;</code>, not <code style="font-family:var(--mono);font-size:13px">agmux run &lt;preset&gt;</code></div>
+          <div class="n">The doc's canonical invocation is a positional preset; the CLI uses a <code style="font-family:var(--mono);font-size:12px">-p</code> flag for profiles and treats a bare positional as an inline command. Minor surface divergence.</div>
+          <div class="ev"><code>cli/src/run.ts · parse-run.ts</code></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- BOTTOM LINE -->
+  <div class="bottom">
+    <h2>Bottom line</h2>
+    <p><strong>The foundation is honored where it matters most.</strong> Every standing principle in §14 holds in code: localhost-only, identity injected via <code style="font-family:var(--mono);font-size:13px">AGMUX_SESSION_ID</code>, event log as truth with rebuildable projections, one unified DB, additive schema, tmux as a first-class substrate, and <code style="font-family:var(--mono);font-size:13px">agent_kind</code> vs <code style="font-family:var(--mono);font-size:13px">profile</code> both first-class. The MVP slice is not just met — it's the floor the alpha already builds on.</p>
+    <p><strong>What's missing is by design.</strong> comms, insights, multi-host, and delegation spawn are the optional/(B) layers the doc deliberately scoped out of (A); their seams (query API, <code style="font-family:var(--mono);font-size:13px">parent_session_id</code>, feed abstraction) are already in place.</p>
+    <p><strong>Two divergences deserve a doc update,</strong> so the foundation stops describing a trajectory the code has left: the dashboard is a TUI surface (and the TUI runs on opentui, not Ink), and the store is not yet behind a Postgres-swappable interface — the one divergence that quietly weakens the (B) promise and is worth either restoring or re-scoping explicitly.</p>
+  </div>
+
+  <footer>
+    <div class="rule"></div>
+    agmux foundation-alignment report · generated from a working-tree review of v0.1.0-alpha.1 · 2026-06-26
+  </footer>
+
+</div>

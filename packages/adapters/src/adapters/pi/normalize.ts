@@ -34,6 +34,7 @@ export function normalizePi(input: NormalizeInput): NormalizeOutput {
           cwd: raw.cwd ?? env.PWD ?? null,
           tmux_session: null,
           tmux_window: null,
+          tmux_socket: null,            // Stage 2 enrichment fills the socket from the hook's $TMUX
           tmux_pane: env.TMUX_PANE ?? null,
           profile: env.AGMUX_PROFILE ?? null,
           agent_version: env.PI_VERSION ?? null,
@@ -50,8 +51,12 @@ export function normalizePi(input: NormalizeInput): NormalizeOutput {
       return { events: [{ kind: "turn.ended", payload: { reason: raw.reason ?? null } }] };
     case "prompt.sent":
       return { events: [{ kind: "prompt.sent", payload: { chars: typeof raw.prompt === "string" ? raw.prompt.length : null, redacted: true } }] };
-    case "tool.used":
-      return { events: [{ kind: "tool.used", payload: { tool: typeof raw.tool_name === "string" ? raw.tool_name : "unknown", ok: raw.is_error !== true } }] };
+    case "tool.used": {
+      const tool = typeof raw.tool_name === "string" ? raw.tool_name : "unknown";
+      // pi reports failure directly via is_error; mirror claude/codex `detail`.
+      if (raw.is_error === true) return { events: [{ kind: "tool.used", payload: { tool, ok: false, detail: "error" } }] };
+      return { events: [{ kind: "tool.used", payload: { tool, ok: true } }] };
+    }
     case "usage.reported":
       return normalizeUsage(raw);
     default:

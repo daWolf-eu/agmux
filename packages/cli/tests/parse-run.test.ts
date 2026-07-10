@@ -124,3 +124,42 @@ test("--wrapped composes with placement", () => {
   const r = parseRunArgs(["--new-window", "--wrapped", "claude"]);
   expect(r).toMatchObject({ kind: "inline", placement: "new-window", wrapped: true });
 });
+
+test("--prompt requires a placement (inherit is rejected)", () => {
+  const r = parseRunArgs(["--prompt", "do X", "-p", "work"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/--prompt requires --new-pane/);
+});
+
+test("--prompt with --new-window carries the prompt text", () => {
+  const r = parseRunArgs(["--new-window", "--prompt", "do X", "-p", "work"]);
+  expect(r).toMatchObject({ kind: "profile", profileName: "work", placement: "new-window", prompt: "do X" });
+});
+
+test("--prompt composes with -d (inline)", () => {
+  const r = parseRunArgs(["-d", "--prompt", "hello", "claude"]);
+  expect(r).toMatchObject({ kind: "inline", agent_kind: "claude", placement: "new-pane", prompt: "hello" });
+});
+
+test("--prompt-file stores the path, not the contents", () => {
+  const r = parseRunArgs(["--new-pane", "--prompt-file", "/tmp/p.txt", "claude"]);
+  expect(r).toMatchObject({ kind: "inline", placement: "new-pane", promptFile: "/tmp/p.txt" });
+});
+
+test("--prompt and --prompt-file are mutually exclusive", () => {
+  const r = parseRunArgs(["--new-pane", "--prompt", "x", "--prompt-file", "/tmp/p.txt", "claude"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/cannot combine --prompt with --prompt-file/);
+});
+
+test("--prompt requires a value", () => {
+  const r = parseRunArgs(["--new-pane", "--prompt"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/--prompt requires a value/);
+});
+
+test("no prompt flag → prompt/promptFile absent", () => {
+  const r = parseRunArgs(["claude"]);
+  expect(r).toMatchObject({ kind: "inline" });
+  if (r.kind === "inline") { expect(r.prompt).toBeUndefined(); expect(r.promptFile).toBeUndefined(); }
+});

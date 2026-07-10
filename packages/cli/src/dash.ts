@@ -1,4 +1,4 @@
-import { runManage, type RunManageOpts, type PreviewSource, type Actions } from "@agmux/tui";
+import { runManage, type RunManageOpts, type PreviewSource, type Actions, initialGroup } from "@agmux/tui";
 import { buildLsQuery } from "./ls.ts";
 import { makePreviewSource } from "./dash-preview.ts";
 import { makeActions } from "./dash-actions.ts";
@@ -30,9 +30,13 @@ export async function dashCmd(
   }
   return deps.runManageImpl({
     hubUrl: opts.hubUrl,
-    query: buildLsQuery(opts),
+    // The dash fetches ALL statuses (omit the status param → hub returns all) and
+    // filters client-side by activity group; `--status`/config only seeds the
+    // initial group.
+    query: buildLsQuery({ ...opts, status: undefined }),
     intervalMs: opts.intervalMs,
     defaultPreview: opts.preview,
+    initialGroup: initialGroup(opts.status),
     source: deps.makeSourceImpl(opts.hubUrl),
     actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup),
   });

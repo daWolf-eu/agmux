@@ -15,7 +15,7 @@ test("IngestEnvelope accepts the native identity form", () => {
     event_id: "e1", ts: "2026-06-08T00:00:00.000Z", kind: "session.registered",
     version: 1, host: "h", identity: id, claim_session_id: null,
     payload: { native_session_id: "n-1", agent_kind: "claude", pid: 4242, cwd: "/tmp",
-      tmux_session: null, tmux_window: null, tmux_pane: "%1", profile: null,
+      tmux_session: null, tmux_window: null, tmux_pane: "%1", tmux_socket: null, profile: null,
       agent_version: null, parent: null },
   };
   expect(ev.identity?.native_session_id).toBe("n-1");
@@ -35,4 +35,8 @@ test("SessionLostPayload + SessionRow.origin compile", () => {
   const row = { origin } as Pick<SessionRow, "origin">;
   expect(lost.reason).toBe("pid_dead");
   expect(row.origin).toBe("native");
+});
+
+test("compaction is a known adapter event kind", () => {
+  expect(EVENT_KINDS_ADAPTER).toContain("compaction");
 });

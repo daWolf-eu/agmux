@@ -4,7 +4,7 @@ import type { Adapter } from "../src/core/types.ts";
 
 function stub(kind: "claude" | "codex"): Adapter {
   return {
-    agentKind: kind, adapterVersion: "1",
+    agentKind: kind, adapterVersion: "1", relaunchEnvKeys: [],
     sources: () => [], capabilities: () => ({}),
     install: () => ({ agentKind: kind, profile: null, adapterVersion: "1", isolationMode: "config-dir", capabilities: {}, artifacts: [] }),
     uninstall: () => {}, status: () => ({ installed: false, version: null, drift: false }),

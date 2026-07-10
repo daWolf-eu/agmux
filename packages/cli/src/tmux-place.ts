@@ -8,12 +8,13 @@
 // already create the session detached (-d) and just skip the post-create
 // switch-client.
 import { $ } from "bun";
+import { tmuxSocketFromEnv, tmuxSocketArgs } from "@agmux/protocol";
 
 const COORDS_FMT = "#{session_name}\t#{window_id}\t#{pane_id}";
 
-export interface PaneCoords { session: string; window: string; pane: string; }
+export interface PaneCoords { session: string; window: string; pane: string; socket: string | null; }
 
-function parseCoords(out: string): PaneCoords {
+function parseCoords(out: string): Omit<PaneCoords, "socket"> {
   const trimmed = out.trim();
   const [session, window, pane] = trimmed.split("\t");
   if (!session || !window || !pane) {
@@ -32,17 +33,18 @@ function eFlags(env: Record<string, string>): string[] {
 
 export async function readCurrentPane(): Promise<PaneCoords | null> {
   if (!process.env.TMUX) return null;
-  const out = (await $`tmux display-message -p ${COORDS_FMT}`.text()).trim();
-  return parseCoords(out);
+  const socket = tmuxSocketFromEnv(process.env.TMUX);
+  const out = (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${COORDS_FMT}`.text()).trim();
+  return { ...parseCoords(out), socket };
 }
 
-export async function hasSession(name: string): Promise<boolean> {
-  try { await $`tmux has-session -t ${name}`.quiet(); return true; } catch { return false; }
+export async function hasSession(name: string, socket: string | null = null): Promise<boolean> {
+  try { await $`tmux ${tmuxSocketArgs(socket)} has-session -t ${name}`.quiet(); return true; } catch { return false; }
 }
 
-export async function ensureSession(name: string): Promise<void> {
-  if (await hasSession(name)) return;
-  await $`tmux new-session -d -s ${name}`.quiet();
+export async function ensureSession(name: string, socket: string | null = null): Promise<void> {
+  if (await hasSession(name, socket)) return;
+  await $`tmux ${tmuxSocketArgs(socket)} new-session -d -s ${name}`.quiet();
 }
 
 export async function splitPane(args: {
@@ -51,15 +53,16 @@ export async function splitPane(args: {
   env: Record<string, string>;
   detach: boolean;
   cwd?: string;
+  socket?: string | null;
 }): Promise<PaneCoords> {
   // `tmux split-window -d` creates the new pane without making it the active
   // pane in the caller's client.
   const detachFlag = args.detach ? ["-d"] : [];
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
-  return parseCoords(out);
+  return { ...parseCoords(out), socket: args.socket ?? null };
 }
 
 export async function newWindow(args: {
@@ -69,8 +72,9 @@ export async function newWindow(args: {
   env: Record<string, string>;
   detach: boolean;
   cwd?: string;
+  socket?: string | null;
 }): Promise<PaneCoords> {
-  await ensureSession(args.sessionName);
+  await ensureSession(args.sessionName, args.socket);
   // `tmux new-window -d` creates the window but does not switch the client to it.
   // The trailing `:` on the target turns it into a session target (any window
   // index will do); without it tmux interprets `<session>` as "active window of
@@ -79,9 +83,9 @@ export async function newWindow(args: {
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const target = `${args.sessionName}:`;
   const out = (
-    await $`tmux new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
-  return parseCoords(out);
+  return { ...parseCoords(out), socket: args.socket ?? null };
 }
 
 export async function newSession(args: {
@@ -90,22 +94,23 @@ export async function newSession(args: {
   cmd: string[];
   env: Record<string, string>;
   cwd?: string;
+  socket?: string | null;
 }): Promise<PaneCoords> {
-  if (await hasSession(args.sessionName)) {
+  if (await hasSession(args.sessionName, args.socket)) {
     throw new Error(`tmux session already exists: ${args.sessionName}`);
   }
   // `tmux new-session -d` returns coords via -P -F just like new-window.
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
   );
-  return parseCoords(out);
+  return { ...parseCoords(out), socket: args.socket ?? null };
 }
 
 // Move the caller's tmux client to the given target. Used after non-detached
 // new-session creation, since `new-session -d` doesn't switch on its own.
-export async function switchClient(target: string): Promise<void> {
-  await $`tmux switch-client -t ${target}`.quiet();
+export async function switchClient(target: string, socket: string | null = null): Promise<void> {
+  await $`tmux ${tmuxSocketArgs(socket)} switch-client -t ${target}`.quiet();
 }
 
 // Best-effort lookup of a pane's session+window for session.registered enrichment.
@@ -125,9 +130,10 @@ const defaultTmuxExec: TmuxExec = async (args) => {
 export async function resolvePaneCoords(
   paneId: string,
   exec: TmuxExec = defaultTmuxExec,
+  socket: string | null = null,
 ): Promise<{ session: string; window: string } | null> {
   try {
-    const out = await exec(["display-message", "-p", "-t", paneId, "#{session_name}\t#{window_id}"]);
+    const out = await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", paneId, "#{session_name}\t#{window_id}"]);
     const parts = out.trim().split("\t");
     const session = parts[0];
     const window = parts[1];

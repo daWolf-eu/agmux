@@ -6,7 +6,7 @@ function mkRow(sid: string, start: string): SessionRow {
   return {
     session_id: sid, agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
-    tmux_session: null, tmux_window: null, tmux_pane: null, host: "h", project: null,
+    tmux_session: null, tmux_window: null, tmux_pane: null, tmux_socket: null, host: "h", project: null,
     parent_session_id: null, start_ts: start, last_heartbeat_ts: null, end_ts: null,
     exit_code: null, signal: null, status: "running", origin: "native", turn_count: null,
   };

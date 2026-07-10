@@ -6,7 +6,9 @@ import {
   AGMUX_TMUX_SESSION_DEFAULT,
   AGMUX_CONFIG_SUBPATH,
   AGMUX_PROFILE_ENV,
+  type AgentKind,
 } from "@agmux/protocol";
+import { injectBootstrap, reportInject, type InjectOpts, type InjectResult } from "./tmux-inject.ts";
 import { loadProfile } from "@agmux/wrapper";
 import type { Placement } from "./parse-run.ts";
 import type { LaunchMode } from "./launch-mode.ts";
@@ -24,6 +26,8 @@ export interface RunProfileOpts {
   placement: Placement;
   detach: boolean;
   mode?: LaunchMode;
+  agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
+  prompt?: string;         // bootstrap prompt to inject after placement
 }
 
 // Ad-hoc mode → CLI builds an inline-profile spec and passes it via env. Wrapper
@@ -38,6 +42,8 @@ export interface RunInlineOpts {
   placement: Placement;
   detach: boolean;
   mode?: LaunchMode;
+  agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
+  prompt?: string;         // bootstrap prompt to inject after placement
 }
 
 export type RunOpts = RunProfileOpts | RunInlineOpts;
@@ -116,6 +122,24 @@ function pickWindowTargetSession(here: PaneCoords | null): string {
   return AGMUX_TMUX_SESSION_DEFAULT;
 }
 
+export type Injector = (opts: InjectOpts) => Promise<InjectResult>;
+
+// Run the bootstrap inject against a just-placed pane. Returns a report line to
+// print, or null when there is nothing to inject. NEVER throws — a failed inject
+// must not change the spawn's exit code (the session is already recorded).
+export async function runInjectStep(
+  args: { pane: string; prompt?: string; agentKind?: AgentKind; socket?: string | null },
+  inject: Injector = injectBootstrap,
+): Promise<string | null> {
+  if (!args.prompt) return null;
+  try {
+    const result = await inject({ pane: args.pane, text: args.prompt, agentKind: args.agentKind, socket: args.socket });
+    return reportInject(result);
+  } catch (e) {
+    return reportInject({ outcome: "failed", detail: e instanceof Error ? e.message : String(e) });
+  }
+}
+
 async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number> {
   const spawn = spawnFor(opts, agmuxBin);
   const here = await readCurrentPane();
@@ -142,6 +166,7 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
       cmd, env: envForward,
       detach: opts.detach,
       cwd: spawn.cwd,
+      socket: here?.socket ?? null,
     });
   } else if (opts.placement === "new-window") {
     const targetSession = pickWindowTargetSession(here);
@@ -150,21 +175,24 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
       windowName, cmd, env: envForward,
       detach: opts.detach,
       cwd: spawn.cwd,
+      socket: here?.socket ?? null,
     });
   } else if (opts.placement === "new-session") {
     const sessionName = `${AGMUX_TMUX_SESSION_DEFAULT}-${spawn.label}-${shortRandomTag()}`;
-    coords = await newSession({ sessionName, windowName, cmd, env: envForward, cwd: spawn.cwd });
+    coords = await newSession({ sessionName, windowName, cmd, env: envForward, cwd: spawn.cwd, socket: here?.socket ?? null });
     // `tmux new-session -d` ignores -d's "no switch" semantics — there's nothing
     // to switch *to* yet. So we explicitly switch-client when the user wants
     // focus to follow the new session.
     if (!opts.detach && here) {
-      await switchClient(`${coords.session}:${coords.window}`);
+      await switchClient(`${coords.session}:${coords.window}`, here?.socket ?? null);
     }
   } else {
     throw new Error(`runWithPlacement: unexpected placement ${opts.placement}`);
   }
 
   console.log(`agmux: spawned in ${coords.session}:${coords.window}.${coords.pane}`);
+  const report = await runInjectStep({ pane: coords.pane, prompt: opts.prompt, agentKind: opts.agentKind, socket: coords.socket });
+  if (report) console.log(report);
   return 0;
 }
 

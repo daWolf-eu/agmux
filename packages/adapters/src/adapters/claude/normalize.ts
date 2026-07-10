@@ -1,5 +1,7 @@
 import * as fs from "node:fs";
 import type { NormalizeInput, NormalizeOutput, CanonicalEvent } from "../../core/types.ts";
+import { pickEnv } from "../../core/env-capture.ts";
+import { CLAUDE_RELAUNCH_ENV_KEYS } from "./caps.ts";
 
 interface ClaudeHookStdin {
   session_id?: string;
@@ -7,8 +9,10 @@ interface ClaudeHookStdin {
   cwd?: string;
   prompt?: string;
   tool_name?: string;
+  tool_response?: { is_error?: boolean; success?: boolean } & Record<string, unknown>;
   notification_type?: string;
   reason?: string;
+  trigger?: string;
 }
 
 export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
@@ -35,10 +39,12 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
           cwd: raw.cwd ?? env.PWD ?? null,
           tmux_session: null,           // Stage 2 (attach flip) enriches tmux coords
           tmux_window: null,
+          tmux_socket: null,            // Stage 2 enrichment fills the socket from the hook's $TMUX
           tmux_pane: env.TMUX_PANE ?? null,
           profile: env.AGMUX_PROFILE ?? null,
           agent_version: env.CLAUDE_CODE_VERSION ?? null,
           parent: null,                 // lineage hint wired by the future spawn path (spec §5)
+          env_overrides: pickEnv(CLAUDE_RELAUNCH_ENV_KEYS, env),
         },
       }] };
     }
@@ -63,10 +69,23 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
     }
     case "prompt.sent":
       return { events: [{ kind: "prompt.sent", payload: { chars: typeof raw.prompt === "string" ? raw.prompt.length : null, redacted: true } }] };
-    case "tool.used":
-      return { events: [{ kind: "tool.used", payload: { tool: typeof raw.tool_name === "string" ? raw.tool_name : "unknown", ok: true } }] };
+    case "tool.used": {
+      const tool = typeof raw.tool_name === "string" ? raw.tool_name : "unknown";
+      // Claude surfaces tool errors inconsistently; the reliable cross-tool signals
+      // are tool_response.is_error === true and tool_response.success === false.
+      // Absent either signal we default to ok — never invent a failure we can't see.
+      const tr = raw.tool_response;
+      const failed = tr != null && (tr.is_error === true || tr.success === false);
+      if (failed) return { events: [{ kind: "tool.used", payload: { tool, ok: false, detail: "error" } }] };
+      return { events: [{ kind: "tool.used", payload: { tool, ok: true } }] };
+    }
     case "usage.reported":
       return normalizeUsage(input, raw);
+    case "compaction": {
+      // PreCompact stdin carries trigger: "manual" (user /compact) | "auto".
+      const t = raw.trigger;
+      return { events: [{ kind: "compaction", payload: { trigger: t === "manual" || t === "auto" ? t : null } }] };
+    }
     default:
       return { events: [] };
   }

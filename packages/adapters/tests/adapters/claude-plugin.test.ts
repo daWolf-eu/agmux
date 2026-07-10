@@ -16,8 +16,8 @@ test("plugin payload declares the agmux plugin manifest", () => {
 test("hooks.json wires every capture point to `agmux emit`", () => {
   const h = JSON.parse(file("hooks/hooks.json").content);
   const flat = file("hooks/hooks.json").content;
-  for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "PostToolUse"]) expect(h.hooks[ev]).toBeDefined();
-  for (const point of ["session.registered", "turn.started", "turn.ended", "input.required", "usage.reported", "tool.used"]) {
+  for (const ev of ["SessionStart", "UserPromptSubmit", "Stop", "Notification", "PostToolUse", "PreCompact"]) expect(h.hooks[ev]).toBeDefined();
+  for (const point of ["session.registered", "turn.started", "turn.ended", "input.required", "usage.reported", "tool.used", "compaction"]) {
     expect(flat).toContain(`--point=${point}`);
   }
   expect(flat).toContain("--attach");
@@ -43,12 +43,24 @@ test("SessionStart re-links on clear/compact (native id rotates mid-process)", (
   expect(h.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
 });
 
-test("plugin is v1.2.0 and SessionStart emits session.registered with AGMUX_AGENT_PID, not session.linked", () => {
+test("plugin is v1.3.0 and SessionStart emits session.registered with AGMUX_AGENT_PID, not session.linked", () => {
   const manifest = JSON.parse(PLUGIN_FILES.find((f) => f.path === ".claude-plugin/plugin.json")!.content);
-  expect(manifest.version).toBe("1.2.0");
+  expect(manifest.version).toBe(PLUGIN_VERSION);
   const hooks = JSON.parse(PLUGIN_FILES.find((f) => f.path === "hooks/hooks.json")!.content);
   const startCmds = hooks.hooks.SessionStart[0].hooks.map((h: any) => h.command).join("\n");
   expect(startCmds).toContain("--point=session.registered");
   expect(startCmds).toContain("AGMUX_AGENT_PID=$PPID");
   expect(startCmds).not.toContain("--point=session.linked");
+});
+
+test("PreCompact hook emits the compaction point (async)", () => {
+  const h = JSON.parse(file("hooks/hooks.json").content);
+  expect(h.hooks.PreCompact).toBeDefined();
+  const cmds = h.hooks.PreCompact[0].hooks;
+  expect(cmds[0].async).toBe(true);
+  expect(cmds[0].command).toContain("--point=compaction");
+});
+
+test("plugin version is 1.3.0", () => {
+  expect(PLUGIN_VERSION).toBe("1.3.0");
 });

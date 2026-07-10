@@ -329,7 +329,7 @@ test("codexAdapter passes the framework conformance battery (fake codex runner)"
       makeContext: () => ({ agentKind: "codex", profile: null, profileEnv: { CODEX_HOME: cfg }, agmuxEmitPath: "/abs/agmux emit", stateDir: state, skills: false }),
       makeResumeContext: (nid) => ({ agentKind: "codex", profile: null, command: "codex", args: [], cwd: "/work", env: {}, nativeSessionId: nid }),
     });
-    expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan"]);
+    expect(passed).toEqual(["identity", "sources", "capabilities", "install-roundtrip", "resumePlan", "relaunch-env-keys"]);
   } finally {
     setCodexRunner(null);
   }
@@ -386,4 +386,17 @@ test("install --no-skills omits codex skills", () => {
     process.env.HOME = origHome;
     setCodexRunner(null);
   }
+});
+
+test("tool.used reflects exit_code: 0 → ok, non-zero → fail, absent → ok", () => {
+  const t = { agentKind: "codex" as const, profile: null };
+  const ok = normalizeCodex({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { exit_code: 0 } }, target: t });
+  expect(ok.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
+
+  const fail = normalizeCodex({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash", tool_response: { exit_code: 1 } }, target: t });
+  expect(fail.events[0]?.payload).toEqual({ tool: "Bash", ok: false, detail: "exit 1" });
+
+  // No tool_response (e.g. a non-shell tool) → default to ok, no detail.
+  const absent = normalizeCodex({ point: "tool.used", source: "hook-command", raw: { tool_name: "apply_patch" }, target: t });
+  expect(absent.events[0]?.payload).toEqual({ tool: "apply_patch", ok: true });
 });

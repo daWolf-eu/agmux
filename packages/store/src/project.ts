@@ -50,7 +50,8 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "session.adapter_attached":
       applyAdapterAttached(db, ev);
       return;
-    // prompt.sent is known but log-only: no projection effect.
+    // prompt.sent and compaction are known but log-only: stored in the event
+    // log, no projection effect. (A compaction_count column is a deferred option.)
     default:
       // Unknown kinds are stored in events but do not touch the projection.
       return;
@@ -63,13 +64,13 @@ function applyStarted(db: Database, ev: EventEnvelope): void {
     INSERT INTO sessions (
       session_id, agent_kind, profile, native_session_id,
       command, args_json, env_json, cwd, pid,
-      tmux_session, tmux_window, tmux_pane, host,
+      tmux_session, tmux_window, tmux_pane, tmux_socket, host,
       project, parent_session_id, start_ts, last_heartbeat_ts,
       end_ts, exit_code, signal, status
     ) VALUES (
       ?, ?, ?, NULL,
       ?, ?, ?, ?, ?,
-      ?, ?, ?, ?,
+      ?, ?, ?, ?, ?,
       ?, NULL, ?, NULL,
       NULL, NULL, NULL, 'idle'
     )
@@ -77,7 +78,7 @@ function applyStarted(db: Database, ev: EventEnvelope): void {
   `).run(
     ev.session_id, p.agent_kind, p.profile ?? null,
     p.command, JSON.stringify(p.args ?? []), JSON.stringify(p.env_overrides ?? {}), p.cwd, p.pid,
-    p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.host,
+    p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host,
     p.project ?? null, ev.ts,
   );
 }
@@ -99,6 +100,7 @@ function applyResumed(db: Database, ev: EventEnvelope): void {
            tmux_session = ?,
            tmux_window = ?,
            tmux_pane = ?,
+           tmux_socket = ?,
            last_heartbeat_ts = ?,
            end_ts = NULL,
            exit_code = NULL,
@@ -110,6 +112,7 @@ function applyResumed(db: Database, ev: EventEnvelope): void {
     p.new_tmux_session ?? null,
     p.new_tmux_window ?? null,
     p.new_tmux_pane ?? null,
+    p.new_tmux_socket ?? null,
     ev.ts,
     ev.session_id,
   );
@@ -177,21 +180,21 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
       INSERT INTO sessions (
         session_id, agent_kind, profile, native_session_id,
         command, args_json, env_json, cwd, pid,
-        tmux_session, tmux_window, tmux_pane, host,
+        tmux_session, tmux_window, tmux_pane, tmux_socket, host,
         project, parent_session_id, start_ts, last_heartbeat_ts,
         end_ts, exit_code, signal, status, origin
       ) VALUES (
         ?, ?, ?, ?,
-        ?, '[]', '{}', ?, ?,
-        ?, ?, ?, ?,
+        ?, '[]', ?, ?, ?,
+        ?, ?, ?, ?, ?,
         NULL, NULL, ?, NULL,
         NULL, NULL, NULL, 'idle', 'native'
       )
       ON CONFLICT(session_id) DO NOTHING
     `).run(
       ev.session_id, p.agent_kind, p.profile ?? null, p.native_session_id,
-      p.command ?? p.agent_kind, p.cwd ?? "", p.pid ?? null,
-      p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.host,
+      p.command ?? p.agent_kind, JSON.stringify(p.env_overrides ?? {}), p.cwd ?? "", p.pid ?? null,
+      p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host,
       ev.ts,
     );
   } else if (existing.status === "ended" || existing.status === "lost") {
@@ -202,9 +205,10 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         pid = COALESCE(?, pid),
         tmux_session = COALESCE(?, tmux_session),
         tmux_window  = COALESCE(?, tmux_window),
-        tmux_pane    = COALESCE(?, tmux_pane)
+        tmux_pane    = COALESCE(?, tmux_pane),
+        tmux_socket  = COALESCE(?, tmux_socket)
       WHERE session_id = ?
-    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.session_id);
+    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
   } else {
     db.query(`
       UPDATE sessions SET
@@ -212,9 +216,10 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         pid = COALESCE(?, pid),
         tmux_session = COALESCE(?, tmux_session),
         tmux_window  = COALESCE(?, tmux_window),
-        tmux_pane    = COALESCE(?, tmux_pane)
+        tmux_pane    = COALESCE(?, tmux_pane),
+        tmux_socket  = COALESCE(?, tmux_socket)
       WHERE session_id = ?
-    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, ev.session_id);
+    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
   }
 
   const par = p.parent;

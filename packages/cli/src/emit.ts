@@ -5,7 +5,7 @@ import {
   type Registry, type CanonicalEvent, type ManifestPoint,
 } from "@agmux/adapters";
 import type { AgentKind, CapabilitySourceType, IngestEnvelope } from "@agmux/protocol";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV } from "@agmux/protocol";
+import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, tmuxSocketFromEnv } from "@agmux/protocol";
 import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
 
 export interface ParsedEmit {
@@ -77,6 +77,10 @@ export async function enrichTmuxCoords(
   if (!pane) return;
   const reg = events.filter((e) => e.kind === "session.registered" && e.payload && e.payload.tmux_session == null);
   if (reg.length === 0) return;
+  // Record the server even when session/window resolution fails — a stale pane id
+  // on the wrong server is exactly what we are fixing.
+  const socket = tmuxSocketFromEnv(env.TMUX);
+  for (const e of reg) { e.payload.tmux_socket = socket; }
   const coords = await resolve(pane);
   if (!coords) return;
   for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
@@ -127,7 +131,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     const stamped = stampIngestEvents(events, {
       agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now, newId: deps.newId,
     });
-    await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux));
+    await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)));
     await postOrQueue(stamped, {
       hubUrl: discoverHubUrl(deps.env, deps.stateDir), stateDir: deps.stateDir,
       queueKey: nativeId ?? claimId!, // one of the two is set (guard above)

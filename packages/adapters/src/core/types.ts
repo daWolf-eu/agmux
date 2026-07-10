@@ -15,6 +15,7 @@ export const MANIFEST_POINTS = [
   "usage.reported",
   "tool.used",
   "prompt.sent",
+  "compaction",
 ] as const;
 export type ManifestPoint = (typeof MANIFEST_POINTS)[number];
 
@@ -122,6 +123,11 @@ export interface NormalizeOutput {
 export interface Adapter {
   agentKind: AgentKind;
   adapterVersion: string;
+  // Env keys this adapter needs restored verbatim at relaunch (spec §6.4) — e.g.
+  // the config-dir var that determines where the agent finds its sessions. STRICT
+  // allowlist: capture reads ONLY these keys, never the whole environment, so a
+  // secret can never be captured by accident. Empty = nothing to restore.
+  relaunchEnvKeys: string[];
   sources(ctx: InstallContext): CapabilitySource[];
   capabilities(ctx: InstallContext): CapabilityMap;
   install(ctx: InstallContext): InstallRecord;
