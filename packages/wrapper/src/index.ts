@@ -16,7 +16,7 @@ import { startHeartbeat } from "./heartbeat.ts";
 import {
   ensureAgmuxSession, readCurrentTmuxCoords, newAgmuxWindow, tmuxVersion,
 } from "./tmux.ts";
-export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig } from "./profile.ts";
+export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig, type DashGroupConfig, type DashGroupKey, DASH_GROUP_KEYS } from "./profile.ts";
 
 export interface RunOpts {
   profile: ProfileConfig;

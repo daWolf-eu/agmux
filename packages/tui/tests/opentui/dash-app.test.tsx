@@ -4,12 +4,14 @@ import { act } from "react";
 import { testRender } from "@opentui/react/test-utils";
 import type { SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../../src/feed.ts";
+import type { ActivityGroup } from "../../src/shared/group.ts";
 import type { Actions, PreviewSource, UsageSummary } from "../../src/types.ts";
 import { DashApp } from "../../src/opentui/DashApp.tsx";
 import { mkRow } from "../helpers/mk-row.ts";
 
-function fakeFeed(rows: SessionRow[]): SessionFeed {
-  return { subscribe(onUpdate, _onError) { onUpdate(rows); return () => {}; } };
+// Same rows for every activity group; group-specific feeds are exercised below.
+function fakeFeed(rows: SessionRow[]): (g: ActivityGroup) => SessionFeed {
+  return () => ({ subscribe(onUpdate, _onError) { onUpdate(rows); return () => {}; } });
 }
 const noSource: PreviewSource = {
   async mirror() { return ""; },
@@ -29,7 +31,7 @@ test("renders the table and j/k moves the selection", async () => {
   ];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -60,7 +62,7 @@ test("defaults to newest-first (last) sort with a header indicator", async () =>
   ];
   const { renderer, renderOnce, captureCharFrame } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -83,7 +85,7 @@ test("p toggles the preview pane; tab switches mirror ⇄ details", async () => 
   ];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -119,7 +121,7 @@ test("f cycles the activity group; closed sessions are hidden until shown", asyn
   ];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -155,7 +157,7 @@ test("Enter on a closed session resumes; Enter on a live session attaches", asyn
   const closed = [mkRow({ session_id: "agx-closed99", status: "lost" })];
   const r1 = await testRender(
     <DashApp
-      feed={fakeFeed(closed)} source={noSource} actions={spyActions}
+      feedFor={fakeFeed(closed)} source={noSource} actions={spyActions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       initialGroup="all" onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -171,7 +173,7 @@ test("Enter on a closed session resumes; Enter on a live session attaches", asyn
   const live = [mkRow({ session_id: "agx-live01", status: "running", tmux_session: "m", tmux_window: "w" })];
   const r2 = await testRender(
     <DashApp
-      feed={fakeFeed(live)} source={noSource} actions={spyActions}
+      feedFor={fakeFeed(live)} source={noSource} actions={spyActions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -188,7 +190,7 @@ test("y opens the yank popup listing digit-prefixed fields", async () => {
   const rows = [mkRow({ session_id: "agx-yank-1", cwd: "/work/proj" })];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={noActions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -211,7 +213,7 @@ test("pressing a digit copies that field and shows a notice", async () => {
   const rows = [mkRow({ session_id: "agx-yank-2", cwd: "/work/proj" })];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -236,7 +238,7 @@ test("yanking an empty field shows an is-empty notice and does not copy", async 
   const rows = [mkRow({ session_id: "agx-yank-3", native_session_id: null })];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -258,7 +260,7 @@ test("escape closes the yank popup without copying", async () => {
   const rows = [mkRow({ session_id: "agx-yank-4" })];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feed={fakeFeed(rows)} source={noSource} actions={actions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -275,5 +277,52 @@ test("escape closes the yank popup without copying", async () => {
   await renderOnce();
   expect(captureCharFrame()).not.toContain("yank field");
   expect(copied).toEqual([]);
+  renderer.destroy();
+});
+
+test("f re-queries: each activity group subscribes to its own feed", async () => {
+  // Rows only the group's own query returns — a client-side filter over the
+  // `open` result set could never surface the closed one.
+  const perGroup: Record<ActivityGroup, SessionRow[]> = {
+    open: [mkRow({ session_id: "agx-live1", status: "running" })],
+    closed: [mkRow({ session_id: "agx-dead1", status: "ended" })],
+    all: [
+      mkRow({ session_id: "agx-live1", status: "running" }),
+      mkRow({ session_id: "agx-dead1", status: "ended" }),
+    ],
+  };
+  const subscribed: ActivityGroup[] = [];
+  const feedFor = (g: ActivityGroup): SessionFeed => ({
+    subscribe(onUpdate) {
+      subscribed.push(g);
+      onUpdate(perGroup[g]);
+      return () => {};
+    },
+  });
+
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={feedFor} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  expect(captureCharFrame()).toContain("agx-live1");
+
+  await act(async () => { mockInput.pressKey("f"); }); // open → closed
+  await renderOnce();
+  const closedFrame = captureCharFrame();
+  expect(closedFrame).toContain("agx-dead1");
+  expect(closedFrame).not.toContain("agx-live1");
+
+  await act(async () => { mockInput.pressKey("f"); }); // closed → all
+  await renderOnce();
+  const allFrame = captureCharFrame();
+  expect(allFrame).toContain("agx-live1");
+  expect(allFrame).toContain("agx-dead1");
+
+  expect(subscribed).toEqual(["open", "closed", "all"]);
   renderer.destroy();
 });

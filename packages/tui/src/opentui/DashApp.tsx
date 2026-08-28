@@ -16,7 +16,11 @@ import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 
 export interface DashAppProps {
-  feed: SessionFeed;
+  // A feed per activity group — each group has its own hub query, row cap and
+  // poll cadence, so switching groups (key `f`) re-queries instead of just
+  // re-filtering what the previous group happened to fetch. Called once per
+  // subscription; return a fresh feed each time (feeds subscribe once).
+  feedFor: (g: ActivityGroup) => SessionFeed;
   source: PreviewSource;
   actions: Actions;
   hubUrl: string;
@@ -39,19 +43,24 @@ const TABS: PreviewMode[] = ["mirror", "detail"];
 const BORDER = "#7f849c";
 
 export function DashApp(props: DashAppProps) {
-  const { feed, hubUrl } = props;
+  const { feedFor, hubUrl } = props;
 
   const { height } = useTerminalDimensions();
 
+  const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
+
   // Feed → rows via useSyncExternalStore (synchronous notify; same as Ink path).
+  // `subscribe` changes identity with the group, so React tears the old feed
+  // down and starts the new group's query; the previous rows stay on screen
+  // until its first poll lands (immediate, so the gap is a frame or two).
   const snapRef = useRef<{ rows: SessionRow[] | null; error: string | null }>({ rows: null, error: null });
   const subscribe = useCallback(
     (notify: () => void) =>
-      feed.subscribe(
+      feedFor(group).subscribe(
         (r) => { snapRef.current = { rows: r, error: null }; notify(); },
         (e) => { snapRef.current = { ...snapRef.current, error: e.message }; notify(); },
       ),
-    [feed],
+    [feedFor, group],
   );
   const getSnap = useCallback(() => snapRef.current, []);
   const { rows, error } = useSyncExternalStore(subscribe, getSnap);
@@ -62,7 +71,6 @@ export function DashApp(props: DashAppProps) {
   const [sortKey, setSortKey] = useState<SortKey>("last");
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
-  const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);

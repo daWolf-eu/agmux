@@ -51,3 +51,48 @@ test("popup defaults to false", () => {
   const p = parseDashArgs([], {});
   expect(p.kind === "ok" && p.opts.popup).toBe(false);
 });
+
+test("built-in group defaults: open small+fast, closed/all wide+slow", () => {
+  const p = parseDashArgs([], {});
+  expect(p.kind === "ok" && p.opts.groups).toEqual({
+    open: { limit: 50, intervalMs: 1000 },
+    closed: { limit: 1000, intervalMs: 10_000 },
+    all: { limit: 1000, intervalMs: 10_000 },
+  });
+});
+
+test("[dash] limit/interval seed every group; [dash.<group>] wins over them", () => {
+  const p = parseDashArgs([], {
+    limit: 25, interval: 2,
+    groups: { closed: { limit: 5000, interval: 30 } },
+  });
+  expect(p.kind === "ok" && p.opts.groups).toEqual({
+    open: { limit: 25, intervalMs: 2000 },
+    closed: { limit: 5000, intervalMs: 30_000 },
+    all: { limit: 25, intervalMs: 2000 },
+  });
+});
+
+test("explicit -n/-i override every group, config included", () => {
+  const p = parseDashArgs(["-n", "7", "-i", "4"], {
+    limit: 25, groups: { closed: { limit: 5000, interval: 30 } },
+  });
+  expect(p.kind === "ok" && p.opts.groups).toEqual({
+    open: { limit: 7, intervalMs: 4000 },
+    closed: { limit: 7, intervalMs: 4000 },
+    all: { limit: 7, intervalMs: 4000 },
+  });
+});
+
+test("--all raises every group's limit", () => {
+  const p = parseDashArgs(["--all"], {});
+  expect(p.kind === "ok" && p.opts.groups.closed.limit).toBe(10_000);
+  expect(p.kind === "ok" && p.opts.groups.open.limit).toBe(10_000);
+});
+
+test("a defaulted limit does not count as explicit", () => {
+  // 50 happens to equal the built-in `open` default; the closed group must keep
+  // its own wide default rather than inheriting it.
+  const p = parseDashArgs([], {});
+  expect(p.kind === "ok" && p.opts.groups.closed.limit).toBe(1000);
+});

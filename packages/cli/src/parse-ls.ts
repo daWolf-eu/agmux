@@ -12,8 +12,15 @@ export interface LsQueryOpts {
   profile?: string;
 }
 
+// `explicit` records which values came from the argv (not config / built-in
+// defaults). The dash needs this: an explicit `-n`/`--all` overrides every
+// activity group's limit, while a defaulted one leaves the per-group caps alone.
+export interface LsExplicit {
+  limit: boolean;
+}
+
 export type ParsedLs =
-  | { kind: "ok"; opts: LsQueryOpts }
+  | { kind: "ok"; opts: LsQueryOpts; explicit: LsExplicit }
   | { kind: "error"; message: string };
 
 const DEFAULT_LIMIT = 50;
@@ -82,6 +89,7 @@ export function parseLsArgs(argv: string[], defaults: LsConfig): ParsedLs {
 
   return {
     kind: "ok",
+    explicit: { limit: limit !== undefined || all },
     opts: {
       limit: limit ?? (all ? ALL_LIMIT : defaults.limit ?? DEFAULT_LIMIT),
       sort: sort ?? defaults.sort ?? "started",

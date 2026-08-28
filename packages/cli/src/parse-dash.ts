@@ -1,11 +1,27 @@
-import type { DashConfig, LsConfig } from "@agmux/wrapper";
+import { DASH_GROUP_KEYS, type DashConfig, type DashGroupKey, type LsConfig } from "@agmux/wrapper";
 import type { PreviewMode } from "@agmux/tui";
 import { parseLsArgs, type LsQueryOpts } from "./parse-ls.ts";
 
-export interface DashOpts extends LsQueryOpts {
+// Resolved poll settings for one activity group.
+export interface DashGroupOpts {
+  limit: number;
   intervalMs: number;
+}
+
+// Built-in per-group defaults. `open` is what you stare at, so it stays cheap
+// enough to poll every second; the terminal-heavy groups trade freshness for
+// reach (closed sessions don't change once they're closed).
+const GROUP_DEFAULTS: Record<DashGroupKey, DashGroupOpts> = {
+  open: { limit: 50, intervalMs: 1_000 },
+  closed: { limit: 1_000, intervalMs: 10_000 },
+  all: { limit: 1_000, intervalMs: 10_000 },
+};
+
+export interface DashOpts extends LsQueryOpts {
+  intervalMs: number;  // preview refresh cadence (and the `open` group's floor)
   preview: PreviewMode;
   popup: boolean;
+  groups: Record<DashGroupKey, DashGroupOpts>;
 }
 
 export type ParsedDash =
@@ -14,6 +30,25 @@ export type ParsedDash =
 
 function isPreview(v: string): v is PreviewMode {
   return v === "mirror" || v === "detail";
+}
+
+// flag (applies to every group) > [dash.<group>] > [dash] > built-in default.
+function resolveGroups(
+  cfg: DashConfig,
+  flagLimit: number | undefined,
+  flagIntervalSec: number | undefined,
+): Record<DashGroupKey, DashGroupOpts> {
+  const out = {} as Record<DashGroupKey, DashGroupOpts>;
+  for (const g of DASH_GROUP_KEYS) {
+    const per = cfg.groups?.[g];
+    const limit = flagLimit ?? per?.limit ?? cfg.limit ?? GROUP_DEFAULTS[g].limit;
+    const intervalSec = flagIntervalSec ?? per?.interval ?? cfg.interval;
+    out[g] = {
+      limit,
+      intervalMs: intervalSec === undefined ? GROUP_DEFAULTS[g].intervalMs : Math.round(intervalSec * 1000),
+    };
+  }
+  return out;
 }
 
 export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
@@ -50,10 +85,16 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
   if (parsed.kind === "error")
     return { kind: "error", message: parsed.message.replace(/^ls:/, "dash:") };
 
+  const groups = resolveGroups(cfg, parsed.explicit.limit ? parsed.opts.limit : undefined, intervalSec);
+
   return {
     kind: "ok",
     opts: {
       ...parsed.opts,
+      // `limit` on the shared ls opts is unused by the dash (each group carries
+      // its own); keep it in sync with the fast group so it never misleads.
+      limit: groups.open.limit,
+      groups,
       intervalMs: Math.round((intervalSec ?? cfg.interval ?? 1) * 1000),
       preview: preview ?? cfg.preview ?? "mirror",
       popup,

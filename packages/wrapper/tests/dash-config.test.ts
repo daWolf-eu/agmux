@@ -30,3 +30,29 @@ test("null section throws", () => {
 test("invalid sort throws", () => {
   expect(() => parseDashSection({ sort: "bogus" })).toThrow(/sort must be/);
 });
+
+test("parses [dash] limit and the per-group [dash.<group>] tables", () => {
+  expect(
+    parseDashSection({
+      limit: 25,
+      open: { limit: 40, interval: 0.5 },
+      closed: { limit: 2000 },
+      all: { interval: 30 },
+    }),
+  ).toEqual({
+    limit: 25,
+    groups: {
+      open: { limit: 40, interval: 0.5 },
+      closed: { limit: 2000 },
+      all: { interval: 30 },
+    },
+  });
+});
+
+test("rejects bad group tables", () => {
+  expect(() => parseDashSection({ limit: 0 })).toThrow(/\[dash\] limit must be/);
+  expect(() => parseDashSection({ open: { limit: 1.5 } })).toThrow(/\[dash\.open\] limit must be/);
+  expect(() => parseDashSection({ closed: { interval: -1 } })).toThrow(/\[dash\.closed\] interval must be/);
+  expect(() => parseDashSection({ all: { preview: "mirror" } })).toThrow(/\[dash\.all\] unknown key/);
+  expect(() => parseDashSection({ open: 5 })).toThrow(/\[dash\.open\] must be a table/);
+});
