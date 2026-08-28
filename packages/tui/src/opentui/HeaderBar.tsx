@@ -6,8 +6,9 @@ function count(rows: SessionRow[], s: SessionStatus[]): number {
   return rows.filter((r) => s.includes(r.status)).length;
 }
 
-// `rows` here is the full fetched set (not the group-filtered view) so the
-// counts always reveal how many sessions sit in the groups you can switch to.
+// `rows` here is the current group's fetched set before search/sort narrowing.
+// Each group queries the hub separately, so the counts describe what this
+// group's query returned — in `open` the closed count is 0 by construction.
 export function HeaderBar(props: { rows: SessionRow[]; connected: boolean; hubUrl: string; group: ActivityGroup }) {
   const { rows } = props;
   return (

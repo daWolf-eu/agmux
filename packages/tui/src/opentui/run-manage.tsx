@@ -10,10 +10,17 @@ import { tmuxSocketFromEnv } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
 
-export interface RunManageOpts {
-  hubUrl: string;
+// One hub query per activity group: `open` polls a small window fast, the
+// terminal-heavy groups poll a wide window slowly.
+export interface GroupQuery {
   query: URLSearchParams;
   intervalMs: number;
+}
+
+export interface RunManageOpts {
+  hubUrl: string;
+  groupQueries: Record<ActivityGroup, GroupQuery>;
+  intervalMs: number;   // preview refresh cadence
   defaultPreview: PreviewMode;
   initialGroup?: ActivityGroup;
   source: PreviewSource;
@@ -27,7 +34,9 @@ function resolveHandoff(pending: Handoff | null): Handoff | null {
 }
 
 export async function runManage(o: RunManageOpts): Promise<number> {
-  const feed = new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.query, intervalMs: o.intervalMs });
+  // A feed subscribes once, so build a fresh one per group switch.
+  const feedFor = (g: ActivityGroup) =>
+    new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.groupQueries[g].query, intervalMs: o.groupQueries[g].intervalMs });
   let pending: Handoff | null = null;
 
   const activePane = await activePaneId();
@@ -43,7 +52,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
 
   createRoot(renderer).render(
     <DashApp
-      feed={feed}
+      feedFor={feedFor}
       source={o.source}
       actions={o.actions}
       hubUrl={o.hubUrl}

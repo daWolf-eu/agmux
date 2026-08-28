@@ -3,8 +3,14 @@ import { dashCmd, type DashCmdDeps } from "../src/dash.ts";
 import type { DashOpts } from "../src/parse-dash.ts";
 import { initialGroup } from "@agmux/tui";
 
+const groups = {
+  open: { limit: 50, intervalMs: 1000 },
+  closed: { limit: 1000, intervalMs: 10_000 },
+  all: { limit: 1000, intervalMs: 10_000 },
+};
+
 const opts: DashOpts & { hubUrl: string; wrapBin: string } = {
-  limit: 50, sort: "started", asc: false, reverse: false, status: "open",
+  limit: 50, sort: "started", asc: false, reverse: false, status: "open", groups,
   intervalMs: 1000, preview: "detail", popup: false, hubUrl: "http://h", wrapBin: "agmux-wrap",
 };
 
@@ -47,7 +53,7 @@ test("forwards popup flag to makeActions", async () => {
   expect(seenPopup).toBe(true);
 });
 
-test("dash fetches all statuses (no status param) and derives the initial group", async () => {
+test("dash queries each group separately and derives the initial group", async () => {
   let captured: any = null;
   const deps = {
     isTTY: () => true,
@@ -59,10 +65,16 @@ test("dash fetches all statuses (no status param) and derives the initial group"
   // default opts.status === "open"
   await dashCmd(
     { hubUrl: "http://h", wrapBin: "agmux-wrap", intervalMs: 1000, preview: "mirror", popup: false,
-      limit: 50, sort: "started", asc: false, reverse: false, status: "open" } as any,
+      limit: 50, sort: "started", asc: false, reverse: false, status: "open", groups } as any,
     deps as any,
   );
-  expect(captured.query.has("status")).toBe(false);
+  const q = captured.groupQueries;
+  expect(q.open.query.get("status")).toBe("open");
+  expect(q.closed.query.get("status")).toBe("closed");
+  expect(q.all.query.has("status")).toBe(false); // "all" = every status
+  expect([q.open.query.get("limit"), q.closed.query.get("limit"), q.all.query.get("limit")])
+    .toEqual(["50", "1000", "1000"]);
+  expect([q.open.intervalMs, q.closed.intervalMs, q.all.intervalMs]).toEqual([1000, 10_000, 10_000]);
   expect(captured.initialGroup).toBe("open");
 });
 
@@ -77,10 +89,9 @@ test("dash maps --status closed to the closed initial group", async () => {
   };
   await dashCmd(
     { hubUrl: "http://h", wrapBin: "agmux-wrap", intervalMs: 1000, preview: "mirror", popup: false,
-      limit: 50, sort: "started", asc: false, reverse: false, status: "closed" } as any,
+      limit: 50, sort: "started", asc: false, reverse: false, status: "closed", groups } as any,
     deps as any,
   );
-  expect(captured.query.has("status")).toBe(false);
   expect(captured.initialGroup).toBe("closed");
   expect(initialGroup("closed")).toBe("closed"); // sanity: re-export reachable from cli
 });

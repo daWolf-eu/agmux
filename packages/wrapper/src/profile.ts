@@ -111,11 +111,44 @@ export function loadLsConfig(configPath: string): LsConfig {
   return parseLsSection(raw.ls);
 }
 
+// Per-activity-group poll settings ([dash.open] / [dash.closed] / [dash.all]).
+// Each group runs its own hub query, so each gets its own row cap and cadence:
+// `open` stays small + fast, the terminal-heavy groups go wide + slow.
+export interface DashGroupConfig {
+  limit?: number;
+  interval?: number; // seconds
+}
+
+export const DASH_GROUP_KEYS = ["open", "closed", "all"] as const;
+export type DashGroupKey = (typeof DASH_GROUP_KEYS)[number];
+
 export interface DashConfig {
   preview?: "mirror" | "detail";
-  interval?: number; // seconds
+  interval?: number; // seconds; fallback for every group
+  limit?: number;    // fallback for every group
   status?: string;   // group alias or comma-separated statuses (pre-validated)
   sort?: "started" | "activity";
+  groups?: Partial<Record<DashGroupKey, DashGroupConfig>>;
+}
+
+function parseDashGroup(label: string, raw: unknown): DashGroupConfig {
+  if (typeof raw !== "object" || raw === null) throw new Error(`${label} must be a table`);
+  const r = raw as Record<string, unknown>;
+  const out: DashGroupConfig = {};
+  if (r.limit !== undefined) {
+    if (typeof r.limit !== "number" || !Number.isInteger(r.limit) || r.limit < 1)
+      throw new Error(`${label} limit must be a positive integer, got ${JSON.stringify(r.limit)}`);
+    out.limit = r.limit;
+  }
+  if (r.interval !== undefined) {
+    if (typeof r.interval !== "number" || !(r.interval > 0))
+      throw new Error(`${label} interval must be a positive number, got ${JSON.stringify(r.interval)}`);
+    out.interval = r.interval;
+  }
+  for (const k of Object.keys(r)) {
+    if (k !== "limit" && k !== "interval") throw new Error(`${label} unknown key ${JSON.stringify(k)}`);
+  }
+  return out;
 }
 
 export function parseDashSection(raw: unknown): DashConfig {
@@ -123,6 +156,15 @@ export function parseDashSection(raw: unknown): DashConfig {
   if (typeof raw !== "object" || raw === null) throw new Error("[dash] must be a table");
   const r = raw as Record<string, unknown>;
   const out: DashConfig = {};
+  if (r.limit !== undefined) {
+    if (typeof r.limit !== "number" || !Number.isInteger(r.limit) || r.limit < 1)
+      throw new Error(`[dash] limit must be a positive integer, got ${JSON.stringify(r.limit)}`);
+    out.limit = r.limit;
+  }
+  for (const g of DASH_GROUP_KEYS) {
+    if (r[g] === undefined) continue;
+    (out.groups ??= {})[g] = parseDashGroup(`[dash.${g}]`, r[g]);
+  }
   if (r.preview !== undefined) {
     if (r.preview !== "mirror" && r.preview !== "detail")
       throw new Error(`[dash] preview must be 'mirror' or 'detail', got ${JSON.stringify(r.preview)}`);

@@ -14,6 +14,8 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      fullscreen live view of ls (defaults: --status open --sort started); q quits
   dash [ls flags] [-i/--interval <seconds>] [--preview <mirror|detail>]
      interactive TUI: grouped sessions + preview; ⏎ attach, x kill, r resume, q quit
+     each activity group (f) polls on its own: open 50 rows/1s, closed+all 1000/10s
+     ([dash], [dash.open], [dash.closed], [dash.all] in config; -n/-i override all)
   attach <id|prefix>
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>

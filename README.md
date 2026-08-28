@@ -114,7 +114,24 @@ status = "open"     # active | open | closed | comma-separated statuses
 
 `dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `/` filter · `tab` preview tab ·
 `p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field · `?` help · `q` quit.
-Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `status`, `sort`.
+Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `limit`, `status`, `sort`.
+
+Each activity group (`f` cycles `open` → `closed` → `all`) runs its own hub query, so
+`open` can stay cheap and fast while the terminal-heavy groups reach far back. Defaults:
+`open` 50 rows every 1s, `closed`/`all` 1000 rows every 10s. Override per group — the
+`[dash]` values are the fallback, and `-n/--limit/--all` or `-i/--interval` on the command
+line override every group:
+
+```toml
+[dash]
+interval = 1
+limit = 50
+
+[dash.closed]
+limit = 2000
+interval = 30
+```
+
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
 
 ## tmux plugin (TPM)
