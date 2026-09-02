@@ -128,7 +128,7 @@ test("--wrapped composes with placement", () => {
 test("--prompt requires a placement (inherit is rejected)", () => {
   const r = parseRunArgs(["--prompt", "do X", "-p", "work"]);
   expect(r.kind).toBe("error");
-  if (r.kind === "error") expect(r.message).toMatch(/--prompt requires --new-pane/);
+  if (r.kind === "error") expect(r.message).toMatch(/--prompt requires --headless, --new-pane/);
 });
 
 test("--prompt with --new-window carries the prompt text", () => {
@@ -162,4 +162,62 @@ test("no prompt flag → prompt/promptFile absent", () => {
   const r = parseRunArgs(["claude"]);
   expect(r).toMatchObject({ kind: "inline" });
   if (r.kind === "inline") { expect(r.prompt).toBeUndefined(); expect(r.promptFile).toBeUndefined(); }
+});
+
+// ---- headless placement ----
+
+test("--headless sets the headless placement", () => {
+  const r = parseRunArgs(["-p", "POSM", "--headless", "--prompt", "hi"]);
+  expect(r).toEqual({
+    kind: "profile", profileName: "POSM", placement: "headless",
+    detach: false, wrapped: false, prompt: "hi", promptFile: undefined,
+  });
+});
+
+test("--headless accepts --prompt-file", () => {
+  const r = parseRunArgs(["-p", "POSM", "--headless", "--prompt-file", "p.txt"]);
+  expect(r.kind).toBe("profile");
+  if (r.kind === "profile") {
+    expect(r.placement).toBe("headless");
+    expect(r.promptFile).toBe("p.txt");
+  }
+});
+
+test("--headless without a prompt is an error", () => {
+  const r = parseRunArgs(["-p", "POSM", "--headless"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/--headless requires --prompt/);
+});
+
+test("--headless cannot combine with a tmux placement", () => {
+  const r = parseRunArgs(["-p", "POSM", "--headless", "--new-window", "--prompt", "hi"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/cannot combine/);
+});
+
+test("--headless cannot combine with --detach", () => {
+  const r = parseRunArgs(["-p", "POSM", "--headless", "--prompt", "hi", "-d"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/cannot combine --headless with -d/);
+});
+
+test("-d before --headless still errors (soft default does not win)", () => {
+  const r = parseRunArgs(["-p", "POSM", "-d", "--headless", "--prompt", "hi"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/cannot combine --headless with -d/);
+});
+
+test("--headless works in inline mode", () => {
+  const r = parseRunArgs(["--headless", "--prompt", "hi", "claude"]);
+  expect(r.kind).toBe("inline");
+  if (r.kind === "inline") {
+    expect(r.placement).toBe("headless");
+    expect(r.agent_kind).toBe("claude");
+  }
+});
+
+test("the --prompt-without-placement error now mentions --headless", () => {
+  const r = parseRunArgs(["-p", "POSM", "--prompt", "hi"]);
+  expect(r.kind).toBe("error");
+  if (r.kind === "error") expect(r.message).toMatch(/--headless/);
 });

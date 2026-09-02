@@ -2,6 +2,7 @@ import type { Adapter } from "../../core/types.ts";
 import { PI_SOURCES, PI_CAPABILITIES } from "./caps.ts";
 import { normalizePi } from "./normalize.ts";
 import { piResumePlan } from "./resume.ts";
+import { piHeadlessPlan } from "./headless.ts";
 import { piInstall, piUninstall, piStatus, ADAPTER_VERSION } from "./install.ts";
 
 // PI (pi.dev). Install is a pure filesystem drop of an embedded extension
@@ -20,6 +21,7 @@ export const piAdapter: Adapter = {
   status: piStatus,
   normalize: normalizePi,
   resumePlan: piResumePlan,
+  headlessPlan: piHeadlessPlan,
   nativeIdFromStdin: (raw) => {
     const id = (raw as { session_id?: unknown } | null)?.session_id;
     return typeof id === "string" && id !== "" ? id : null;

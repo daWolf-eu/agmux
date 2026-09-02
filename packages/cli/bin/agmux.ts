@@ -4,6 +4,7 @@ import * as path from "node:path";
 import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
+import { runHeadless } from "../src/headless.ts";
 import { parseRunArgs } from "../src/parse-run.ts";
 import { lsCmd } from "../src/ls.ts";
 import { watchCmd } from "../src/watch.ts";
@@ -21,7 +22,7 @@ import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
 import { adapterReadyOrHint } from "../src/adapter-ready.ts";
-import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig } from "@agmux/wrapper";
+import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig, type ProfileConfig } from "@agmux/wrapper";
 import { parseLsArgs } from "../src/parse-ls.ts";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -109,8 +110,9 @@ async function main(): Promise<number> {
 
       // Direct exec needs the plugin present; we NEVER install without consent.
       // If it isn't ready, adapterReadyOrHint prints the install hint and we fall
-      // back to wrapped (tracked, no config writes).
-      if (mode === "direct" && adapter && kind) {
+      // back to wrapped (tracked, no config writes). Headless uses neither mode, so
+      // the check (and its "launching wrapped" hint) would only be misleading noise.
+      if (mode === "direct" && adapter && kind && parsed.placement !== "headless") {
         const ready = adapterReadyOrHint(adapter, {
           agentKind: kind,
           profile: parsed.kind === "profile" ? parsed.profileName : null,
@@ -127,6 +129,31 @@ async function main(): Promise<number> {
       if (parsed.promptFile) {
         try { prompt = await Bun.file(parsed.promptFile).text(); }
         catch (e) { console.error(`agmux run: cannot read --prompt-file ${parsed.promptFile}: ${e instanceof Error ? e.message : String(e)}`); return 2; }
+      }
+
+      // Headless: no tmux, no wrapper, no launch-mode decision — spawn the agent
+      // directly, stream its stdout, exit with its code. Needs a concrete profile
+      // (inline mode synthesizes one) because the adapter plans off command+args.
+      if (parsed.placement === "headless") {
+        let profile: ProfileConfig;
+        let profileName: string | null;
+        if (parsed.kind === "profile") {
+          try { profile = loadProfile(parsed.profileName, configPath); }
+          catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+          profileName = parsed.profileName;
+        } else {
+          profile = {
+            agent_kind: parsed.agent_kind, command: parsed.command,
+            args: parsed.args, env: {},
+          };
+          profileName = null;
+        }
+        const res = await runHeadless({
+          profile, profileName, prompt: prompt!, hubUrl, stateDir, registry,
+        });
+        if (res.error) { console.error(`agmux run: ${res.error}`); return res.exitCode; }
+        console.error(`agmux: headless session ${res.sessionId!.slice(0, 8)}`);
+        return res.exitCode;
       }
 
       if (parsed.kind === "profile") {

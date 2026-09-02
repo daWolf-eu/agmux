@@ -2,6 +2,7 @@ import type { Adapter } from "../../core/types.ts";
 import { CODEX_SOURCES, CODEX_CAPABILITIES } from "./caps.ts";
 import { normalizeCodex } from "./normalize.ts";
 import { codexResumePlan } from "./resume.ts";
+import { codexHeadlessPlan } from "./headless.ts";
 import { codexInstall, codexUninstall, codexStatus, ADAPTER_VERSION } from "./install.ts";
 
 // The plugin payload is embedded code (plugin-files.ts) materialized at install
@@ -20,6 +21,7 @@ export const codexAdapter: Adapter = {
   status: codexStatus,
   normalize: normalizeCodex,
   resumePlan: codexResumePlan,
+  headlessPlan: codexHeadlessPlan,
   nativeIdFromStdin: (raw) => {
     const id = (raw as { session_id?: unknown } | null)?.session_id;
     return typeof id === "string" && id !== "" ? id : null;

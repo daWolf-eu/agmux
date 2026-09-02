@@ -12,12 +12,14 @@
 //   - "new-window"  → create a new window. Defaults to the caller's current
 //                     tmux session; falls back to AGMUX_TMUX_SESSION otherwise.
 //   - "new-session" → create a fresh detached tmux session.
+//   - "headless"    → no tmux at all: run the prompt non-interactively, stream
+//                     the agent's stdout through, and exit with its exit code.
 //
 // detach: -d/--detach. Means "spawn but don't move me there." Without it, the
 // new pane/window/session becomes the active one (the default for any explicit
 // --new-* placement is to follow the new spawn).
 
-export type Placement = "inherit" | "new-pane" | "new-window" | "new-session";
+export type Placement = "inherit" | "new-pane" | "new-window" | "new-session" | "headless";
 
 export type ParsedRun =
   | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean; prompt?: string; promptFile?: string }
@@ -89,6 +91,15 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       i += 1;
       continue;
     }
+    if (a === "--headless") {
+      if (explicitPlacementFlag && explicitPlacementFlag !== a) {
+        return { kind: "error", message: `cannot combine ${explicitPlacementFlag} with ${a}` };
+      }
+      explicitPlacementFlag = a;
+      placement = "headless";
+      i += 1;
+      continue;
+    }
     if (a === "--new-pane" || a === "--new-window" || a === "--new-session") {
       const p: Placement =
         a === "--new-pane" ? "new-pane" :
@@ -111,7 +122,15 @@ export function parseRunArgs(argv: string[]): ParsedRun {
     return { kind: "error", message: "cannot combine --prompt with --prompt-file" };
   }
   if ((prompt !== undefined || promptFile !== undefined) && placement === "inherit") {
-    return { kind: "error", message: "--prompt requires --new-pane, --new-window, or --new-session" };
+    return { kind: "error", message: "--prompt requires --headless, --new-pane, --new-window, or --new-session" };
+  }
+  if (placement === "headless" && prompt === undefined && promptFile === undefined) {
+    return { kind: "error", message: "--headless requires --prompt or --prompt-file" };
+  }
+  // -d means "spawn but don't move me there" — meaningless with no pane to move to,
+  // and its soft default (--new-pane) would silently contradict an explicit --headless.
+  if (placement === "headless" && detach) {
+    return { kind: "error", message: "cannot combine --headless with -d/--detach" };
   }
 
   if (profileName) {

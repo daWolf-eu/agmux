@@ -94,6 +94,30 @@ export interface ResumePlan {
   nativeSessionId?: string | null;
 }
 
+// Everything an adapter needs to compute a NON-INTERACTIVE (headless) invocation:
+// the agent runs the prompt with no TTY, writes the answer to stdout, and exits.
+// Mirrors ResumeContext; `prompt` is the whole input (already read from
+// --prompt / --prompt-file by the CLI).
+export interface HeadlessContext {
+  agentKind: AgentKind;
+  profile: string | null;
+  command: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+  prompt: string;
+}
+
+// `supported: false` means the agent has no documented headless mode; the CLI
+// turns that into a clean error rather than spawning something that hangs on a
+// TTY it does not have.
+export interface HeadlessPlan {
+  supported: boolean;
+  argv?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
 // A canonical event before identity/envelope stamping. emit stamps these (Task 5).
 export interface CanonicalEvent {
   kind: AdapterEventKind;
@@ -135,6 +159,9 @@ export interface Adapter {
   status(ctx: InstallContext): InstallStatus;
   normalize(input: NormalizeInput): NormalizeOutput;
   resumePlan(ctx: ResumeContext): ResumePlan;
+  // Non-interactive invocation (headless run). Optional: adapters that omit it
+  // are treated as unsupported, same as returning { supported: false }.
+  headlessPlan?(ctx: HeadlessContext): HeadlessPlan;
   // Native-first (spec §5): the agent's OWN native id read from its hook/tool env
   // (claude: CLAUDE_CODE_SESSION_ID). Used by `emit` to stamp native identity and
   // by the future spawn path to name a parent. Optional: adapters without a native
