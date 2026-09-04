@@ -4,9 +4,15 @@
 export const HELP_TEXT = `usage: agmux <verb> [args]
   run [placement] [--wrapped] [--kind=<claude|codex|pi>] [--prompt <text>|--prompt-file <path>] <command> [args...]
   run [placement] [--wrapped] [--prompt <text>|--prompt-file <path>] -p <profile>
-    --prompt <text>   inject a bootstrap prompt after spawn (requires a placement)
-    --headless        run the prompt non-interactively: no tmux, agent stdout on
-                      stdout, exits with the agent's exit code (requires --prompt)
+    --prompt <text>   the prompt to run (--prompt-file <path> reads it from a file).
+                      Requires a placement: injected into the new pane after spawn,
+                      or run as the single turn under --headless.
+    --headless        run the prompt non-interactively: no tmux, no PTY, agent
+                      stdout streamed on stdout, exits with the agent's exit code.
+                      Requires --prompt/--prompt-file; claude and codex only.
+                        agmux run -p work --headless --prompt "..." > out.md
+                      Still a first-class session: it records, and agmux attach
+                      relaunches it interactively afterwards.
     placement: --headless | --new-pane | --new-window | --new-session (default: inherit current pane; -d/--detach implies --new-pane)
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]

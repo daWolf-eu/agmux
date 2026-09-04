@@ -27,6 +27,27 @@ Those three are read-only and safe to run at any time.
 dash is interactive, not just a viewer - from it you can attach to, kill, or
 resume a session, so use it deliberately.
 
+## Running an agent without a terminal
+
+    agmux run -p <profile> --headless --prompt "summarize the diff"
+
+That runs one non-interactive turn: no tmux pane, no PTY. The agent's stdout is
+streamed straight to yours and the exit code is the agent's, so it composes with
+pipes and redirection:
+
+    agmux run -p <profile> --headless --prompt "..." > report.md
+    agmux run -p <profile> --headless --prompt-file ./task.md
+
+Notes:
+
+- --headless is a placement, so it cannot be combined with --new-pane /
+  --new-window / --new-session, nor with -d/--detach.
+- It requires --prompt or --prompt-file, and is supported for the claude and
+  codex kinds (pi errors out rather than hanging).
+- A headless run is a fully recorded session, not a throwaway: it shows up in
+  agmux ls / inspect with cost and usage, and agmux attach relaunches it as a
+  resumed interactive session afterwards.
+
 ## Concepts
 
 - agent_kind: the underlying agent (claude, codex, pi).
@@ -41,6 +62,7 @@ export const AGMUX_OVERVIEW: SkillDef = {
   description:
     "Explains what agmux is and how to inspect your own and other recorded agent sessions. " +
     "Use when the user asks what agmux is, how this session is tracked, what their session id is, " +
-    "or how to list, inspect, or watch agmux sessions.",
+    "or how to list, inspect, or watch agmux sessions, or how to run a prompt " +
+    "non-interactively with agmux run --headless.",
   body,
 };

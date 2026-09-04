@@ -11,6 +11,12 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
+- `run --headless`: a fourth placement that runs `--prompt`/`--prompt-file` as one
+  non-interactive turn — no tmux, no PTY, the agent's stdout streamed through and
+  its exit code returned, so it composes with pipes and redirection
+  (`agmux run -p work --headless --prompt "..." > report.md`). The invocation is
+  adapter-owned (claude `-p`, codex `exec`; pi reports unsupported). Headless runs
+  are fully recorded sessions and can be resumed interactively via `agmux attach`.
 - dash: activity-group filter — `f` cycles `open` / `closed` / `all`; the active
   group and per-group counts show in the header. The `/` free-text match is now
   labelled "search" to distinguish it from the filter.

@@ -84,6 +84,8 @@ agmux run claude --resume abc            # ad-hoc: command + args; agent_kind de
 agmux run --kind=codex /opt/codex-rc1    # explicit --kind for unknown binary names
 agmux run -p claude-work                 # profile from ~/.config/agmux/config.toml
 agmux run -p pi-default                   # PI session (auto-discovered extension)
+agmux run -p claude-work --new-window --prompt "review the diff"   # spawn elsewhere + bootstrap prompt
+agmux run -p claude-work --headless --prompt "review the diff" > out.md  # one turn, no tmux, agent's exit code
 
 agmux ls                     # recent 50 sessions (any status) — newest first
 agmux ls -n 5 -r             # 5 most recent, newest at the bottom (above your prompt)
