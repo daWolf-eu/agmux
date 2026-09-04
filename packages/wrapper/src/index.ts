@@ -17,6 +17,9 @@ import {
   ensureAgmuxSession, readCurrentTmuxCoords, newAgmuxWindow, tmuxVersion,
 } from "./tmux.ts";
 export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig, type DashGroupConfig, type DashGroupKey, DASH_GROUP_KEYS } from "./profile.ts";
+export { HubClient, type HubClientOpts } from "./hub-client.ts";
+export { mintSessionId, mintEventId } from "./ids.ts";
+export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent } from "./lifecycle.ts";
 
 export interface RunOpts {
   profile: ProfileConfig;

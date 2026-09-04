@@ -2,6 +2,7 @@ import type { Adapter } from "../../core/types.ts";
 import { CLAUDE_SOURCES, CLAUDE_CAPABILITIES, CLAUDE_RELAUNCH_ENV_KEYS } from "./caps.ts";
 import { normalizeClaude } from "./normalize.ts";
 import { claudeResumePlan } from "./resume.ts";
+import { claudeHeadlessPlan } from "./headless.ts";
 import { claudeInstall, claudeUninstall, claudeStatus, ADAPTER_VERSION } from "./install.ts";
 
 // The plugin payload is embedded code (plugin-files.ts) — no on-disk data files,
@@ -18,5 +19,6 @@ export const claudeAdapter: Adapter = {
   status: claudeStatus,
   normalize: normalizeClaude,
   resumePlan: claudeResumePlan,
+  headlessPlan: claudeHeadlessPlan,
   nativeIdFromEnv: (env) => env.CLAUDE_CODE_SESSION_ID ?? null,
 };
