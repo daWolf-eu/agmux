@@ -257,8 +257,8 @@ test("yanking an empty field shows an is-empty notice and does not copy", async 
 });
 
 test("pressing u marks the highlighted row seen", async () => {
-  const seen: Array<{ id: string; seen: boolean }> = [];
-  const actions: Actions = { ...noActions, async markSeen(row, s) { seen.push({ id: row.session_id, seen: s }); } };
+  const seen: string[] = [];
+  const actions: Actions = { ...noActions, async markSeen(row) { seen.push(row.session_id); } };
   const rows = [mkRow({ session_id: "agx-mark-1", unread: true })];
   const { renderer, renderOnce, mockInput } = await testRender(
     <DashApp
@@ -271,7 +271,7 @@ test("pressing u marks the highlighted row seen", async () => {
   await renderOnce();
   await act(async () => { mockInput.pressKey("u"); });
   await renderOnce();
-  expect(seen).toEqual([{ id: "agx-mark-1", seen: true }]);
+  expect(seen).toEqual(["agx-mark-1"]);
   renderer.destroy();
 });
 

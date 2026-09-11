@@ -187,10 +187,10 @@ export function DashApp(props: DashAppProps) {
       return;
     }
     if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) { setConfirmKill(selected); return; }
-    // Mark the highlighted row seen (dismiss). There is no backing "mark
-    // unread" event, so this only ever moves a row from unread → read; always
-    // pass true (see dash-actions.markSeen).
-    if (key.name === "u" && selected) { void props.actions.markSeen(selected, true).catch(() => {}); return; }
+    // Mark the highlighted row seen (dismiss). One-way: there is no backing
+    // "mark unread" event, so this only ever moves a row from unread → read
+    // (see dash-actions.markSeen).
+    if (key.name === "u" && selected) { void props.actions.markSeen(selected).catch(() => {}); return; }
   });
 
   const now = Date.now();

@@ -37,7 +37,9 @@ export interface Actions {
   resume(row: SessionRow): Promise<Handoff | null>;
   // Copy arbitrary text to the system clipboard (yank). Concrete impl in cli.
   copy(text: string): Promise<void>;
-  // Mark (or unmark) a session's read state — the dash dismiss key. Takes the
-  // row (matching the other members' style) rather than a bare session id.
-  markSeen(row: SessionRow, seen: boolean): Promise<void>;
+  // Mark a session read — the dash dismiss key. Takes the row (matching the
+  // other members' style) rather than a bare session id. One-way: there is no
+  // way to mark a session unread again from the dash — see the comment on the
+  // concrete implementation in cli/dash-actions.ts.
+  markSeen(row: SessionRow): Promise<void>;
 }
