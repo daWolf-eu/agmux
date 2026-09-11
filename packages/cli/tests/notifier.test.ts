@@ -57,3 +57,35 @@ test("a custom command substitutes the documented variables", () => {
   expect(cmd).toBe("/bin/n");
   expect(args).toEqual(["--title", "agmux", "--body", "work:2 needs permission", "--id", "agx-1"]);
 });
+
+test("a blank configured string resolves to null", () => {
+  expect(resolveNotifier("", () => true)).toBe(null);
+});
+
+test("whitespace-only configured string resolves to null", () => {
+  expect(resolveNotifier("   ", () => true)).toBe(null);
+});
+
+test("notify-send argv carries title and body only, ignoring attachId and sound", () => {
+  const { cmd, args } = buildNotifyArgv("notify-send", SPEC);
+  expect(cmd).toBe("notify-send");
+  expect(args).toEqual(["agmux", "work:2 needs permission"]);
+});
+
+test("osascript escapes a body ending with a single backslash", () => {
+  const { args } = buildNotifyArgv("osascript", { ...SPEC, body: "ends with backslash\\" });
+  // The body should be escaped so the closing quote is not escaped
+  expect(args[1]).toContain('ends with backslash\\\\');
+  expect(args[1]).toMatch(/"ends with backslash\\\\".*with title/);
+});
+
+test("osascript escapes a body containing a lone double quote", () => {
+  const { args } = buildNotifyArgv("osascript", { ...SPEC, body: 'contains " quote' });
+  expect(args[1]).toContain('contains \\" quote');
+});
+
+test("osascript escapes an AppleScript injection attempt", () => {
+  const { args } = buildNotifyArgv("osascript", { ...SPEC, body: '" & (do shell script "id") & "' });
+  // All quotes should be escaped, keeping the injection attempt inside the string literal
+  expect(args[1]).toContain('\\" & (do shell script \\"id\\") & \\"');
+});
