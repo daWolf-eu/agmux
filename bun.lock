@@ -29,6 +29,7 @@
         "@agmux/protocol": "workspace:*",
         "@agmux/tui": "workspace:*",
         "@agmux/wrapper": "workspace:*",
+        "smol-toml": "^1.3.0",
       },
       "devDependencies": {
         "@agmux/store": "workspace:*",
