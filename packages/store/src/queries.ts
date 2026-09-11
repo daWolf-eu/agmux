@@ -3,6 +3,14 @@ import type { EventEnvelope, SessionRow, SessionStatus } from "@agmux/protocol";
 import { LIVE_STATUSES } from "@agmux/protocol";
 import { computeEffectiveStatus } from "./lost.ts";
 
+// The single definition of "unread": an attention-worthy event (input.required,
+// turn.ended, session.ended -> attention_ts) newer than the user's last
+// session.seen acknowledgement. Used BOTH as the derived column and as the
+// ?unread=1 filter predicate — if these ever diverge, the filter would return
+// rows whose own `unread` field is false.
+const UNREAD_EXPR =
+  "(a.attention_ts IS NOT NULL AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts))";
+
 function decodeRow(raw: any): SessionRow {
   return {
     session_id: raw.session_id,
@@ -40,8 +48,7 @@ function decodeRow(raw: any): SessionRow {
 export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow | null {
   const raw = db.query<any, [string]>(
     `SELECT s.*, a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
-            (a.attention_ts IS NOT NULL
-             AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts)) AS unread
+            ${UNREAD_EXPR} AS unread
        FROM sessions s
        LEFT JOIN session_activity a ON a.session_id = s.session_id
        LEFT JOIN session_seen sn ON sn.session_id = s.session_id
@@ -72,7 +79,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
-  if (opts.unread)     { where.push("(a.attention_ts IS NOT NULL AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts))"); }
+  if (opts.unread)     { where.push(UNREAD_EXPR); }
 
   // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
   const sortCol = opts.sort === "activity" ? "COALESCE(s.last_heartbeat_ts, s.start_ts)" : "s.start_ts";
@@ -86,8 +93,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
 
   const sql = `SELECT s.*, u.turn_count,
                       a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
-                      (a.attention_ts IS NOT NULL
-                       AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts)) AS unread
+                      ${UNREAD_EXPR} AS unread
                FROM sessions s
                LEFT JOIN session_usage u ON u.session_id = s.session_id
                LEFT JOIN session_activity a ON a.session_id = s.session_id

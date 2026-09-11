@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { Database } from "bun:sqlite";
 import { runMigrations } from "../src/migrations.ts";
 import { applyEventToProjection } from "../src/project.ts";
-import { listSessions } from "../src/queries.ts";
+import { listSessions, getSessionRaw } from "../src/queries.ts";
 
 function seed(): Database {
   const db = new Database(":memory:");
@@ -28,4 +28,19 @@ test("unread:true returns only sessions wanting attention", () => {
 
 test("omitting the filter returns everything", () => {
   expect(listSessions(seed(), {}).length).toBe(2);
+});
+
+test("getSessionRaw and listSessions report the same unread value (regression fence)", () => {
+  const db = seed();
+  const now = new Date();
+  // s1 is read (no attention event), s2 is unread (has input.required)
+  const s1Raw = getSessionRaw(db, "s1", now)!;
+  const s1Listed = listSessions(db, {}).find((r) => r.session_id === "s1")!;
+  expect(s1Raw.unread).toBe(s1Listed.unread);
+  expect(s1Raw.unread).toBe(false);
+
+  const s2Raw = getSessionRaw(db, "s2", now)!;
+  const s2Listed = listSessions(db, {}).find((r) => r.session_id === "s2")!;
+  expect(s2Raw.unread).toBe(s2Listed.unread);
+  expect(s2Raw.unread).toBe(true);
 });
