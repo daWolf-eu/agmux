@@ -88,7 +88,14 @@ test("ended guard: activity writes after session.ended are inert", () => {
   s.append(ev("session.ended", "2026-06-11T12:00:01.000Z", { exit_code: 0, signal: null, reason: "normal" }));
   s.append(ev("tool.used", "2026-06-11T12:00:02.000Z", { tool: "Edit" }));
   s.append(ev("input.required", "2026-06-11T12:00:03.000Z", { kind: "prompt" }));
-  expect(activity(s)).toBeNull();
+  // session.ended itself legitimately writes attention_ts (bumpAttention runs
+  // before the status flips to 'ended') so a finished session registers as
+  // unread. But the subsequent tool.used/input.required are still guarded:
+  // they must not touch last_tool/last_tool_detail/last_input_kind.
+  const a = activity(s);
+  expect(a?.last_tool).toBeNull();
+  expect(a?.last_tool_detail).toBeNull();
+  expect(a?.last_input_kind).toBeNull();
 });
 
 test("unknown session: activity writes are inert (no orphan rows)", () => {

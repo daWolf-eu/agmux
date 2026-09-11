@@ -32,10 +32,12 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "turn.ended":
       applyLiveStatus(db, ev, "idle");
       clearActivityAll(db, ev);
+      bumpAttention(db, ev);
       return;
     case "input.required":
       applyLiveStatus(db, ev, "waiting");
       applyActivityInputRequired(db, ev);
+      bumpAttention(db, ev);
       return;
     case "input.received":
       applyLiveStatus(db, ev, "running");
@@ -49,6 +51,9 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
       return;
     case "session.adapter_attached":
       applyAdapterAttached(db, ev);
+      return;
+    case "session.seen":
+      applySessionSeen(db, ev);
       return;
     // prompt.sent and compaction are known but log-only: stored in the event
     // log, no projection effect. (A compaction_count column is a deferred option.)
@@ -120,6 +125,10 @@ function applyResumed(db: Database, ev: EventEnvelope): void {
 
 function applyEnded(db: Database, ev: EventEnvelope): void {
   const p = ev.payload as any;
+  // bumpAttention must run BEFORE the status flips to 'ended': activityWritable
+  // (below) rejects ended sessions, so a "session finished, come look" signal
+  // would never register if the order were reversed.
+  bumpAttention(db, ev);
   db.query(`
     UPDATE sessions
        SET end_ts = ?,
@@ -352,4 +361,25 @@ function clearActivityAll(db: Database, ev: EventEnvelope): void {
   if (!activityWritable(db, ev.session_id)) return;
   db.query(`UPDATE session_activity SET last_tool = NULL, last_tool_detail = NULL, last_input_kind = NULL, activity_ts = ? WHERE session_id = ?`)
     .run(ev.ts, ev.session_id);
+}
+
+// --- read/unread projection --------------------------------------------------
+// Only these kinds mean "this session wants you". Deliberately excludes
+// tool.used, which moves activity_ts on every tool call.
+function bumpAttention(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  db.query(`
+    INSERT INTO session_activity (session_id, attention_ts) VALUES (?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      attention_ts = MAX(COALESCE(session_activity.attention_ts, ''), excluded.attention_ts)
+  `).run(ev.session_id, ev.ts);
+}
+
+// MAX() keeps the marker monotonic: events can arrive out of order (queue drain,
+// clock skew), and a stale seen must never un-see newer acknowledgement.
+function applySessionSeen(db: Database, ev: EventEnvelope): void {
+  db.query(`
+    INSERT INTO session_seen (session_id, seen_ts) VALUES (?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET seen_ts = MAX(session_seen.seen_ts, excluded.seen_ts)
+  `).run(ev.session_id, ev.ts);
 }

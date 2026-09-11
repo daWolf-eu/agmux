@@ -96,3 +96,16 @@ CREATE TABLE IF NOT EXISTS session_activity (
 export const SCHEMA_V5 = `
 ALTER TABLE sessions ADD COLUMN tmux_socket TEXT;
 `;
+
+// Read/unread projection (spec §attention). `session_seen` records the last time
+// a user acknowledged a session; `session_activity.attention_ts` (added here)
+// records the last time something happened that wants the user's attention.
+// Deliberately NOT derived from activity_ts, which also moves on tool.used and
+// would make any busy running session read as permanently unread.
+export const SCHEMA_V6 = `
+CREATE TABLE IF NOT EXISTS session_seen (
+  session_id TEXT PRIMARY KEY,
+  seen_ts    TEXT NOT NULL
+);
+ALTER TABLE session_activity ADD COLUMN attention_ts TEXT;
+`;

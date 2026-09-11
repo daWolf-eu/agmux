@@ -79,6 +79,7 @@ export class Store {
       this.db.exec(`DELETE FROM sessions`);
       this.db.exec(`DELETE FROM session_usage`);
       this.db.exec(`DELETE FROM session_activity`);
+      this.db.exec(`DELETE FROM session_seen`);
       const rows = this.db.query<any, []>(
         `SELECT event_id, ts, session_id, kind, version, payload, host FROM events ORDER BY id ASC`
       ).all();
