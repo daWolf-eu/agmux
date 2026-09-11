@@ -62,6 +62,7 @@ export interface ListSessionsOpts {
   limit?: number;
   sort?: "started" | "activity";
   order?: "asc" | "desc";
+  unread?: boolean;                     // filter to sessions wanting attention
   now?: Date;
 }
 
@@ -71,6 +72,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
+  if (opts.unread)     { where.push("(a.attention_ts IS NOT NULL AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts))"); }
 
   // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
   const sortCol = opts.sort === "activity" ? "COALESCE(s.last_heartbeat_ts, s.start_ts)" : "s.start_ts";

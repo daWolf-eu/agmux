@@ -53,6 +53,7 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
         const sort = url.searchParams.get("sort") ?? undefined;
         const order = url.searchParams.get("order") ?? undefined;
         const status = url.searchParams.get("status") ?? undefined;
+        const unread = url.searchParams.get("unread") === "1" ? true : undefined;
         if (sort !== undefined && sort !== "started" && sort !== "activity")
           return Response.json({ error: "invalid_sort" }, { status: 400 });
         if (order !== undefined && order !== "asc" && order !== "desc")
@@ -71,6 +72,7 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
           since,
           sort,
           order,
+          unread,
           limit: limit ? Number(limit) : undefined,
         });
         return Response.json({ sessions });
