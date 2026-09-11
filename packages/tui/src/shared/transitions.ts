@@ -51,12 +51,13 @@ export function detectNotifications(
   now: number,
 ): NotifyEvent[] {
   const out: NotifyEvent[] = [];
-  const seenThisTick = new Set<string>();
+  const eligibleThisTick = new Set<string>();
+  const presentThisTick = new Set<string>(rows.map((r) => r.session_id));
 
   for (const row of rows) {
     const trigger = triggerFor(row);
     if (!trigger) continue;
-    seenThisTick.add(row.session_id);
+    eligibleThisTick.add(row.session_id);
     if (!cfg.triggers.includes(trigger)) continue;
 
     const episodeKey = row.activity_ts ?? "";
@@ -81,17 +82,22 @@ export function detectNotifications(
     }
   }
 
-  // A session that stopped wanting attention drops its pending timer, so a later
-  // wait starts its debounce fresh rather than inheriting an old clock.
-  // Also prune fired entries so they're bounded by live sessions.
+  // Prune pending for sessions that stopped wanting attention (ineligible). A session
+  // that briefly flips to running is still present, so we only clean pending here.
   for (const id of [...state.pending.keys()]) {
-    if (!seenThisTick.has(id)) {
+    if (!eligibleThisTick.has(id)) {
       state.pending.delete(id);
+    }
+  }
+
+  // Prune fired for sessions absent from the feed entirely. Presence is independent
+  // of eligibility: a session can be running (not eligible) and still present (should
+  // keep its fired entry so flicker within the same episode does not re-notify).
+  for (const id of [...state.fired.keys()]) {
+    if (!presentThisTick.has(id)) {
       state.fired.delete(id);
     }
   }
-  for (const id of [...state.fired.keys()]) {
-    if (!seenThisTick.has(id)) state.fired.delete(id);
-  }
+
   return out;
 }

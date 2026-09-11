@@ -104,7 +104,7 @@ test("trigger flip within same activity_ts does not re-fire", () => {
   expect(prompt2).toEqual([]);
 });
 
-test("null activity_ts: leaving and returning fires again", () => {
+test("null activity_ts: while present, same episode does not re-fire", () => {
   const st = createDetectState();
   // Fire with null activity_ts
   const first = detectNotifications(
@@ -115,19 +115,19 @@ test("null activity_ts: leaving and returning fires again", () => {
   );
   expect(first.length).toBe(1);
 
-  // Session goes running (not eligible)
+  // Session goes running (not eligible, but still present)
   detectNotifications(st, [mkRow({ session_id: "s1", status: "running" })], CFG, 1001);
 
-  // Session returns to waiting with same null activity_ts
-  // Since it left waiting, fired entry for s1 should be pruned
-  // So this should fire again
+  // Session returns to waiting with same null activity_ts while still in feed
+  // fired entry for s1 is NOT pruned (session is present), so same episode
+  // does not re-fire. This is intentional: we choose silence over flicker spam.
   const second = detectNotifications(
     st,
     [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: null })],
     { ...CFG, delayMs: 0 },
     1002
   );
-  expect(second.length).toBe(1);
+  expect(second).toEqual([]);
 });
 
 test("continuously waiting with unchanged activity_ts fires exactly once", () => {
@@ -151,4 +151,104 @@ test("continuously waiting with unchanged activity_ts fires exactly once", () =>
     );
     expect(result).toEqual([]);
   }
+});
+
+test("same episode flicker: waiting(t1) → running → waiting(t1) fires once total", () => {
+  const st = createDetectState();
+  const tickDelayMs = 100;
+  let tick = 0;
+
+  // Fire once
+  const fire1 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: tickDelayMs },
+    tick
+  );
+  expect(fire1).toEqual([]);
+
+  // Advance past debounce delay
+  tick += tickDelayMs + 100;
+  const fire2 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: tickDelayMs },
+    tick
+  );
+  expect(fire2.length).toBe(1);
+
+  // Flicker: goes running
+  tick += 100;
+  const fire3 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "running" })],
+    CFG,
+    tick
+  );
+  expect(fire3).toEqual([]);
+
+  // Back to waiting with SAME activity_ts
+  tick += 100;
+  const fire4 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: tickDelayMs },
+    tick
+  );
+  // Must NOT fire: same episode, session still in feed
+  expect(fire4).toEqual([]);
+
+  // Flicker again
+  tick += 100;
+  const fire5 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "running" })],
+    CFG,
+    tick
+  );
+  expect(fire5).toEqual([]);
+
+  // Back to waiting again with same activity_ts
+  tick += 100;
+  const fire6 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: tickDelayMs },
+    tick
+  );
+  // Must NOT fire: same episode
+  expect(fire6).toEqual([]);
+
+  // Total fires should be exactly 1
+  const totalFires = [fire1, fire2, fire3, fire4, fire5, fire6].reduce((sum, f) => sum + f.length, 0);
+  expect(totalFires).toBe(1);
+});
+
+test("completely absent session returns and can fire same activity_ts again", () => {
+  const st = createDetectState();
+
+  // Session fires with activity_ts t1
+  const fire1 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: 0 },
+    1000
+  );
+  expect(fire1.length).toBe(1);
+  expect(st.fired.size).toBe(1);
+
+  // Session completely absent from feed (not even as running)
+  detectNotifications(st, [], CFG, 1001);
+  // fired entry should be pruned since session is absent
+  expect(st.fired.size).toBe(0);
+
+  // Session returns later with same activity_ts
+  // should fire again because the fired entry was pruned
+  const fire2 = detectNotifications(
+    st,
+    [mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1" })],
+    { ...CFG, delayMs: 0 },
+    1002
+  );
+  expect(fire2.length).toBe(1);
 });
