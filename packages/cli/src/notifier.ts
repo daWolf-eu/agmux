@@ -16,6 +16,7 @@ const AUTO_ORDER: NotifierKind[] = ["terminal-notifier", "osascript", "notify-se
 // is absent, not quietly given different behaviour.
 export function resolveNotifier(configured: string, which: Which): NotifierKind | null {
   if (configured === "auto") return AUTO_ORDER.find((b) => which(b)) ?? null;
+  if (configured.trim() === "") return null;
   if ((AUTO_ORDER as string[]).includes(configured)) {
     return which(configured) ? (configured as NotifierKind) : null;
   }
