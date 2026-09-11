@@ -17,6 +17,9 @@ import { attachCmd } from "../src/attach.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { runHubCmd } from "../src/hub-cmd.ts";
+import { statuslineCmd, staleMarker } from "../src/statusline-cmd.ts";
+import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
+import { discoverHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
 import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
@@ -77,6 +80,23 @@ async function main(): Promise<number> {
   // the ensureHubRunning gate below.
   if (verb === "hub") {
     return runHubCmd(argv.slice(1), { stateDir, hubBin, out: (s) => console.log(s) });
+  }
+
+  // `statusline` renders into tmux's status-format expansion; spawning a hub
+  // daemon as a side effect of painting a status bar is unacceptable, so it
+  // resolves the hub URL passively (env, else the port file) and handles
+  // "no hub" as a normal render state — never before the ensureHubRunning gate.
+  if (verb === "statusline") {
+    const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+    let config;
+    try { config = loadAttentionConfigFile(configPath); }
+    catch { config = loadAttentionConfig(""); }
+    const hubUrl = discoverHubUrl(process.env, stateDir);
+    if (!hubUrl) { console.log(staleMarker("hub down")); return 0; }
+    return statuslineCmd(
+      { hubUrl },
+      { fetchImpl: fetch, out: (s) => console.log(s), config },
+    );
   }
 
   // Hub required for every verb. `run` would also accept a still-spawning hub
