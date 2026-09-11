@@ -16,12 +16,15 @@ export interface NotifyEvent {
 export interface DetectState {
   /** session_id → { key, since } for a wait that has not yet fired. */
   pending: Map<string, { key: string; since: number; trigger: NotifyTrigger }>;
-  /** Dedup keys already fired during this daemon run. */
-  fired: Set<string>;
+  /** session_id -> the activity_ts of the episode we last notified about.
+   *  Bounded by live session count: pruned alongside `pending` when a session
+   *  stops being notify-eligible. Keyed on the attention EPISODE rather than the
+   *  trigger label, so a prompt->permission flip within one wait is still one wait. */
+  fired: Map<string, string>;
 }
 
 export function createDetectState(): DetectState {
-  return { pending: new Map(), fired: new Set() };
+  return { pending: new Map(), fired: new Map() };
 }
 
 // A session's "attention identity": the same wait keeps one key, so a repeated
@@ -56,13 +59,14 @@ export function detectNotifications(
     seenThisTick.add(row.session_id);
     if (!cfg.triggers.includes(trigger)) continue;
 
-    const key = dedupKey(row, trigger);
-    if (state.fired.has(key)) continue;
+    const episodeKey = row.activity_ts ?? "";
+    if (state.fired.get(row.session_id) === episodeKey) continue;
 
     // A terminal session is not "waiting" for anything — debouncing it would only
     // delay news that is already final.
     const immediate = trigger === "session_end" || cfg.delayMs === 0;
 
+    const key = dedupKey(row, trigger);
     const prev = state.pending.get(row.session_id);
     if (!prev || prev.key !== key) {
       state.pending.set(row.session_id, { key, since: now, trigger });
@@ -71,7 +75,7 @@ export function detectNotifications(
 
     const since = immediate ? now : state.pending.get(row.session_id)!.since;
     if (immediate || now - since >= cfg.delayMs) {
-      state.fired.add(key);
+      state.fired.set(row.session_id, episodeKey);
       state.pending.delete(row.session_id);
       out.push({ session_id: row.session_id, trigger, row });
     }
@@ -79,8 +83,15 @@ export function detectNotifications(
 
   // A session that stopped wanting attention drops its pending timer, so a later
   // wait starts its debounce fresh rather than inheriting an old clock.
+  // Also prune fired entries so they're bounded by live sessions.
   for (const id of [...state.pending.keys()]) {
-    if (!seenThisTick.has(id)) state.pending.delete(id);
+    if (!seenThisTick.has(id)) {
+      state.pending.delete(id);
+      state.fired.delete(id);
+    }
+  }
+  for (const id of [...state.fired.keys()]) {
+    if (!seenThisTick.has(id)) state.fired.delete(id);
   }
   return out;
 }
