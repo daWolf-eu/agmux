@@ -95,6 +95,12 @@ export interface SessionEndedPayload {
   reason: "normal" | "signal" | "pane_closed";
 }
 
+// Marks a session acknowledged by the user. "unseen" is expressed as a later
+// attention event, not as a delete — the log is append-only (foundation §14.3).
+export interface SessionSeenPayload {
+  source: "attach" | "dismiss";
+}
+
 export interface SessionLinkedPayload {
   native_session_id: string;
 }
@@ -175,6 +181,7 @@ export type SessionStartedEvent = EventEnvelope<SessionStartedPayload> & { kind:
 export type SessionHeartbeatEvent = EventEnvelope<SessionHeartbeatPayload> & { kind: "session.heartbeat" };
 export type SessionResumedEvent = EventEnvelope<SessionResumedPayload> & { kind: "session.resumed" };
 export type SessionEndedEvent = EventEnvelope<SessionEndedPayload> & { kind: "session.ended" };
+export type SessionSeenEvent = EventEnvelope<SessionSeenPayload> & { kind: "session.seen" };
 
 export type SessionLinkedEvent = EventEnvelope<SessionLinkedPayload> & { kind: "session.linked" };
 export type SessionRegisteredEvent = EventEnvelope<SessionRegisteredPayload> & { kind: "session.registered" };
@@ -194,6 +201,7 @@ export type KnownEvent =
   | SessionHeartbeatEvent
   | SessionResumedEvent
   | SessionEndedEvent
+  | SessionSeenEvent
   | SessionLinkedEvent
   | SessionRegisteredEvent
   | SessionLostEvent
