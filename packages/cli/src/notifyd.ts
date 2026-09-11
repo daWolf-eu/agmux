@@ -1,9 +1,38 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execFile } from "node:child_process";
 import type { SessionRow } from "@agmux/protocol";
-import { PollingSessionFeed, formatStatusLine } from "@agmux/tui";
+import { PollingSessionFeed, formatStatusLine, createDetectState, detectNotifications } from "@agmux/tui";
 import type { AttentionConfig } from "./attention-config.ts";
 import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
+import { dispatchNotification, type SinkDeps } from "./sinks.ts";
+
+// No shell involved (execFile, not exec), and `which` is a plain PATH scan —
+// no subprocess at all — so there is nothing here that can execute untrusted
+// input or invoke a shell.
+function whichSync(bin: string): boolean {
+  if (path.isAbsolute(bin)) {
+    try { fs.accessSync(bin, fs.constants.X_OK); return true; } catch { return false; }
+  }
+  const dirs = (process.env.PATH ?? "").split(path.delimiter);
+  for (const dir of dirs) {
+    if (!dir) continue;
+    try { fs.accessSync(path.join(dir, bin), fs.constants.X_OK); return true; } catch { /* keep looking */ }
+  }
+  return false;
+}
+
+function realRun(cmd: string, args: string[]): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, (err) => { if (err) reject(err); else resolve(0); });
+  });
+}
+
+function realCapture(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, (err, stdout) => { if (err) reject(err); else resolve(stdout); });
+  });
+}
 
 export interface AtomicFsDeps {
   mkdir: (dir: string) => void;
@@ -37,6 +66,7 @@ export interface NotifydDeps {
     onUpdate: (rows: SessionRow[]) => void, onError: (e: Error) => void) => () => void };
   onRows?: (rows: SessionRow[]) => void;   // sink hook; Task 12 attaches notifications here
   log?: (s: string) => void;
+  sinkDeps?: SinkDeps;   // test seam; defaults to real tmux/notifier shell-outs
 }
 
 export async function runNotifyd(
@@ -54,10 +84,26 @@ export async function runNotifyd(
 
   const beat = () => writeLineAtomic(heartbeatPath(file), new Date().toISOString(), deps.fs);
 
+  const log = deps.log ?? ((s: string) => { process.stderr.write(`${s}\n`); });
+  const sinkDeps: SinkDeps = deps.sinkDeps ?? { run: realRun, capture: realCapture, which: whichSync, log };
+  const detectState = createDetectState();
+  const notify = deps.config.notify;
+
   const unsubscribe = feed.subscribe(
     (rows) => {
       writeLineAtomic(file, formatStatusLine(rows, { show, max, format }), deps.fs);
       beat();
+      if (notify.enabled) {
+        const events = detectNotifications(
+          detectState, rows, { delayMs: notify.delayMs, triggers: notify.triggers }, Date.now(),
+        );
+        for (const ev of events) {
+          // dispatchNotification already swallows its own shell-out failures;
+          // this catch is belt-and-braces so a notification bug can never
+          // take the daemon down.
+          dispatchNotification(ev, notify, sinkDeps).catch((e) => log(`agmux: notify dispatch failed: ${e}`));
+        }
+      }
       deps.onRows?.(rows);
     },
     () => { writeLineAtomic(file, staleMarker("hub down"), deps.fs); beat(); },
