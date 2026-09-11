@@ -53,3 +53,12 @@ test("an unknown trigger or show mode is rejected by name", () => {
   expect(() => loadAttentionConfig(`[notify]\ntriggers = ["explode"]\n`)).toThrow(/explode/);
   expect(() => loadAttentionConfig(`[statusline]\nshow = "sideways"\n`)).toThrow(/sideways/);
 });
+
+test("statusline.max validates and throws on invalid values", () => {
+  expect(loadAttentionConfig("").statusline.max).toBe(6);
+  expect(loadAttentionConfig(`[statusline]\nmax = 3\n`).statusline.max).toBe(3);
+  expect(() => loadAttentionConfig(`[statusline]\nmax = "three"\n`)).toThrow(/three/);
+  expect(() => loadAttentionConfig(`[statusline]\nmax = 0\n`)).toThrow(/0/);
+  expect(() => loadAttentionConfig(`[statusline]\nmax = -1\n`)).toThrow(/-1/);
+  expect(() => loadAttentionConfig(`[statusline]\nmax = 2.5\n`)).toThrow(/2.5/);
+});
