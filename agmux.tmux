@@ -33,6 +33,31 @@ agmux_tmux_supports_status2() {
   printf 'no'
 }
 
+# Asks the binary for the resolved [statusline] config.toml defaults, once at
+# plugin load. `agmux statusline --print-config` is documented to always exit
+# 0 and print `enabled=...` / `position=...` lines, even with no config file,
+# an unreadable one, or one with an invalid value. We still guard the call:
+# under `set -euo pipefail` a failing command substitution (missing binary,
+# unexpected crash) would otherwise kill the user's whole tmux config load, so
+# a failure here must fall back to the hardcoded defaults instead of aborting.
+agmux_tmux_config_defaults() {
+  local bin="$1" out enabled="off" position="status2"
+  if out="$("$bin" statusline --print-config 2>/dev/null)"; then
+    local line key val
+    while IFS= read -r line; do
+      key="${line%%=*}"
+      val="${line#*=}"
+      case "$key" in
+        enabled) [ "$val" = "true" ] && enabled="on" || enabled="off" ;;
+        position) [ -n "$val" ] && position="$val" ;;
+      esac
+    done <<EOF
+$out
+EOF
+  fi
+  printf '%s\n%s\n' "$enabled" "$position"
+}
+
 agmux_tmux_statusline_target() {
   local requested="${1:-status2}" version="${2:-}"
   case "$requested" in
@@ -92,8 +117,24 @@ main() {
   mark_key="$(tmux_get "@agmux-mark-read-key" "u")"
   tmux bind-key "$mark_key" run-shell "'$bin' seen --pane '#{pane_id}'"
 
-  statusline="$(tmux_get "@agmux-statusline" "off")"
-  position="$(tmux_get "@agmux-statusline-position" "status2")"
+  # config.toml's [statusline] enabled/position are the defaults; an explicitly
+  # set @agmux-statusline / @agmux-statusline-position tmux option overrides
+  # them. tmux_get already returns "" only when unset (never when set to an
+  # empty string is meaningful here), so a plain default-substitution can't
+  # tell "unset" from "set to the same value as the default" — we ask tmux
+  # show-option directly instead, and only fall back to the config-derived
+  # default when the option is genuinely unset.
+  local cfg_defaults cfg_enabled cfg_position statusline_raw position_raw
+  cfg_defaults="$(agmux_tmux_config_defaults "$bin")"
+  cfg_enabled="${cfg_defaults%%$'\n'*}"
+  cfg_position="${cfg_defaults#*$'\n'}"
+
+  statusline_raw="$(tmux show-option -gqv "@agmux-statusline")"
+  if [ -n "$statusline_raw" ]; then statusline="$statusline_raw"; else statusline="$cfg_enabled"; fi
+
+  position_raw="$(tmux show-option -gqv "@agmux-statusline-position")"
+  if [ -n "$position_raw" ]; then position="$position_raw"; else position="$cfg_position"; fi
+
   interval="$(tmux_get "@agmux-statusline-interval" "2")"
   mouse="$(tmux_get "@agmux-statusline-mouse" "on")"
   if [ "$statusline" = "on" ]; then

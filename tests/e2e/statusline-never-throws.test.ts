@@ -41,6 +41,55 @@ async function runStatusline(home: string): Promise<{ exitCode: number; stdout: 
   return { exitCode: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString() };
 }
 
+async function runStatuslinePrintConfig(home: string): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  const env = { HOME: home, PATH: process.env.PATH ?? "" };
+  const r = await $`bun ${cliScript} statusline --print-config`.env(env).nothrow().quiet();
+  return { exitCode: r.exitCode, stdout: r.stdout.toString(), stderr: r.stderr.toString() };
+}
+
+// `agmux.tmux` calls `--print-config` once at tmux config load time, with no
+// hub and no retry path — a non-zero exit or thrown error here would abort
+// the user's whole tmux startup, so this must never fail regardless of what
+// is (or isn't) in config.toml.
+test("--print-config: no config file -> defaults, exit 0", async () => {
+  const home = makeHome();
+  const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("position=status2");
+  assertNoStackTrace(stderr);
+}, 15000);
+
+test("--print-config: configured values are printed", async () => {
+  const home = makeHome();
+  writeConfig(home, `[statusline]\nenabled = false\nposition = "status-right"\n`);
+  const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("enabled=false");
+  expect(stdout).toContain("position=status-right");
+  assertNoStackTrace(stderr);
+}, 15000);
+
+test("--print-config: syntactically invalid TOML -> defaults, exit 0", async () => {
+  const home = makeHome();
+  writeConfig(home, `[statusline\n`); // unterminated table header
+  const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("position=status2");
+  assertNoStackTrace(stderr);
+}, 15000);
+
+test("--print-config: invalid position value -> defaults, exit 0 (parser throw doesn't escape)", async () => {
+  const home = makeHome();
+  writeConfig(home, `[statusline]\nposition = "sideways"\n`);
+  const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
+  expect(exitCode).toBe(0);
+  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("position=status2");
+  assertNoStackTrace(stderr);
+}, 15000);
+
 test("bad config value + garbage hub.port -> marker, exit 0, no stack trace", async () => {
   const home = makeHome();
   writeConfig(home, `[statusline]\nmax = "three"\n`);

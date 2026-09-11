@@ -28,9 +28,11 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
   seen <id|prefix>|--pane <pane_id>
      marks a session read (session.seen); --pane resolves the tmux pane owning
      it and is silently a no-op if no open session owns that pane
-  statusline [--check]
+  statusline [--check|--print-config]
      render the tmux status line once and exit, reading from the hub;
-     --check instead reads notifyd's cache file and reports staleness
+     --check instead reads notifyd's cache file and reports staleness;
+     --print-config prints the resolved [statusline] config.toml defaults
+     (enabled=, position=) for agmux.tmux to use as fallbacks; never fails
   notifyd
      long-running daemon: writes the status-line cache file and fires
      debounced, focus-aware notifications; must be running for the tmux
