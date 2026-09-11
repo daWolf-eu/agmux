@@ -41,11 +41,16 @@ agmux_tmux_statusline_target() {
 }
 
 agmux_tmux_install_statusline() {
-  local bin="$1" position="$2" interval="$3" mouse="$4"
-  local cache="${XDG_RUNTIME_DIR:-$HOME/.cache}/agmux/statusline"
-  [ -n "${XDG_RUNTIME_DIR:-}" ] || cache="$HOME/.cache/agmux/statusline"
+  local bin="$1" position="$2" interval="$3" mouse="$4" version="${5:-}"
+  local cache
+  if [ -n "${XDG_RUNTIME_DIR:-}" ]; then
+    cache="${XDG_RUNTIME_DIR}/agmux/statusline"
+  else
+    cache="${HOME:-/tmp}/.cache/agmux/statusline"
+  fi
+  [ -z "$version" ] && version="$(tmux -V)"
   local target
-  target="$(agmux_tmux_statusline_target "$position" "$(tmux -V)")"
+  target="$(agmux_tmux_statusline_target "$position" "$version")"
   [ "$target" = "off" ] && return 0
   if [ "$target" = "status-right" ] && [ "$position" = "status2" ]; then
     tmux display-message "agmux: tmux $(tmux -V) has no multi-line status; using status-right"
@@ -61,7 +66,7 @@ agmux_tmux_install_statusline() {
     # An empty mouse_status_range means the click landed outside every range —
     # no-op rather than attaching to something arbitrary.
     tmux bind-key -T root MouseDown1Status run-shell \
-      "if [ -n '#{mouse_status_range}' ]; then $bin attach '#{mouse_status_range}'; fi"
+      "if [ -n '#{mouse_status_range}' ]; then '$bin' attach '#{mouse_status_range}'; fi"
   fi
 }
 
@@ -87,7 +92,7 @@ main() {
   interval="$(tmux_get "@agmux-statusline-interval" "2")"
   mouse="$(tmux_get "@agmux-statusline-mouse" "on")"
   if [ "$statusline" = "on" ]; then
-    agmux_tmux_install_statusline "$bin" "$position" "$interval" "$mouse"
+    agmux_tmux_install_statusline "$bin" "$position" "$interval" "$mouse" "$(tmux -V)"
   fi
 }
 
