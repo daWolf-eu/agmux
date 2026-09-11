@@ -16,7 +16,8 @@
     "@agmux/tui": "workspace:*",
     "@agmux/hub": "workspace:*",
     "@agmux/adapters": "workspace:*",
-    "@agmux/wrapper": "workspace:*"
+    "@agmux/wrapper": "workspace:*",
+    "smol-toml": "^1.3.0"
   },
   "devDependencies": {
     "@agmux/store": "workspace:*"
