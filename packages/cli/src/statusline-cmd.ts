@@ -14,10 +14,21 @@ export interface StatuslineCmdDeps {
 // Always exits 0: this runs inside tmux's status-format expansion, where a
 // non-zero exit or a thrown error just paints garbage into the user's status bar.
 export async function statuslineCmd(
-  opts: { hubUrl: string; check?: boolean },
+  opts: { hubUrl: string; check?: boolean; printConfig?: boolean },
   deps: StatuslineCmdDeps,
 ): Promise<number> {
   const { show, max, format, sort } = deps.config.statusline;
+  // --print-config lets agmux.tmux (the shell plugin) ask the binary for the
+  // resolved [statusline] config-file defaults at plugin load, so it can fall
+  // back to them when the user hasn't set the corresponding @agmux-* tmux
+  // option. Never touches the hub, and the caller (bin/agmux.ts) always hands
+  // us a config — falling back to the built-in defaults itself on any load
+  // error — so this branch can never throw.
+  if (opts.printConfig) {
+    deps.out(`enabled=${deps.config.statusline.enabled}`);
+    deps.out(`position=${deps.config.statusline.position}`);
+    return 0;
+  }
   // --check renders from the cache file rather than the hub, so tmux can show
   // that the daemon died instead of silently painting its last frozen line.
   if (opts.check) {

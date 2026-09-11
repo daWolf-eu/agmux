@@ -92,6 +92,7 @@ async function main(): Promise<number> {
   // "no hub" as a normal render state — never before the ensureHubRunning gate.
   if (verb === "statusline") {
     const check = argv.includes("--check");
+    const printConfig = argv.includes("--print-config");
     const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
     let config;
     try { config = loadAttentionConfigFile(configPath); }
@@ -101,6 +102,9 @@ async function main(): Promise<number> {
       env: process.env,
       readFile: (p: string) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } },
     };
+    // --print-config is for agmux.tmux at plugin load: resolved config-file
+    // defaults only, no hub involved, must never fail (see statusline-cmd.ts).
+    if (printConfig) return statuslineCmd({ hubUrl: "", printConfig: true }, deps);
     // --check reads the daemon's cache file and never needs a hub.
     if (check) return statuslineCmd({ hubUrl: "", check: true }, deps);
     const hubUrl = discoverHubUrl(process.env, stateDir);

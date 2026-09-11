@@ -66,6 +66,30 @@ test("--check reads the cache file directly, without touching the hub", async ()
   expect(printed).toBe("cached-line");
 });
 
+test("--print-config prints the resolved enabled/position as key=value lines", async () => {
+  const printed: string[] = [];
+  const code = await statuslineCmd(
+    { hubUrl: "", printConfig: true },
+    deps({
+      config: loadAttentionConfig(`[statusline]\nenabled = false\nposition = "status-right"\n`),
+      out: (s) => { printed.push(s); },
+      fetchImpl: (async () => { throw new Error("must not be called"); }) as unknown as typeof fetch,
+    }),
+  );
+  expect(code).toBe(0);
+  expect(printed).toEqual(["enabled=false", "position=status-right"]);
+});
+
+test("--print-config prints defaults for an empty config", async () => {
+  const printed: string[] = [];
+  const code = await statuslineCmd(
+    { hubUrl: "", printConfig: true },
+    deps({ config: loadAttentionConfig(""), out: (s) => { printed.push(s); } }),
+  );
+  expect(code).toBe(0);
+  expect(printed).toEqual(["enabled=true", "position=status2"]);
+});
+
 test("--check prints a stale marker when the heartbeat is missing or old", async () => {
   let printed = "";
   const code = await statuslineCmd(

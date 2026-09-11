@@ -115,6 +115,108 @@ test("with @agmux-statusline on and tmux < 3.3, uses status-right instead", asyn
   }
 });
 
+test("agmux_tmux_config_defaults falls back to hardcoded defaults when the binary is missing", async () => {
+  const out = await callFn("agmux_tmux_config_defaults", ["/no/such/agmux-binary"]);
+  expect(out).toBe("off\nstatus2");
+});
+
+test("agmux_tmux_config_defaults reads enabled/position from --print-config output", async () => {
+  const fakeBin = `${import.meta.dir}/../.tmp-fake-agmux-config`;
+  await Bun.write(fakeBin, "#!/bin/sh\necho 'enabled=true'\necho 'position=status-right'\n");
+  await Bun.spawn(["chmod", "+x", fakeBin]).exited;
+  try {
+    const out = await callFn("agmux_tmux_config_defaults", [fakeBin]);
+    expect(out).toBe("on\nstatus-right");
+  } finally {
+    await Bun.spawn(["rm", "-f", fakeBin]).exited;
+  }
+});
+
+test("config.toml position is used as the default when @agmux-statusline-position is unset", async () => {
+  const socket = `agmux-test-cfgpos-unset-${Date.now()}-${Math.random()}`;
+  const fakeBin = `${import.meta.dir}/../.tmp-fake-agmux-unset-${Date.now()}`;
+  try {
+    await Bun.write(fakeBin, "#!/bin/sh\necho 'enabled=true'\necho 'position=status-right'\n");
+    await Bun.spawn(["chmod", "+x", fakeBin]).exited;
+
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-bin", fakeBin]);
+    // @agmux-statusline-position deliberately left unset.
+
+    const script = `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      main
+    `;
+    await tmuxRunShell(socket, script);
+
+    const status = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
+    expect(status).toContain("cat");
+    expect(status).toContain("statusline");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+    await Bun.spawn(["rm", "-f", fakeBin]).exited;
+  }
+});
+
+test("an explicit @agmux-statusline-position tmux option overrides config.toml's value", async () => {
+  const socket = `agmux-test-cfgpos-override-${Date.now()}-${Math.random()}`;
+  const fakeBin = `${import.meta.dir}/../.tmp-fake-agmux-override-${Date.now()}`;
+  try {
+    // Fake binary's config says status-right, but the tmux option below says off.
+    await Bun.write(fakeBin, "#!/bin/sh\necho 'enabled=true'\necho 'position=status-right'\n");
+    await Bun.spawn(["chmod", "+x", fakeBin]).exited;
+
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-bin", fakeBin]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-statusline", "on"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-statusline-position", "off"]);
+
+    const script = `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      main
+    `;
+    await tmuxRunShell(socket, script);
+
+    // "off" wins over the config-file "status-right": neither status2 nor
+    // status-right get the agmux cache command installed.
+    const status = await tmuxCmd(socket, ["show-option", "-gv", "status"]);
+    expect(status).toBe("on");
+    const format1 = await tmuxCmd(socket, ["show-option", "-gv", "status-format[1]"]);
+    expect(format1).not.toContain("statusline");
+    const statusRight = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
+    expect(statusRight).not.toContain("statusline");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+    await Bun.spawn(["rm", "-f", fakeBin]).exited;
+  }
+});
+
+test("config.toml enabled=true turns the status line on even though @agmux-statusline defaults to off", async () => {
+  const socket = `agmux-test-cfgenabled-${Date.now()}-${Math.random()}`;
+  const fakeBin = `${import.meta.dir}/../.tmp-fake-agmux-enabled-${Date.now()}`;
+  try {
+    await Bun.write(fakeBin, "#!/bin/sh\necho 'enabled=true'\necho 'position=status-right'\n");
+    await Bun.spawn(["chmod", "+x", fakeBin]).exited;
+
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-bin", fakeBin]);
+    // @agmux-statusline deliberately left unset — config.toml's enabled=true should win.
+
+    const script = `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      main
+    `;
+    await tmuxRunShell(socket, script);
+
+    const statusRight = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
+    expect(statusRight).toContain("cat");
+    expect(statusRight).toContain("statusline");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+    await Bun.spawn(["rm", "-f", fakeBin]).exited;
+  }
+});
+
 test("main() binds @agmux-mark-read-key (default u) to a quoted-$bin seen --pane command", async () => {
   const socket = `agmux-test-markread-${Date.now()}-${Math.random()}`;
   try {
