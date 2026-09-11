@@ -9,6 +9,14 @@ export interface SinkDeps {
   capture: (cmd: string, args: string[]) => Promise<string>;
   which: (bin: string) => boolean;
   log: (s: string) => void;
+  // Caller-owned dedup state for "warn once" cases (missing/failing notifier),
+  // deliberately NOT module-level — mirrors DetectState in
+  // packages/tui/src/shared/transitions.ts, which is caller-owned for the same
+  // reason: module-level mutable state leaks across tests run in one process
+  // (bun test runs the whole suite in a single process) and gives no one a way
+  // to reset it. The daemon creates one Set for its lifetime; each test
+  // constructs its own fresh Set, so no test can inherit another's state.
+  warned: Set<string>;
 }
 
 // tmux knows which pane each attached client has active. It does NOT know whether
@@ -38,12 +46,6 @@ function describe(ev: NotifyEvent): string {
   return `${where} ${what}`;
 }
 
-// A missing notifier is a static fact about the machine, not per-event news:
-// warn about a given configured command once per process, never once per
-// event — repeating it on every fired notification would itself be the kind
-// of notification storm this pipeline exists to avoid.
-const warnedMissingNotifier = new Set<string>();
-
 export async function dispatchNotification(
   ev: NotifyEvent,
   cfg: NotifyConfig,
@@ -59,8 +61,13 @@ export async function dispatchNotification(
 
   const kind = resolveNotifier(cfg.command, deps.which);
   if (!kind) {
-    if (!warnedMissingNotifier.has(cfg.command)) {
-      warnedMissingNotifier.add(cfg.command);
+    // A missing notifier is a static fact about the machine, not per-event
+    // news: warn about a given configured command once per caller lifetime,
+    // never once per event — repeating it on every fired notification would
+    // itself be the kind of notification storm this pipeline exists to avoid.
+    const key = `missing:${cfg.command}`;
+    if (!deps.warned.has(key)) {
+      deps.warned.add(key);
       deps.log(`agmux: no notifier available (configured: ${cfg.command})`);
     }
     return;
@@ -74,6 +81,14 @@ export async function dispatchNotification(
     // banner was shown, so it is not evidence of delivery (spec §2).
     await deps.run(cmd, args);
   } catch {
-    deps.log(`agmux: notifier ${cmd} failed`);
+    // Same reasoning as the missing-notifier case above, keyed separately so
+    // the two can never collide: a notifier that breaks mid-run (e.g.
+    // uninstalled while the daemon is up) must not spam the log once per
+    // event forever.
+    const key = `failed:${cmd}`;
+    if (!deps.warned.has(key)) {
+      deps.warned.add(key);
+      deps.log(`agmux: notifier ${cmd} failed`);
+    }
   }
 }

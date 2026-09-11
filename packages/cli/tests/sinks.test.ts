@@ -29,6 +29,7 @@ function deps(over: Partial<SinkDeps> = {}): SinkDeps & { calls: string[][] } {
     capture: async () => "",
     which: () => true,
     log: () => {},
+    warned: new Set<string>(),
     ...over,
   } as SinkDeps & { calls: string[][] };
 }
@@ -77,6 +78,39 @@ test("no notifier available logs once and does not throw", async () => {
   const d = deps({ which: () => false });
   await dispatchNotification(ev, CFG, d);
   expect(d.calls.map((c) => c[0])).not.toContain("terminal-notifier");
+});
+
+test("an unresolvable notifier logs exactly once across many dispatches, and a fresh deps object logs again", async () => {
+  const logs: string[] = [];
+  const d = deps({ which: () => false, log: (s) => logs.push(s) });
+  for (let i = 0; i < 1000; i++) await dispatchNotification(ev, CFG, d);
+  expect(logs.length).toBe(1);
+  expect(d.calls.map((c) => c[0])).not.toContain("terminal-notifier");
+
+  // A second, independently constructed deps object (its own fresh `warned`
+  // Set) must log again — proving the dedup state is per-caller, not global.
+  // This is the regression fence for the module-level-Set order-dependence
+  // bug the reviewer found.
+  const logs2: string[] = [];
+  const d2 = deps({ which: () => false, log: (s) => logs2.push(s) });
+  await dispatchNotification(ev, CFG, d2);
+  expect(logs2.length).toBe(1);
+});
+
+test("a resolved notifier whose run always rejects logs exactly once across many dispatches, and never throws", async () => {
+  const logs: string[] = [];
+  const d = deps({
+    log: (s) => logs.push(s),
+    run: async (cmd) => {
+      if (cmd === "terminal-notifier") throw new Error("boom");
+      return 0;
+    },
+  });
+  for (let i = 0; i < 1000; i++) {
+    await expect(dispatchNotification(ev, CFG, d)).resolves.toBeUndefined();
+  }
+  const failureLogs = logs.filter((s) => s.includes("terminal-notifier failed"));
+  expect(failureLogs.length).toBe(1);
 });
 
 test("isPaneVisible compares the active pane of every attached client", async () => {
