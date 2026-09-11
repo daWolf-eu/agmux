@@ -45,6 +45,9 @@ export interface SessionRow {
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.
   turn_count?: number | null;
+  // Joined from the session_seen projection (see session_activity.attention_ts).
+  // true = an attention-worthy event is newer than the last session.seen.
+  unread?: boolean | null;
   // Joined from the session_activity projection (null/absent = nothing
   // observed). last_tool/_detail are only meaningful while status=running;
   // last_input_kind ("prompt" | "permission" | "confirm") while status=waiting.
