@@ -54,6 +54,12 @@ function oneOf<T extends string>(value: unknown, allowed: readonly T[], field: s
   throw new Error(`invalid ${field}: ${String(value)} (expected one of ${allowed.join(", ")})`);
 }
 
+function positiveInt(value: unknown, field: string, fallback: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  throw new Error(`invalid ${field}: ${String(value)} (expected a positive integer)`);
+}
+
 export function loadAttentionConfig(toml: string): AttentionConfig {
   const raw = (toml.trim() === "" ? {} : parseToml(toml)) as any;
   const n = (raw.notify ?? {}) as any;
@@ -84,7 +90,7 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
       enabled: s.enabled ?? true,
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
       show: oneOf(s.show, SHOW_MODES, "statusline.show", "all"),
-      max: typeof s.max === "number" ? s.max : 6,
+      max: positiveInt(s.max, "statusline.max", 6),
       format: s.format ?? "{glyph} {tmux_session}:{tmux_window}",
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),
     },
