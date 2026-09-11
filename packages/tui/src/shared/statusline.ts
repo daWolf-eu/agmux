@@ -16,8 +16,8 @@ export interface StatusLineOpts {
 export function abbreviate(s: string, max: number): string {
   if (s.length <= max) return s;
   if (max <= 1) return "…";
-  const tail = Math.ceil(max / 2);
-  const head = max - 2 - tail;
+  const head = Math.ceil((max - 1) / 2);
+  const tail = max - 1 - head;
   return s.slice(0, head) + "…" + (tail > 0 ? s.slice(s.length - tail) : "");
 }
 
@@ -46,13 +46,15 @@ function fieldValue(r: SessionRow, key: string, sessionWidth: number): string {
   }
 }
 
-// Substitute placeholders, then collapse separators orphaned by an empty field:
-// "{a}:{b}" with b empty must render "a", never "a:".
+// Substitute placeholders, collapsing separators only when their field is empty.
+// A separator is dropped only when ITS placeholder is empty; data is never rewritten.
+// "{a}:{b}" with b empty renders "a", never "a:". A project name like "foo/" is preserved.
 function renderFormat(r: SessionRow, format: string, sessionWidth: number): string {
-  const out = format.replace(/\{(\w+)\}/g, (_m, key: string) => fieldValue(r, key, sessionWidth));
-  return out
-    .replace(/[:/]+(?=\s|$)/g, "")
-    .replace(/(^|\s)[:/]+/g, "$1")
+  return format
+    .replace(/([:\/]?)\{(\w+)\}/g, (_m, sep: string, key: string) => {
+      const v = fieldValue(r, key, sessionWidth);
+      return v ? sep + v : "";
+    })
     .replace(/\s{2,}/g, " ")
     .trim();
 }
