@@ -94,13 +94,15 @@ export function makeActions(
     async copy(text: string): Promise<void> {
       await copyToClipboard(text);
     },
-    async markSeen(row: SessionRow, seen: boolean): Promise<void> {
-      // There is no "mark unread" event in the protocol — session.seen only
-      // carries source "attach" | "dismiss", and seen_ts is monotonic (see
-      // packages/store/src/project.ts). A session goes unread again only via a
-      // fresh attention event, so seen=false is a documented no-op here; this
-      // action can only ever move a row from unread to read.
-      if (!seen) return;
+    async markSeen(row: SessionRow): Promise<void> {
+      // One-way by design: there is no "mark unread" event in the protocol —
+      // session.seen only carries source "attach" | "dismiss", and seen_ts is
+      // monotonic (MAX upsert, see packages/store/src/project.ts) so that a
+      // queued event landing after a hub restart can't un-see a newer
+      // acknowledgement. A session goes unread again only via a fresh
+      // attention event (input.required / turn.ended / session.ended); this
+      // action can only ever move a row from unread to read. Do not add a
+      // toggle here without a new event kind and projection rule.
       await postSeen(row.session_id, "dismiss", {
         hubUrl, host: row.host,
         fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
