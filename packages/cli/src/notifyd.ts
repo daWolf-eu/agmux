@@ -85,8 +85,13 @@ export async function runNotifyd(
   const beat = () => writeLineAtomic(heartbeatPath(file), new Date().toISOString(), deps.fs);
 
   const log = deps.log ?? ((s: string) => { process.stderr.write(`${s}\n`); });
-  const sinkDeps: SinkDeps = deps.sinkDeps ?? { run: realRun, capture: realCapture, which: whichSync, log };
+  // Two independent pieces of dedup state, both caller-owned and created once
+  // for the daemon's lifetime, right next to each other: DetectState dedups
+  // which transitions have already fired, `warned` dedups which "notifier
+  // missing/failing" log lines have already been printed. Neither is
+  // module-level — see the comment on SinkDeps.warned in sinks.ts.
   const detectState = createDetectState();
+  const sinkDeps: SinkDeps = deps.sinkDeps ?? { run: realRun, capture: realCapture, which: whichSync, log, warned: new Set<string>() };
   const notify = deps.config.notify;
 
   const unsubscribe = feed.subscribe(
