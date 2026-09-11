@@ -56,7 +56,7 @@ function parseRaw(stdin: string): unknown {
 // to the hub's port file (<stateDir>/hub.port, written by the running hub). With
 // neither, return undefined and postOrQueue spools to disk for the next drain.
 // Best-effort and silent: a telemetry callback must never throw (spec §4.2).
-function discoverHubUrl(env: Record<string, string | undefined>, stateDir: string): string | undefined {
+export function discoverHubUrl(env: Record<string, string | undefined>, stateDir: string): string | undefined {
   const fromEnv = env[AGMUX_HUB_URL_ENV];
   if (fromEnv) return fromEnv;
   try {

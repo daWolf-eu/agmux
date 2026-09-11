@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
 
 export const NOTIFY_TRIGGERS = ["permission", "prompt", "turn_end", "session_end"] as const;
@@ -95,4 +96,12 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),
     },
   };
+}
+
+// Thin IO wrapper: reads the config file (missing file → "") and hands the raw
+// TOML text to the pure loadAttentionConfig above. Kept separate so the parser
+// stays pure and testable without touching the filesystem.
+export function loadAttentionConfigFile(configPath: string): AttentionConfig {
+  const toml = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
+  return loadAttentionConfig(toml);
 }
