@@ -43,9 +43,10 @@ The single source of truth for the running version is
   falling back to defaults on any missing/invalid config), and `agmux.tmux`
   calls it once at plugin load to use as the default when the corresponding
   `@agmux-*` tmux option is unset; an explicitly set tmux option still wins.
-  Note: `[statusline].enabled` defaults to `true`, so a user who never sets
-  `@agmux-statusline` will now see the status line by default — previously it
-  required `@agmux-statusline on` to appear at all.
+  `[statusline].enabled` defaults to `false`, so the status line stays opt-in:
+  with no config file and no tmux option set it stays off, exactly as before.
+  Set `[statusline] enabled = true` in `config.toml`, or `@agmux-statusline on`
+  in tmux, to turn it on.
 - Multiple tmux servers: sessions now record the tmux server socket
   (`tmux_socket`, parsed from `$TMUX`) alongside session/window/pane, and every
   tmux command (`attach`, `switch-client`, `inject`, `capture-pane`, placement,

@@ -87,7 +87,7 @@ test("--print-config prints defaults for an empty config", async () => {
     deps({ config: loadAttentionConfig(""), out: (s) => { printed.push(s); } }),
   );
   expect(code).toBe(0);
-  expect(printed).toEqual(["enabled=true", "position=status2"]);
+  expect(printed).toEqual(["enabled=false", "position=status2"]);
 });
 
 test("--check prints a stale marker when the heartbeat is missing or old", async () => {

@@ -55,7 +55,7 @@ test("--print-config: no config file -> defaults, exit 0", async () => {
   const home = makeHome();
   const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
   expect(exitCode).toBe(0);
-  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("enabled=false");
   expect(stdout).toContain("position=status2");
   assertNoStackTrace(stderr);
 }, 15000);
@@ -75,7 +75,7 @@ test("--print-config: syntactically invalid TOML -> defaults, exit 0", async () 
   writeConfig(home, `[statusline\n`); // unterminated table header
   const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
   expect(exitCode).toBe(0);
-  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("enabled=false");
   expect(stdout).toContain("position=status2");
   assertNoStackTrace(stderr);
 }, 15000);
@@ -85,7 +85,7 @@ test("--print-config: invalid position value -> defaults, exit 0 (parser throw d
   writeConfig(home, `[statusline]\nposition = "sideways"\n`);
   const { exitCode, stdout, stderr } = await runStatuslinePrintConfig(home);
   expect(exitCode).toBe(0);
-  expect(stdout).toContain("enabled=true");
+  expect(stdout).toContain("enabled=false");
   expect(stdout).toContain("position=status2");
   assertNoStackTrace(stderr);
 }, 15000);
