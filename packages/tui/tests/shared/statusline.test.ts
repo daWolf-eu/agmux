@@ -46,8 +46,27 @@ test("empty row list renders an empty string, not a stray separator", () => {
 });
 
 test("abbreviate truncates from the middle, keeping the suffix legible", () => {
-  expect(abbreviate("very-long-session-name-7", 12)).toBe("very…name-7");
+  expect(abbreviate("very-long-session-name-7", 12)).toBe("very-l…ame-7");
   expect(abbreviate("short", 12)).toBe("short");
+});
+
+test("never exceeds the width budget at any max", () => {
+  const s = "very-long-session-name-7";
+  for (let m = 1; m <= 20; m++) {
+    const result = abbreviate(s, m);
+    expect([...result].length).toBeLessThanOrEqual(m);
+  }
+});
+
+test("preserves data with trailing separators in renderFormat", () => {
+  const rows = [mkRow({ session_id: "a", project: "foo/", tmux_session: "work", tmux_window: null })];
+  const out1 = formatStatusLine(rows, { ...OPTS, format: "{agent_kind} {project}" });
+  expect(out1).toContain("foo/");
+  expect(out1).not.toContain("foo/ ");
+
+  const out2 = formatStatusLine(rows, { ...OPTS, format: "{glyph} {tmux_session}:{tmux_window}" });
+  expect(out2).toContain("● work");
+  expect(out2).not.toContain("work:");
 });
 
 test("format string honours other placeholders", () => {
