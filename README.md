@@ -205,22 +205,23 @@ Notes:
 - Exit code 0 from a notifier is never treated as proof a human saw anything
   (`osascript` returns 0 whether or not a banner was shown) — agmux does not retry
   and does not claim delivery.
-- **`[statusline].enabled` and `[statusline].position` in `config.toml` are the
-  defaults; the `@agmux-statusline` / `@agmux-statusline-position` tmux options
-  are overrides.** At plugin load, `agmux.tmux` runs `agmux statusline
-  --print-config` once to read the resolved config-file values and uses them
-  wherever the corresponding tmux option is left unset; setting the tmux option
-  explicitly always wins. Note that `[statusline].enabled` defaults to `true`,
-  so if you leave `@agmux-statusline` unset the status line now turns on by
-  default (a change from the previous opt-in-only behavior) — set
-  `[statusline] enabled = false` or `@agmux-statusline off` to keep it off.
+- **The status line is opt-in.** `[statusline].enabled` and `[statusline].position`
+  in `config.toml` are the defaults; the `@agmux-statusline` /
+  `@agmux-statusline-position` tmux options are overrides. At plugin load,
+  `agmux.tmux` runs `agmux statusline --print-config` once to read the
+  resolved config-file values and uses them wherever the corresponding tmux
+  option is left unset; setting the tmux option explicitly always wins.
+  `[statusline].enabled` defaults to `false`, so with no config file and no
+  tmux option set, the status line stays off — enable it with
+  `[statusline] enabled = true` in `config.toml`, or `set -g @agmux-statusline on`
+  in tmux.
 
 `agmux.tmux` options for the status line and mark-read key (set before the `run` line,
 alongside the options in [tmux plugin (TPM)](#tmux-plugin-tpm) below):
 
 | Option                       | Default   | Meaning                                                      |
 | ---------------------------- | --------- | -------------------------------------------------------------|
-| `@agmux-statusline`          | `[statusline].enabled` from `config.toml` (default `true`) | `on`/`off` overrides config.toml; changes your status bar |
+| `@agmux-statusline`          | `[statusline].enabled` from `config.toml` (default `false`) | `on`/`off` overrides config.toml; opt-in, changes your status bar |
 | `@agmux-statusline-position` | `[statusline].position` from `config.toml` (default `status2`) | `status2` or `status-right`; overrides config.toml |
 | `@agmux-statusline-interval` | `2`       | sets tmux's `status-interval`                                |
 | `@agmux-statusline-mouse`    | `on`      | click a status-line entry to attach; opt-out because it installs a root-table `MouseDown1Status` binding |

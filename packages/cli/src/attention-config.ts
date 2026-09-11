@@ -88,7 +88,7 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
       suppressWhenVisible: n.suppress_when_visible ?? true,
     },
     statusline: {
-      enabled: s.enabled ?? true,
+      enabled: s.enabled ?? false,
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
       show: oneOf(s.show, SHOW_MODES, "statusline.show", "all"),
       max: positiveInt(s.max, "statusline.max", 6),
