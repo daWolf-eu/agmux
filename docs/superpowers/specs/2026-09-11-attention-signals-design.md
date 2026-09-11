@@ -101,9 +101,19 @@ Two paths, per the approved semantics:
 
 1. **Attaching.** `agmux attach` (and the dash's attach action) appends `session.seen`
    for the target session before handing over the terminal.
-2. **Explicit dismissal.** A key in `dash` marks the highlighted session read, and a
-   second key marks it unread again. This allows triage of a list without visiting each
-   session, and recovery from an attach that was too brief to absorb anything.
+2. **Explicit dismissal.** A key in `dash` (`u`) marks the highlighted session read.
+   This allows triage of a list without visiting each session.
+
+   Mark-unread was deliberately dropped, despite being in the original plan. `seen_ts`
+   is written by a `MAX` upsert (monotonic), specifically so that a `session.seen`
+   event arriving late — e.g. queued to disk while the hub was down, then flushed after
+   restart — can never un-see an acknowledgement that is newer than it. A toggle-back-
+   to-unread action is incompatible with that guarantee: it would need a new event kind
+   (there is no "mark unread" event in the protocol) plus new projection rules to
+   arbitrate ordering against the monotonic `seen_ts`, and nobody has designed those. So
+   `u` only ever moves a session from unread to read; a session returns to unread only
+   the ordinary way, via its next attention event (`input.required` / `turn.ended` /
+   `session.ended`). Do not re-add a toggle without solving the ordering problem above.
 
 Nothing else clears an unread. In particular, a session appearing in the status line
 does **not** mark it seen — an ambient surface you may not have looked at cannot be
@@ -225,11 +235,18 @@ Notes on specific keys:
   (`confirm` is folded into `permission`); `turn_end` is `turn.ended`; `session_end`
   covers `session.ended` and the `lost` status.
 - **`format`** substitutes `{glyph}`, `{tmux_session}`, `{tmux_window}`, `{tmux_pane}`,
-  `{project}`, `{agent_kind}`, `{status}`, `{session_id}` (short form), `{last_tool}`,
-  and `{age}` (relative time via the existing `reltime` helper). Null fields render
-  empty, and the surrounding separator collapses rather than leaving a dangling `:` or
-  `/`. `{tmux_session}` is abbreviated to fit `max` entries on one line — truncated from
-  the middle, which keeps a numeric or branch-like suffix legible.
+  `{project}`, `{agent_kind}`, `{status}`, `{session_id}` (short form), and
+  `{last_tool}`. (An `{age}` field, relative time via the existing `reltime` helper, was
+  planned here but was not implemented — `formatStatusLine` in
+  `packages/tui/src/shared/statusline.ts` has no `age` case, so as of this writing
+  `{age}` renders empty like any other unrecognised key. Add it there before
+  documenting it as supported.) Null fields render empty, and the surrounding separator
+  collapses rather than leaving a dangling `:` or `/`. An unrecognised placeholder
+  behaves the same way — it renders empty and its separator collapses — it is not
+  passed through literally (contrast the `notify.command` custom-notifier placeholders
+  in `packages/cli/src/notifier.ts`, which pass an unrecognised `{token}` through
+  unchanged). `{tmux_session}` is abbreviated to fit `max` entries on one line —
+  truncated from the middle, which keeps a numeric or branch-like suffix legible.
 
   The default is `{glyph} {tmux_session}:{tmux_window}` because the status line's job is
   to let you *identify which session this is and go there*, and the tmux coordinates are
