@@ -114,3 +114,49 @@ test("with @agmux-statusline on and tmux < 3.3, uses status-right instead", asyn
     await tmuxCmd(socket, ["kill-server"]);
   }
 });
+
+test("main() binds @agmux-mark-read-key (default u) to a quoted-$bin seen --pane command", async () => {
+  const socket = `agmux-test-markread-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+
+    const script = `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      main
+    `;
+    await tmuxRunShell(socket, script);
+
+    const binding = await tmuxCmd(socket, ["list-keys", "-T", "prefix", "u"]);
+    expect(binding).toContain("run-shell");
+    expect(binding).toContain("seen --pane");
+    // A previous review found an unquoted $bin breaks for binary paths with
+    // spaces — assert the bound command quotes the binary.
+    expect(binding).toContain("'agmux' seen --pane");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("@agmux-mark-read-key overrides the default binding key and honors a custom @agmux-bin", async () => {
+  const socket = `agmux-test-markread-custom-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-mark-read-key", "M"]);
+    await tmuxCmd(socket, ["set-option", "-g", "@agmux-bin", "/opt/my bin/agmux"]);
+
+    const script = `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      main
+    `;
+    await tmuxRunShell(socket, script);
+
+    const defaultBinding = await tmuxCmd(socket, ["list-keys", "-T", "prefix", "u"]);
+    expect(defaultBinding).not.toContain("seen --pane");
+
+    const binding = await tmuxCmd(socket, ["list-keys", "-T", "prefix", "M"]);
+    expect(binding).toContain("seen --pane");
+    expect(binding).toContain("'/opt/my bin/agmux' seen --pane");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});

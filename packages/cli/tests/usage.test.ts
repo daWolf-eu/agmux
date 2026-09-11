@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { HELP_TEXT } from "../src/usage.ts";
 
 test("HELP_TEXT lists every user-facing verb", () => {
-  for (const verb of ["run", "ls", "watch", "dash", "attach", "kill", "inspect", "adapter", "hub"]) {
+  for (const verb of ["run", "ls", "watch", "dash", "attach", "seen", "kill", "inspect", "adapter", "hub"]) {
     expect(HELP_TEXT).toContain(`\n  ${verb} `);
   }
 });

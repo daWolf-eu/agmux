@@ -8,6 +8,8 @@
 #   @agmux-popup-width   popup width  (default: 80%)
 #   @agmux-popup-height  popup height (default: 80%)
 #   @agmux-dash-args     extra args appended to `agmux dash --popup`
+#   @agmux-mark-read-key key under the prefix table that marks the session
+#                        owning the current pane read (default: u)
 set -euo pipefail
 
 tmux_get() {
@@ -71,7 +73,7 @@ agmux_tmux_install_statusline() {
 }
 
 main() {
-  local key bin width height extra
+  local key bin width height extra mark_key
   key="$(tmux_get "@agmux-key" "g")"
   bin="$(tmux_get "@agmux-bin" "agmux")"
   width="$(tmux_get "@agmux-popup-width" "80%")"
@@ -86,6 +88,9 @@ main() {
   fi
 
   tmux bind-key "$key" display-popup -E -w "$width" -h "$height" "$bin dash --popup${extra:+ $extra}"
+
+  mark_key="$(tmux_get "@agmux-mark-read-key" "u")"
+  tmux bind-key "$mark_key" run-shell "'$bin' seen --pane '#{pane_id}'"
 
   statusline="$(tmux_get "@agmux-statusline" "off")"
   position="$(tmux_get "@agmux-statusline-position" "status2")"

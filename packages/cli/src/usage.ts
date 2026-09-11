@@ -25,6 +25,9 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      each activity group (f) polls on its own: open 50 rows/1s, closed+all 1000/10s
      ([dash], [dash.open], [dash.closed], [dash.all] in config; -n/-i override all)
   attach <id|prefix>
+  seen <id|prefix>|--pane <pane_id>
+     marks a session read (session.seen); --pane resolves the tmux pane owning
+     it and is silently a no-op if no open session owns that pane
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
   adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]
