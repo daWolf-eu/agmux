@@ -115,7 +115,8 @@ status = "open"     # active | open | closed | comma-separated statuses
 ```
 
 `dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `/` filter · `tab` preview tab ·
-`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field · `?` help · `q` quit.
+`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field ·
+`u` mark read · `?` help · `q` quit.
 Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `limit`, `status`, `sort`.
 
 Each activity group (`f` cycles `open` → `closed` → `all`) runs its own hub query, so
@@ -135,6 +136,100 @@ interval = 30
 ```
 
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
+
+### Attention signals
+
+`agmux notifyd` is a long-running daemon that watches sessions and drives two
+surfaces: an always-visible tmux status line, and debounced notifications when a
+session needs you. Start it once (e.g. from `~/.tmux.conf` or your shell profile):
+
+```
+agmux notifyd &
+```
+
+Configure it under `[notify]` and `[statusline]` in `~/.config/agmux/config.toml`.
+All keys are optional; these are the defaults:
+
+```toml
+[notify]
+enabled        = true
+delay          = "5s"      # dwell before notifying; accepts "5s"/"2m"/a bare number
+                            # of seconds. Unparseable values are a startup error, not
+                            # a silent fallback to 0 (which would disable the debounce
+                            # without telling anyone).
+triggers       = ["permission", "prompt", "turn_end", "session_end"]
+sound          = true
+sound_name     = "Ping"    # macOS sound name; per-trigger override below
+command        = "auto"    # auto | terminal-notifier | osascript | notify-send | <custom>
+tmux_message   = true      # the in-tmux display-message toast
+suppress_when_visible = true
+
+[notify.sounds]            # optional per-trigger overrides, e.g.:
+# permission  = "Sosumi"
+# session_end = "Hero"
+
+[statusline]
+enabled  = true
+position = "status2"       # status2 | status-right | off
+show     = "all"           # all | unread | waiting
+max      = 6               # max sessions rendered
+format   = "{glyph} {tmux_session}:{tmux_window}"
+sort     = "activity"      # started | activity
+```
+
+Notes:
+
+- **`command = "auto"`** resolves at runtime, in order: `terminal-notifier`, then
+  `osascript`, then `notify-send` — the first one found on `PATH` wins. Naming a
+  notifier explicitly is exact, not a preference: if you set `command = "osascript"`
+  and it isn't installed, notifications resolve to nothing rather than silently
+  falling back to another notifier.
+- **A custom `command`** is split on whitespace and run directly (no shell), with
+  these placeholders substituted per token: `{title}`, `{body}`, `{session_id}`,
+  `{sound}`. A placeholder not in that list is passed through unchanged — this is an
+  intentional escape hatch, not an error — and a placeholder whose value is null
+  (e.g. `{sound}` when `sound = false`) substitutes to an empty string.
+- **Focus suppression is asymmetric, on purpose.** A visible pane (the session's
+  `tmux_pane` is the active pane of an attached client) suppresses the in-tmux
+  `display-message` toast, because you're already looking at it. It does **not**
+  suppress the OS notification: tmux can tell which pane is active, but it cannot
+  tell whether the terminal emulator itself has OS focus — a pane can be "active"
+  while the terminal sits behind another window. The OS notification is exactly the
+  signal that should still fire when you've tabbed away, so it always fires
+  regardless of pane visibility.
+- **`agmux notifyd` must be running for the status line to update.** `status-format`
+  (or `status-right`) only `cat`s a cache file the daemon writes once per poll —
+  it does not invoke `agmux` itself. Without the daemon running, the line goes
+  stale; `agmux statusline --check` reports staleness explicitly rather than
+  silently showing a frozen line.
+- Exit code 0 from a notifier is never treated as proof a human saw anything
+  (`osascript` returns 0 whether or not a banner was shown) — agmux does not retry
+  and does not claim delivery.
+- **`[statusline].enabled` and `[statusline].position` in `config.toml` are parsed
+  and validated but not currently read by any code path** — as of this writing,
+  setting either has no effect on what `agmux notifyd`/`agmux statusline` render.
+  The line's position (`status2` / `status-right` / off) is controlled separately,
+  by the tmux plugin options below (`@agmux-statusline`, `@agmux-statusline-position`)
+  — the TOML config and the plugin options are two different surfaces today, and only
+  the plugin one currently does anything for position/on-off. To turn the line off,
+  don't set `@agmux-statusline on`, or don't run `agmux notifyd`.
+
+`agmux.tmux` options for the status line and mark-read key (set before the `run` line,
+alongside the options in [tmux plugin (TPM)](#tmux-plugin-tpm) below):
+
+| Option                       | Default   | Meaning                                                      |
+| ---------------------------- | --------- | -------------------------------------------------------------|
+| `@agmux-statusline`          | `off`     | `on` enables the second status line (opt-in: changes your status bar) |
+| `@agmux-statusline-position` | `status2` | `status2` or `status-right`                                  |
+| `@agmux-statusline-interval` | `2`       | sets tmux's `status-interval`                                |
+| `@agmux-statusline-mouse`    | `on`      | click a status-line entry to attach; opt-out because it installs a root-table `MouseDown1Status` binding |
+| `@agmux-mark-read-key`       | `u`       | prefix key that marks the session owning the current pane read (`agmux seen --pane`) |
+
+Multi-line status needs tmux ≥ 3.3. On 3.2 the status line falls back to
+`status-right` automatically — the documented tmux floor stays at 3.2.
+
+`agmux notifyd` must be running for the status line to update; `status-format`
+only reads a cache file the daemon writes.
 
 ## tmux plugin (TPM)
 

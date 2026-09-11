@@ -11,6 +11,13 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
+- Always-visible tmux status line of live agent sessions (`agmux notifyd`,
+  `agmux statusline`, `@agmux-statusline` plugin options). Falls back to
+  `status-right` below tmux 3.3.
+- Debounced, focus-aware notifications when a session needs input or finishes,
+  via `terminal-notifier`, `osascript`, `notify-send`, or a custom command.
+- Read/unread tracking: `session.seen` events, the `session_seen` projection,
+  `agmux seen`, `?unread=1`, and a dash dismiss key (`u`).
 - `run --headless`: a fourth placement that runs `--prompt`/`--prompt-file` as one
   non-interactive turn — no tmux, no PTY, the agent's stdout streamed through and
   its exit code returned, so it composes with pipes and redirection
