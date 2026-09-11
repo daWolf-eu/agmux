@@ -95,6 +95,12 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "session.linked: native_session_id missing" };
       return { ok: true };
     }
+    case "session.seen": {
+      const p = payload as any;
+      if (p?.source !== "attach" && p?.source !== "dismiss")
+        return { ok: false, error: "session.seen: source must be 'attach' or 'dismiss'" };
+      return { ok: true };
+    }
     case "turn.started":
     case "turn.ended":
     case "input.received":
