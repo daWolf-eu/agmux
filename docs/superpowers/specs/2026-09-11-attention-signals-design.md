@@ -185,7 +185,7 @@ convention. All keys optional; the defaults below apply when absent.
 ```toml
 [notify]
 enabled        = true
-delay          = "20s"     # dwell in `waiting` before notifying; 0 disables debounce
+delay          = "5s"      # dwell in `waiting` before notifying; 0 disables debounce
 triggers       = ["permission", "prompt", "turn_end", "session_end"]
 sound          = true
 sound_name     = "Ping"    # macOS sound; per-trigger override below
@@ -200,9 +200,9 @@ session_end = "Hero"
 [statusline]
 enabled  = true
 position = "status2"       # status2 | status-right | off
-show     = "all"           # all | unread | waiting (default becomes "unread" in phase 2)
+show     = "all"           # all | unread | waiting
 max      = 6               # max sessions rendered; overflow collapses to a "+N" chip
-format   = "{glyph} {project}/{profile}"
+format   = "{glyph} {tmux_session}:{tmux_window}"
 sort     = "activity"      # reuses the existing ls sort vocabulary
 ```
 
@@ -212,21 +212,37 @@ Notes on specific keys:
   identity, and the only path that can open the blocked session on click), then
   `osascript`, then `notify-send`. A custom string is run as-is with substitution
   variables, which is what makes non-macOS and unusual setups work without a code change.
-- **`show`** defaults to `all` in phase 1 and changes to `unread` in phase 2, once the
-  projection exists to support it. `all` is the always-visible-everything mode;
+- **`show`** defaults to `all`, which is the always-visible-everything mode and the
+  original motivation for the status line — seeing every running agent without asking.
+  `unread` narrows it to sessions that want you;
   `waiting` shows only currently-blocked sessions and ignores unread entirely, for users
   who do not want the read/unread concept at all.
-- **`delay`** accepts a duration string (`"20s"`, `"2m"`) or a bare integer read as
+- **`delay`** accepts a duration string (`"5s"`, `"2m"`) or a bare integer read as
   seconds. It is parsed once at config load; an unparseable value is a startup error,
   not a silent fallback to zero, which would turn the debounce off without telling anyone.
 - **`triggers`** selects which transitions notify, and maps to already-emitted events:
   `permission` and `prompt` are `input.required` discriminated by `last_input_kind`
   (`confirm` is folded into `permission`); `turn_end` is `turn.ended`; `session_end`
   covers `session.ended` and the `lost` status.
-- **`format`** substitutes `{glyph}`, `{project}`, `{profile}`, `{agent_kind}`,
-  `{status}`, `{session_id}` (short form), `{last_tool}`, and `{age}` (relative time via
-  the existing `reltime` helper). Null fields render empty, and the surrounding
-  separator collapses rather than leaving a dangling `/`.
+- **`format`** substitutes `{glyph}`, `{tmux_session}`, `{tmux_window}`, `{tmux_pane}`,
+  `{project}`, `{agent_kind}`, `{status}`, `{session_id}` (short form), `{last_tool}`,
+  and `{age}` (relative time via the existing `reltime` helper). Null fields render
+  empty, and the surrounding separator collapses rather than leaving a dangling `:` or
+  `/`. `{tmux_session}` is abbreviated to fit `max` entries on one line — truncated from
+  the middle, which keeps a numeric or branch-like suffix legible.
+
+  The default is `{glyph} {tmux_session}:{tmux_window}` because the status line's job is
+  to let you *identify which session this is and go there*, and the tmux coordinates are
+  the only fields that reliably do that today. `profile` is deliberately excluded: it
+  names how a session was launched, not which conversation it is, so several concurrent
+  sessions routinely share one profile and the line stops being discriminating.
+
+  This is the weakest part of the design, and it is a data problem rather than a
+  formatting one — agmux has no human-meaningful session label yet. The natural fix is a
+  session **title**, sourced per agent (some agents name their sessions; others could
+  have one derived from the first exchange) and carried as an additive event. That is out
+  of scope here, but the format vocabulary is the seam it would plug into: adding
+  `{title}` later is a new substitution and a new default string, not a redesign.
 - **`sound`** is separate from whether a banner appears, because the spike showed they
   are independently controllable and sound is the channel that works when nothing is on
   screen.
@@ -241,7 +257,7 @@ Notes on specific keys:
 | `@agmux-statusline-position` | `status2` | `status2` or `status-right`. |
 | `@agmux-statusline-interval` | `2` | Sets `status-interval`. |
 | `@agmux-mark-read-key` | `u` | Prefix key to mark the current pane's session read. |
-| `@agmux-statusline-mouse` | `off` | `on` makes status-line entries clickable (attach on click). Off until verified — see §12. |
+| `@agmux-statusline-mouse` | `on` | Makes status-line entries clickable (attach on click). Opt-out, because it installs a root-table `MouseDown1Status` binding that can collide with a user's own mouse bindings. |
 
 Behaviour:
 
@@ -250,10 +266,12 @@ Behaviour:
 - The plugin **never** enables `allow-passthrough` or any other global option the user
   did not ask for. (The spike found passthrough irrelevant anyway, since the OSC path is
   not shipping.)
-- Clickable tabs — `#[range=user|<session-id>]` with a `MouseDown1Status` binding
-  dispatching to `agmux attach` — are **unverified**. tmux accepts the binding, but no
-  end-to-end mouse test has been run. This ships behind `@agmux-statusline-mouse` (default
-  `off`) until verified interactively.
+- Clickable tabs use `#[range=user|<session-id>]` with a `MouseDown1Status` binding
+  dispatching to `agmux attach`. tmux accepts the binding and the mechanism is
+  documented; it is built as designed and confirmed during manual QA rather than gated
+  behind a flag. The one thing implementation must not assume is that a click always
+  resolves — `#{mouse_status_range}` is empty when the click lands outside any range, and
+  that case must no-op silently rather than attaching to something arbitrary.
 
 ## 9. Error handling
 
@@ -289,29 +307,35 @@ Following the repo's existing test layout (`packages/*/tests`, `bun test`):
 
 ## 11. Build order
 
-Each phase is independently useful and independently shippable.
+**This ships as one feature.** The stages below are an implementation and commit
+sequence on `feat/attention-signals`, not separate releases — the branch merges once,
+with the whole feature present. The ordering exists because each stage is independently
+*testable* and leaves the tree green, which keeps the commit history readable and
+bisectable; it is not an invitation to stop after stage 1.
 
-1. **Status line, `show = "all"`.** Projection and unread not yet involved. Daemon,
-   formatter, cache file, `agmux statusline`, plugin options. Delivers the
-   always-visible dash on its own, and is the phase with the most value per unit of risk.
+1. **Status line.** Daemon, formatter, cache file, `agmux statusline`, plugin options,
+   `status-right` fallback. `show` supports `all` and `waiting`; `unread` arrives with
+   stage 2. Delivers the always-visible dash and carries the most value per unit of risk.
 2. **The unread model.** `session.seen` event, `session_seen` projection, schema v6,
    `unread` on `SessionRow`, `?unread=1`, `agmux seen`, attach integration, dash keys.
    Enables `show = "unread"`.
 3. **Notifications.** Transition detection, debounce, focus suppression, the
    `display-message` toast, the pluggable notifier with runtime detection, sound.
-4. **Mouse and polish.** Clickable tabs behind their flag once verified interactively;
-   `terminal-notifier` click-to-attach; overflow chip; staleness marker.
+4. **Mouse and polish.** Clickable status entries, `terminal-notifier` click-to-attach,
+   overflow chip, staleness marker.
 
-## 12. Open questions
+## 12. Decisions and known limits
 
-Carried forward from the spike; none block phase 1.
-
-- **Click-to-attach is unverified twice over** — neither the status-line mouse binding
-  nor `terminal-notifier`'s click action has been tested end to end, and
-  `terminal-notifier` is not installed on the target machine. Both stay behind flags
-  until a real interactive check.
-- **The tmux version floor.** The README advertises tmux ≥ 3.2; multi-line status needs
-  ≥ 3.3. Either raise the documented floor or rely on the `status-right` fallback. This
-  is a docs decision, not a code one.
-- **Terminal OS-focus is not knowable from tmux.** Documented as a deliberate asymmetry
-  in §6 rather than worked around.
+- **The tmux version floor stays at 3.2.** Multi-line status needs 3.3, but the only
+  consequence below it is the `status-right` fallback, which is a graceful downgrade
+  rather than a broken feature. The README is left as-is; no floor bump.
+- **Click-to-attach is built as designed, verified manually.** Neither the status-line
+  mouse binding nor `terminal-notifier`'s click action has an end-to-end test, and
+  `terminal-notifier` is not installed on the target machine. Both are implemented on the
+  assumption they behave as documented and confirmed during manual QA; a failure comes
+  back as a fix, not as a blocked stage.
+- **Terminal OS-focus is not knowable from tmux.** A deliberate asymmetry, described in
+  §6: pane-active suppresses the tmux toast but never the OS notification.
+- **Sessions have no human-meaningful label.** The status line falls back to tmux
+  coordinates. A session `title` is the real fix and is out of scope; §7 records the seam
+  it plugs into.
