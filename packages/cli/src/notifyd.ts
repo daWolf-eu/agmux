@@ -3,7 +3,7 @@ import * as path from "node:path";
 import type { SessionRow } from "@agmux/protocol";
 import { PollingSessionFeed, formatStatusLine } from "@agmux/tui";
 import type { AttentionConfig } from "./attention-config.ts";
-import { cachePath, staleMarker } from "./statusline-cmd.ts";
+import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
 
 export interface AtomicFsDeps {
   mkdir: (dir: string) => void;
@@ -29,21 +29,6 @@ export function writeLineAtomic(file: string, text: string, deps: AtomicFsDeps =
   } catch { /* best-effort */ }
 }
 
-export function heartbeatPath(file: string): string {
-  return `${file}.heartbeat`;
-}
-
-// A stale heartbeat means the daemon died while its last rendered line stayed on
-// disk — without this, tmux would keep painting confident, frozen state. Ten
-// missed ticks is the threshold: generous enough to survive a slow poll, short
-// enough to notice a dead daemon.
-export function isStale(heartbeat: string | null, now: number, intervalMs: number): boolean {
-  if (!heartbeat) return true;
-  const t = Date.parse(heartbeat);
-  if (Number.isNaN(t)) return true;
-  return now - t > Math.max(intervalMs * 10, 10000);
-}
-
 export interface NotifydDeps {
   env: Record<string, string | undefined>;
   config: AttentionConfig;
@@ -55,16 +40,17 @@ export interface NotifydDeps {
 }
 
 export async function runNotifyd(
-  opts: { hubUrl: string; intervalMs?: number },
+  opts: { hubUrl: string; intervalMs?: number; stop?: AbortSignal },
   deps: NotifydDeps,
 ): Promise<number> {
   const file = cachePath(deps.env);
   const { show, max, format, sort } = deps.config.statusline;
   const query = new URLSearchParams({ status: "open", sort, order: "desc" });
+  const intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
   const feed = deps.makeFeed
     ? deps.makeFeed(opts.hubUrl, query)
-    : new PollingSessionFeed({ hubUrl: opts.hubUrl, query, intervalMs: opts.intervalMs ?? 1000 });
+    : new PollingSessionFeed({ hubUrl: opts.hubUrl, query, intervalMs });
 
   const beat = () => writeLineAtomic(heartbeatPath(file), new Date().toISOString(), deps.fs);
 
@@ -77,10 +63,29 @@ export async function runNotifyd(
     () => { writeLineAtomic(file, staleMarker("hub down"), deps.fs); beat(); },
   );
 
+  // SIGINT/SIGTERM registered with `once` (auto-remove on fire) and explicitly
+  // removed on any other shutdown path (abort signal), so repeated calls in a
+  // single process — as in tests — never leak listeners or trip Node's
+  // MaxListenersExceededWarning.
   await new Promise<void>((resolve) => {
-    const stop = () => { unsubscribe(); resolve(); };
-    process.on("SIGINT", stop);
-    process.on("SIGTERM", stop);
+    let done = false;
+    const stop = () => {
+      if (done) return;
+      done = true;
+      unsubscribe();
+      process.off("SIGINT", onSignal);
+      process.off("SIGTERM", onSignal);
+      opts.stop?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    const onSignal = () => stop();
+    const onAbort = () => stop();
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+    if (opts.stop) {
+      if (opts.stop.aborted) stop();
+      else opts.stop.addEventListener("abort", onAbort, { once: true });
+    }
   });
   return 0;
 }
