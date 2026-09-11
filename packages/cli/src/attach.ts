@@ -7,6 +7,7 @@ import { resolvePrefix } from "./id-resolve.ts";
 import { loadProfileEnv } from "./profile-env.ts";
 import { hasSession, readCurrentPane } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
+import { postSeen } from "./seen.ts";
 
 export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
@@ -65,6 +66,15 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   };
 
   const inTmux = !!process.env.TMUX;
+
+  // Fire-and-forget: marking a session seen is bookkeeping, never a reason to
+  // block or fail an attach. postSeen already resolves false rather than
+  // throwing on failure; `.catch` here is defense-in-depth against ever
+  // surfacing an unhandled rejection.
+  void postSeen(session.session_id, "attach", {
+    hubUrl: opts.hubUrl, host: session.host,
+    fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
+  }).catch(() => {});
 
   if ((await decideAttach(session, hasSession)) === "attach") {
     const cmds = buildAttachCommands(

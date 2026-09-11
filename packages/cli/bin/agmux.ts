@@ -15,6 +15,7 @@ import { parseDashArgs } from "../src/parse-dash.ts";
 import { inspectCmd } from "../src/inspect.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
+import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { runHubCmd } from "../src/hub-cmd.ts";
@@ -230,6 +231,16 @@ async function main(): Promise<number> {
     case "attach": {
       const id = argv[1]; if (!id) usage();
       return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
+    }
+    case "seen": {
+      const paneIdx = argv.indexOf("--pane");
+      const pane = paneIdx >= 0 ? argv[paneIdx + 1] : undefined;
+      const id = paneIdx >= 0 ? undefined : argv[1];
+      if (!pane && !id) usage();
+      return seenCmd(
+        { idOrPrefix: id, pane, hubUrl, host: os.hostname() },
+        { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
+      );
     }
     case "kill": {
       const id = argv[1]; if (!id) usage();

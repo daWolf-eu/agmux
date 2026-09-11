@@ -187,6 +187,10 @@ export function DashApp(props: DashAppProps) {
       return;
     }
     if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) { setConfirmKill(selected); return; }
+    // Mark the highlighted row seen (dismiss). There is no backing "mark
+    // unread" event, so this only ever moves a row from unread → read; always
+    // pass true (see dash-actions.markSeen).
+    if (key.name === "u" && selected) { void props.actions.markSeen(selected, true).catch(() => {}); return; }
   });
 
   const now = Date.now();
@@ -198,7 +202,7 @@ export function DashApp(props: DashAppProps) {
       <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
         <text>j/k move · g/G top/bottom · s sort · f filter · / search</text>
         <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
-        <text>y yank field · x kill · ? help · q quit</text>
+        <text>y yank field · x kill · u mark read · ? help · q quit</text>
         <text fg="#6c7086">? or esc to close</text>
       </box>
     );

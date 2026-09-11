@@ -9,6 +9,7 @@ import { loadProfileEnv } from "./profile-env.ts";
 import { readCurrentPane, hasSession } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
+import { postSeen } from "./seen.ts";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
 // `attach` command can share them without an import cycle (dash-actions already
@@ -92,6 +93,18 @@ export function makeActions(
     resume,
     async copy(text: string): Promise<void> {
       await copyToClipboard(text);
+    },
+    async markSeen(row: SessionRow, seen: boolean): Promise<void> {
+      // There is no "mark unread" event in the protocol — session.seen only
+      // carries source "attach" | "dismiss", and seen_ts is monotonic (see
+      // packages/store/src/project.ts). A session goes unread again only via a
+      // fresh attention event, so seen=false is a documented no-op here; this
+      // action can only ever move a row from unread to read.
+      if (!seen) return;
+      await postSeen(row.session_id, "dismiss", {
+        hubUrl, host: row.host,
+        fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
+      });
     },
   };
 }

@@ -22,6 +22,7 @@ const noActions: Actions = {
   async kill() {},
   async resume() { return { argv: [] }; },
   async copy() {},
+  async markSeen() {},
 };
 
 test("renders the table and j/k moves the selection", async () => {
@@ -152,6 +153,7 @@ test("Enter on a closed session resumes; Enter on a live session attaches", asyn
     async kill() {},
     async resume() { calls.push("resume"); return { argv: [] }; },
     async copy() {},
+    async markSeen() {},
   };
 
   const closed = [mkRow({ session_id: "agx-closed99", status: "lost" })];
@@ -251,6 +253,67 @@ test("yanking an empty field shows an is-empty notice and does not copy", async 
   await renderOnce();
   expect(copied).toEqual([]);
   expect(captureCharFrame()).toContain("Native ID is empty");
+  renderer.destroy();
+});
+
+test("pressing u marks the highlighted row seen", async () => {
+  const seen: Array<{ id: string; seen: boolean }> = [];
+  const actions: Actions = { ...noActions, async markSeen(row, s) { seen.push({ id: row.session_id, seen: s }); } };
+  const rows = [mkRow({ session_id: "agx-mark-1", unread: true })];
+  const { renderer, renderOnce, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("u"); });
+  await renderOnce();
+  expect(seen).toEqual([{ id: "agx-mark-1", seen: true }]);
+  renderer.destroy();
+});
+
+test("u does not fire while the kill-confirm overlay is open", async () => {
+  const seen: string[] = [];
+  const actions: Actions = { ...noActions, async markSeen(row) { seen.push(row.session_id); } };
+  const rows = [mkRow({ session_id: "agx-mark-2", status: "running" })];
+  const { renderer, renderOnce, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("x"); }); // open kill confirm
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("u"); }); // must be swallowed by the confirm overlay
+  await renderOnce();
+  expect(seen).toEqual([]);
+  renderer.destroy();
+});
+
+test("u does not fire while the yank overlay is open", async () => {
+  const seen: string[] = [];
+  const actions: Actions = { ...noActions, async markSeen(row) { seen.push(row.session_id); } };
+  const rows = [mkRow({ session_id: "agx-mark-3" })];
+  const { renderer, renderOnce, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("y"); }); // open yank overlay
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("u"); }); // must be swallowed by the yank overlay
+  await renderOnce();
+  expect(seen).toEqual([]);
   renderer.destroy();
 });
 

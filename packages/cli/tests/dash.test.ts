@@ -20,7 +20,7 @@ test("non-TTY returns 2 and prints a hint", async () => {
     isTTY: () => false,
     runManageImpl: async () => 0,
     makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
-    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {} }),
+    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {}, async markSeen() {} }),
     errOut: (s) => { err = s; },
   };
   expect(await dashCmd(opts, deps)).toBe(2);
@@ -33,7 +33,7 @@ test("TTY path forwards preview + interval to runManage", async () => {
     isTTY: () => true,
     runManageImpl: async (o) => { seen = { defaultPreview: o.defaultPreview, intervalMs: o.intervalMs }; return 0; },
     makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
-    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {} }),
+    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {}, async markSeen() {} }),
     errOut: () => {},
   };
   expect(await dashCmd(opts, deps)).toBe(0);
@@ -46,7 +46,7 @@ test("forwards popup flag to makeActions", async () => {
     isTTY: () => true,
     runManageImpl: async () => 0,
     makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
-    makeActionsImpl: (_h, _w, popup) => { seenPopup = popup; return { async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {} }; },
+    makeActionsImpl: (_h, _w, popup) => { seenPopup = popup; return { async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {}, async markSeen() {} }; },
     errOut: () => {},
   };
   expect(await dashCmd({ ...opts, popup: true }, deps)).toBe(0);
