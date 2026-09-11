@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { statuslineCmd, cachePath, type StatuslineCmdDeps } from "../src/statusline-cmd.ts";
+import { statuslineCmd, type StatuslineCmdDeps } from "../src/statusline-cmd.ts";
 import { loadAttentionConfig } from "../src/attention-config.ts";
 
 function deps(over: Partial<StatuslineCmdDeps> = {}): StatuslineCmdDeps {
@@ -45,11 +45,6 @@ test("exit code stays 0 so tmux never paints an error", async () => {
     deps({ fetchImpl: (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch }),
   );
   expect(code).toBe(0);
-});
-
-test("cachePath honours XDG_RUNTIME_DIR, else falls back to ~/.cache", () => {
-  expect(cachePath({ XDG_RUNTIME_DIR: "/run/u", HOME: "/h" })).toBe("/run/u/agmux/statusline");
-  expect(cachePath({ HOME: "/h" })).toBe("/h/.cache/agmux/statusline");
 });
 
 test("--check reads the cache file directly, without touching the hub", async () => {

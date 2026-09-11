@@ -1,8 +1,7 @@
-import * as path from "node:path";
 import type { SessionRow } from "@agmux/protocol";
 import { formatStatusLine } from "@agmux/tui";
 import type { AttentionConfig } from "./attention-config.ts";
-import { heartbeatPath, isStale } from "./notifyd.ts";
+import { cachePath, staleMarker, heartbeatPath, isStale, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
 
 export interface StatuslineCmdDeps {
   fetchImpl: typeof fetch;
@@ -10,18 +9,6 @@ export interface StatuslineCmdDeps {
   config: AttentionConfig;
   env: Record<string, string | undefined>;
   readFile: (p: string) => string | null;
-}
-
-export const CACHE_REL_PATH = path.join("agmux", "statusline");
-
-export function cachePath(env: Record<string, string | undefined>): string {
-  const runtime = env.XDG_RUNTIME_DIR;
-  if (runtime) return path.join(runtime, CACHE_REL_PATH);
-  return path.join(env.HOME ?? "/tmp", ".cache", CACHE_REL_PATH);
-}
-
-export function staleMarker(text: string): string {
-  return `#[fg=#6c7086]agmux: ${text}#[default]`;
 }
 
 // Always exits 0: this runs inside tmux's status-format expansion, where a
@@ -36,7 +23,7 @@ export async function statuslineCmd(
   if (opts.check) {
     try {
       const file = cachePath(deps.env);
-      if (isStale(deps.readFile(heartbeatPath(file)), Date.now(), 1000)) {
+      if (isStale(deps.readFile(heartbeatPath(file)), Date.now(), DEFAULT_POLL_INTERVAL_MS)) {
         deps.out(staleMarker("stale"));
       } else {
         deps.out(deps.readFile(file) ?? "");
