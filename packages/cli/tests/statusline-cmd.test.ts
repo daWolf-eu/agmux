@@ -16,6 +16,8 @@ function deps(over: Partial<StatuslineCmdDeps> = {}): StatuslineCmdDeps {
     }), { status: 200 })) as unknown as typeof fetch,
     out: () => {},
     config: loadAttentionConfig(""),
+    env: {},
+    readFile: () => null,
     ...over,
   };
 }
@@ -48,4 +50,37 @@ test("exit code stays 0 so tmux never paints an error", async () => {
 test("cachePath honours XDG_RUNTIME_DIR, else falls back to ~/.cache", () => {
   expect(cachePath({ XDG_RUNTIME_DIR: "/run/u", HOME: "/h" })).toBe("/run/u/agmux/statusline");
   expect(cachePath({ HOME: "/h" })).toBe("/h/.cache/agmux/statusline");
+});
+
+test("--check reads the cache file directly, without touching the hub", async () => {
+  let printed = "";
+  const files: Record<string, string> = {
+    "/run/u/agmux/statusline": "cached-line",
+    "/run/u/agmux/statusline.heartbeat": new Date().toISOString(),
+  };
+  const code = await statuslineCmd(
+    { hubUrl: "http://127.0.0.1:1", check: true },
+    deps({
+      env: { XDG_RUNTIME_DIR: "/run/u" },
+      readFile: (p) => files[p] ?? null,
+      fetchImpl: (async () => { throw new Error("must not be called"); }) as unknown as typeof fetch,
+      out: (s) => { printed = s; },
+    }),
+  );
+  expect(code).toBe(0);
+  expect(printed).toBe("cached-line");
+});
+
+test("--check prints a stale marker when the heartbeat is missing or old", async () => {
+  let printed = "";
+  const code = await statuslineCmd(
+    { hubUrl: "http://127.0.0.1:1", check: true },
+    deps({
+      env: { XDG_RUNTIME_DIR: "/run/u" },
+      readFile: () => null,
+      out: (s) => { printed = s; },
+    }),
+  );
+  expect(code).toBe(0);
+  expect(printed).toContain("stale");
 });

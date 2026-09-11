@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH } from "@agmux/protocol";
@@ -18,6 +19,7 @@ import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { runHubCmd } from "../src/hub-cmd.ts";
 import { statuslineCmd, staleMarker } from "../src/statusline-cmd.ts";
+import { runNotifyd } from "../src/notifyd.ts";
 import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
 import { discoverHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
@@ -87,16 +89,21 @@ async function main(): Promise<number> {
   // resolves the hub URL passively (env, else the port file) and handles
   // "no hub" as a normal render state — never before the ensureHubRunning gate.
   if (verb === "statusline") {
+    const check = argv.includes("--check");
     const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
     let config;
     try { config = loadAttentionConfigFile(configPath); }
     catch { config = loadAttentionConfig(""); }
+    const deps = {
+      fetchImpl: fetch, out: (s: string) => console.log(s), config,
+      env: process.env,
+      readFile: (p: string) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } },
+    };
+    // --check reads the daemon's cache file and never needs a hub.
+    if (check) return statuslineCmd({ hubUrl: "", check: true }, deps);
     const hubUrl = discoverHubUrl(process.env, stateDir);
     if (!hubUrl) { console.log(staleMarker("hub down")); return 0; }
-    return statuslineCmd(
-      { hubUrl },
-      { fetchImpl: fetch, out: (s) => console.log(s), config },
-    );
+    return statuslineCmd({ hubUrl }, deps);
   }
 
   // Hub required for every verb. `run` would also accept a still-spawning hub
@@ -104,6 +111,13 @@ async function main(): Promise<number> {
   const hubUrl = await ensureHubRunning(stateDir, hubBin);
 
   switch (verb) {
+    case "notifyd": {
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      let config;
+      try { config = loadAttentionConfigFile(configPath); }
+      catch { config = loadAttentionConfig(""); }
+      return runNotifyd({ hubUrl }, { env: process.env, config });
+    }
     case "run": {
       const parsed = parseRunArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
