@@ -7,7 +7,7 @@ export function mkRow(over: Partial<SessionRow> = {}): SessionRow {
     tmux_session: null, tmux_window: null, tmux_socket: null, tmux_pane: null, host: "h", project: null,
     parent_session_id: null, start_ts: "2026-06-20T10:00:00.000Z", last_heartbeat_ts: null,
     end_ts: null, exit_code: null, signal: null, status: "running", origin: "native",
-    turn_count: null, last_tool: null, last_tool_detail: null, last_input_kind: null,
+    turn_count: null, unread: null, last_tool: null, last_tool_detail: null, last_input_kind: null,
     activity_ts: null, ...over,
   };
 }
