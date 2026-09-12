@@ -136,6 +136,116 @@ test("aborting the stop signal unsubscribes from the feed and resolves runNotify
   expect(unsubscribed).toBe(true);
 });
 
+// --- heartbeat timer (regression fence for "agmux: stale" while healthy) ---
+
+function fakeTimer() {
+  const pending = new Map<number, () => void>();
+  let nextId = 1;
+  const cleared: number[] = [];
+  const setIntervalImpl = ((fn: () => void) => {
+    const id = nextId++;
+    pending.set(id, fn);
+    return id as unknown as ReturnType<typeof setInterval>;
+  }) as typeof setInterval;
+  const clearIntervalImpl = ((id: unknown) => {
+    cleared.push(id as number);
+    pending.delete(id as number);
+  }) as typeof clearInterval;
+  const advance = (n = 1) => { for (let i = 0; i < n; i++) for (const fn of pending.values()) fn(); };
+  return { setIntervalImpl, clearIntervalImpl, advance, cleared, pendingCount: () => pending.size };
+}
+
+test("heartbeat is written on a fixed cadence even when the feed never updates", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      makeFeed: () => ({ subscribe: () => () => {} }), // never calls onUpdate/onError
+    }),
+  );
+
+  const cache = "/run/u/agmux/statusline";
+  expect(files[heartbeatPath(cache)]).toBeUndefined();
+
+  timer.advance();
+  const first = files[heartbeatPath(cache)];
+  expect(first).toBeTruthy();
+
+  timer.advance();
+  expect(files[heartbeatPath(cache)]).toBeTruthy();
+
+  ac.abort();
+  expect(await p).toBe(0);
+});
+
+test("heartbeat is still written when feed updates do occur", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+  let capturedOnUpdate: ((rows: SessionRow[]) => void) | undefined;
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      makeFeed: () => ({
+        subscribe: (onUpdate) => { capturedOnUpdate = onUpdate; return () => {}; },
+      }),
+    }),
+  );
+
+  const cache = "/run/u/agmux/statusline";
+  capturedOnUpdate!([row]);
+  expect(files[heartbeatPath(cache)]).toBeTruthy();
+
+  timer.advance();
+  expect(files[heartbeatPath(cache)]).toBeTruthy();
+
+  ac.abort();
+  expect(await p).toBe(0);
+});
+
+test("shutdown via AbortSignal clears the heartbeat interval and stops further writes", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      makeFeed: () => ({ subscribe: () => () => {} }),
+    }),
+  );
+
+  expect(timer.pendingCount()).toBe(1);
+  timer.advance();
+  const cache = "/run/u/agmux/statusline";
+  const before = files[heartbeatPath(cache)];
+  expect(before).toBeTruthy();
+
+  ac.abort();
+  await p;
+
+  expect(timer.cleared.length).toBe(1);
+  expect(timer.pendingCount()).toBe(0);
+
+  // Advancing after shutdown must not write again (nothing left pending, but
+  // guard against a regression where the handle isn't actually removed).
+  timer.advance();
+  expect(files[heartbeatPath(cache)]).toBe(before);
+});
+
 test("shutdown removes the SIGINT/SIGTERM listeners it added", async () => {
   const { fs: fsDeps } = memFsDeps();
   const ac = new AbortController();
