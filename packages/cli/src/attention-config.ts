@@ -61,6 +61,18 @@ function positiveInt(value: unknown, field: string, fallback: number): number {
   throw new Error(`invalid ${field}: ${String(value)} (expected a positive integer)`);
 }
 
+function bool(value: unknown, field: string, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  if (typeof value === "boolean") return value;
+  throw new Error(`invalid ${field}: ${String(value)} (expected a boolean)`);
+}
+
+function str(value: unknown, field: string, fallback: string): string {
+  if (value === undefined) return fallback;
+  if (typeof value === "string" && value.length > 0) return value;
+  throw new Error(`invalid ${field}: ${String(value)} (expected a string)`);
+}
+
 export function loadAttentionConfig(toml: string): AttentionConfig {
   const raw = (toml.trim() === "" ? {} : parseToml(toml)) as any;
   const n = (raw.notify ?? {}) as any;
@@ -72,27 +84,27 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
 
   const sounds: Partial<Record<NotifyTrigger, string>> = {};
   for (const [k, v] of Object.entries((n.sounds ?? {}) as Record<string, unknown>)) {
-    sounds[oneOf(k, NOTIFY_TRIGGERS, "notify.sounds key", "permission")] = String(v);
+    sounds[oneOf(k, NOTIFY_TRIGGERS, "notify.sounds key", "permission")] = str(v, `notify.sounds.${k}`, "");
   }
 
   return {
     notify: {
-      enabled: n.enabled ?? true,
+      enabled: bool(n.enabled, "notify.enabled", true),
       delayMs: n.delay === undefined ? 5000 : parseDuration(n.delay),
       triggers,
-      sound: n.sound ?? true,
-      soundName: n.sound_name ?? "Ping",
+      sound: bool(n.sound, "notify.sound", true),
+      soundName: str(n.sound_name, "notify.sound_name", "Ping"),
       sounds,
-      command: n.command ?? "auto",
-      tmuxMessage: n.tmux_message ?? true,
-      suppressWhenVisible: n.suppress_when_visible ?? true,
+      command: str(n.command, "notify.command", "auto"),
+      tmuxMessage: bool(n.tmux_message, "notify.tmux_message", true),
+      suppressWhenVisible: bool(n.suppress_when_visible, "notify.suppress_when_visible", true),
     },
     statusline: {
-      enabled: s.enabled ?? false,
+      enabled: bool(s.enabled, "statusline.enabled", false),
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
       show: oneOf(s.show, SHOW_MODES, "statusline.show", "all"),
       max: positiveInt(s.max, "statusline.max", 6),
-      format: s.format ?? "{glyph} {tmux_session}:{tmux_window}",
+      format: str(s.format, "statusline.format", "{glyph} {tmux_session}:{tmux_window}"),
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),
     },
   };

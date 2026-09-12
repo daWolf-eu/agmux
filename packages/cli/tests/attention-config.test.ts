@@ -62,3 +62,55 @@ test("statusline.max validates and throws on invalid values", () => {
   expect(() => loadAttentionConfig(`[statusline]\nmax = -1\n`)).toThrow(/-1/);
   expect(() => loadAttentionConfig(`[statusline]\nmax = 2.5\n`)).toThrow(/2.5/);
 });
+
+test("statusline.format validates as a string and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[statusline]\nformat = "{glyph}"\n`).statusline.format).toBe("{glyph}");
+  expect(() => loadAttentionConfig(`[statusline]\nformat = 42\n`)).toThrow(/42/);
+});
+
+test("statusline.enabled validates as a boolean and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[statusline]\nenabled = true\n`).statusline.enabled).toBe(true);
+  expect(() => loadAttentionConfig(`[statusline]\nenabled = "yes"\n`)).toThrow(/yes/);
+});
+
+test("notify.sound validates as a boolean and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\nsound = false\n`).notify.sound).toBe(false);
+  expect(() => loadAttentionConfig(`[notify]\nsound = "yes"\n`)).toThrow(/yes/);
+});
+
+test("notify.command validates as a string and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\ncommand = "afplay"\n`).notify.command).toBe("afplay");
+  expect(() => loadAttentionConfig(`[notify]\ncommand = 5\n`)).toThrow(/5/);
+});
+
+test("notify.sound_name validates as a string and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\nsound_name = "Glass"\n`).notify.soundName).toBe("Glass");
+  expect(() => loadAttentionConfig(`[notify]\nsound_name = false\n`)).toThrow(/false/);
+});
+
+test("notify.tmux_message validates as a boolean and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\ntmux_message = false\n`).notify.tmuxMessage).toBe(false);
+  expect(() => loadAttentionConfig(`[notify]\ntmux_message = 1\n`)).toThrow(/1/);
+});
+
+test("notify.suppress_when_visible validates as a boolean and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\nsuppress_when_visible = false\n`).notify.suppressWhenVisible).toBe(false);
+  expect(() => loadAttentionConfig(`[notify]\nsuppress_when_visible = "no"\n`)).toThrow(/no/);
+});
+
+test("notify.enabled validates as a boolean and throws on wrong type", () => {
+  expect(loadAttentionConfig(`[notify]\nenabled = false\n`).notify.enabled).toBe(false);
+  expect(() => loadAttentionConfig(`[notify]\nenabled = "yes"\n`)).toThrow(/yes/);
+});
+
+test("omitting all newly-validated fields still yields the documented defaults", () => {
+  const c = loadAttentionConfig("");
+  expect(c.notify.enabled).toBe(true);
+  expect(c.notify.sound).toBe(true);
+  expect(c.notify.soundName).toBe("Ping");
+  expect(c.notify.command).toBe("auto");
+  expect(c.notify.tmuxMessage).toBe(true);
+  expect(c.notify.suppressWhenVisible).toBe(true);
+  expect(c.statusline.enabled).toBe(false);
+  expect(c.statusline.format).toBe("{glyph} {tmux_session}:{tmux_window}");
+});
