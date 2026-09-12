@@ -138,6 +138,9 @@ test("aborting the stop signal unsubscribes from the feed and resolves runNotify
 
 // --- heartbeat timer (regression fence for "agmux: stale" while healthy) ---
 
+// dispatchNotification is async; let its promise chain settle before asserting.
+const flush = () => new Promise((r) => setTimeout(r, 0));
+
 function fakeTimer() {
   const pending = new Map<number, () => void>();
   let nextId = 1;
@@ -269,4 +272,56 @@ test("shutdown removes the SIGINT/SIGTERM listeners it added", async () => {
 
   expect(process.listenerCount("SIGINT")).toBe(before.sigint);
   expect(process.listenerCount("SIGTERM")).toBe(before.sigterm);
+});
+
+test("a debounced notification fires on the timer, without waiting for the next feed change", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+  let clock = 1_000_000;
+  const fired: string[] = [];
+  let capturedOnUpdate: ((rows: SessionRow[]) => void) | undefined;
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      now: () => clock,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      sinkDeps: {
+        run: async (cmd, args) => { fired.push(`${cmd} ${args.join(" ")}`); return 0; },
+        capture: async () => "",
+        which: () => true,
+        log: () => {},
+        warned: new Set<string>(),
+      },
+      makeFeed: () => ({
+        subscribe: (onUpdate) => { capturedOnUpdate = onUpdate; return () => {}; },
+      }),
+    }),
+  );
+
+  // The session starts waiting on a permission. The feed reports it once and,
+  // because nothing about it changes afterwards, never reports again.
+  capturedOnUpdate!([{ ...row, status: "waiting", last_input_kind: "permission",
+    activity_ts: "2026-09-12T10:00:00.000Z" }]);
+  await flush();
+  expect(fired).toEqual([]);   // still inside the debounce window
+
+  // No further feed update — only time passing.
+  clock += 10_000;
+  timer.advance();
+  await flush();
+  expect(fired.length).toBeGreaterThan(0);
+
+  // And it stays deduped across later ticks.
+  const after = fired.length;
+  clock += 10_000;
+  timer.advance();
+  await flush();
+  expect(fired.length).toBe(after);
+
+  ac.abort();
+  expect(await p).toBe(0);
 });
