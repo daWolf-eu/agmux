@@ -44,6 +44,28 @@ function triggerFor(r: SessionRow): NotifyTrigger | null {
   return null;
 }
 
+/**
+ * Establish a baseline from the first rows a daemon ever sees, so a restart
+ * does not announce the whole board.
+ *
+ * Without this, an empty DetectState makes every already-eligible session look
+ * like a brand-new transition on the first poll: come up with a dozen idle
+ * sessions and you get a dozen "finished a turn" notifications for turns that
+ * finished hours ago. Nothing is lost by staying quiet — everything already
+ * waiting is on the status line, which renders the full board on that same
+ * first tick.
+ *
+ * Only the episode observed here is silenced. A session that later moves to a
+ * new activity_ts notifies normally, and a session not eligible at startup
+ * (running, or not yet born) is never touched.
+ */
+export function primeDetectState(state: DetectState, rows: SessionRow[]): void {
+  for (const row of rows) {
+    if (!triggerFor(row)) continue;
+    state.fired.set(row.session_id, row.activity_ts ?? "");
+  }
+}
+
 export function detectNotifications(
   state: DetectState,
   rows: SessionRow[],

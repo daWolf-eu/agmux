@@ -128,6 +128,16 @@ conflated:
 - **Notified** is a one-shot the daemon tracks in memory for the current run, so a
   restarted daemon does not re-announce a backlog.
 
+  This requires an explicit cold start: the daemon's first observation of the feed
+  **primes** the notified set from whatever is already eligible, and announces none of
+  it. Without that step an empty in-memory set makes every already-waiting session read
+  as a brand-new transition, and coming up with a dozen idle sessions fires a dozen
+  notifications for turns that finished hours ago. Nothing is lost by staying quiet:
+  the status line renders the full board on that same first tick. Only the episode
+  observed at startup is silenced — a session that later reaches a new `activity_ts`
+  notifies normally, and a session that was merely *running* at startup is not primed
+  at all, so the turn it is in the middle of still announces its end.
+
 A session that is unread but already notified stays visibly unread in the status line
 without firing again. This is the mechanism that makes "an agent asked three permissions
 in a row" quiet.

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { createDetectState, detectNotifications, type DetectConfig } from "../../src/shared/transitions.ts";
+import { createDetectState, primeDetectState, detectNotifications, type DetectConfig } from "../../src/shared/transitions.ts";
 import { mkRow } from "../helpers/mk-row.ts";
 
 const CFG: DetectConfig = { delayMs: 5000, triggers: ["permission", "prompt", "turn_end", "session_end"] };
@@ -251,4 +251,45 @@ test("completely absent session returns and can fire same activity_ts again", ()
     1002
   );
   expect(fire2.length).toBe(1);
+});
+
+
+// --- cold start -------------------------------------------------------
+// A daemon restart must not announce the whole board. Everything already
+// waiting when the daemon comes up has been on the status line all along.
+
+test("priming suppresses every session that was already eligible at startup", () => {
+  const st = createDetectState();
+  const board = [
+    waiting({ session_id: "s1" }),
+    mkRow({ session_id: "s2", status: "idle", activity_ts: "t1" }),
+    mkRow({ session_id: "s3", status: "ended", activity_ts: "t1" }),
+    mkRow({ session_id: "s4", status: "running", activity_ts: "t1" }),
+  ];
+  primeDetectState(st, board);
+  expect(detectNotifications(st, board, CFG, 1000)).toEqual([]);
+  expect(detectNotifications(st, board, CFG, 60_000)).toEqual([]);
+});
+
+test("priming only silences the episode it saw — a later transition still fires", () => {
+  const st = createDetectState();
+  primeDetectState(st, [waiting({ session_id: "s1" })]);
+  const next = [waiting({ session_id: "s1", activity_ts: "t2" })];
+  expect(detectNotifications(st, next, CFG, 1000)).toEqual([]);   // debouncing
+  expect(detectNotifications(st, next, CFG, 7000).length).toBe(1);
+});
+
+test("priming does not silence a session that was running at startup", () => {
+  const st = createDetectState();
+  primeDetectState(st, [mkRow({ session_id: "s1", status: "running", activity_ts: "t1" })]);
+  const done = [mkRow({ session_id: "s1", status: "idle", activity_ts: "t2" })];
+  detectNotifications(st, done, CFG, 1000);
+  expect(detectNotifications(st, done, CFG, 7000).map((e) => e.trigger)).toEqual(["turn_end"]);
+});
+
+test("priming does not silence a session that appears after startup", () => {
+  const st = createDetectState();
+  primeDetectState(st, []);
+  detectNotifications(st, [waiting()], CFG, 1000);
+  expect(detectNotifications(st, [waiting()], CFG, 7000).length).toBe(1);
 });

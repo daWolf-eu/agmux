@@ -302,10 +302,13 @@ test("a debounced notification fires on the timer, without waiting for the next 
     }),
   );
 
-  // The session starts waiting on a permission. The feed reports it once and,
-  // because nothing about it changes afterwards, never reports again.
+  // Baseline: the session is running when the daemon comes up.
+  capturedOnUpdate!([{ ...row, status: "running", activity_ts: "2026-09-12T10:00:00.000Z" }]);
+
+  // Then it asks for permission. The feed reports that once and, because
+  // nothing about it changes afterwards, never reports again.
   capturedOnUpdate!([{ ...row, status: "waiting", last_input_kind: "permission",
-    activity_ts: "2026-09-12T10:00:00.000Z" }]);
+    activity_ts: "2026-09-12T10:05:00.000Z" }]);
   await flush();
   expect(fired).toEqual([]);   // still inside the debounce window
 
@@ -321,6 +324,59 @@ test("a debounced notification fires on the timer, without waiting for the next 
   timer.advance();
   await flush();
   expect(fired.length).toBe(after);
+
+  ac.abort();
+  expect(await p).toBe(0);
+});
+
+test("a restart does not announce sessions that were already waiting", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+  let clock = 1_000_000;
+  const fired: string[] = [];
+  let capturedOnUpdate: ((rows: SessionRow[]) => void) | undefined;
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      now: () => clock,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      sinkDeps: {
+        run: async (cmd, args) => { fired.push(`${cmd} ${args.join(" ")}`); return 0; },
+        capture: async () => "",
+        which: () => true,
+        log: () => {},
+        warned: new Set<string>(),
+      },
+      makeFeed: () => ({
+        subscribe: (onUpdate) => { capturedOnUpdate = onUpdate; return () => {}; },
+      }),
+    }),
+  );
+
+  // The board as a fresh daemon finds it: everything already wants attention.
+  const board: SessionRow[] = [
+    { ...row, session_id: "agx-1", status: "waiting", last_input_kind: "permission",
+      activity_ts: "2026-09-12T09:00:00.000Z" },
+    { ...row, session_id: "agx-2", status: "idle", activity_ts: "2026-09-12T09:00:00.000Z" },
+    { ...row, session_id: "agx-3", status: "idle", activity_ts: "2026-09-12T09:00:00.000Z" },
+  ];
+  capturedOnUpdate!(board);
+  clock += 60_000;
+  timer.advance();
+  await flush();
+  expect(fired).toEqual([]);
+
+  // But a genuine transition after startup still gets through.
+  capturedOnUpdate!([...board.slice(1),
+    { ...board[0]!, activity_ts: "2026-09-12T09:30:00.000Z" }]);
+  clock += 10_000;
+  timer.advance();
+  await flush();
+  expect(fired.length).toBeGreaterThan(0);
 
   ac.abort();
   expect(await p).toBe(0);
