@@ -147,6 +147,12 @@ session needs you. Start it once (e.g. from `~/.tmux.conf` or your shell profile
 agmux notifyd &
 ```
 
+Only one daemon runs per state dir: a second `agmux notifyd` refuses to start and
+names the pid already holding `~/.agmux/notifyd.lock`. To restart it — after a
+rebuild, say — use `agmux notifyd --replace`, which terminates the incumbent and
+takes over. Prefer it to `kill %1`: job numbers are per-shell, so a daemon started
+in another window survives that and keeps notifying alongside the new one.
+
 Configure it under `[notify]` and `[statusline]` in `~/.config/agmux/config.toml`.
 All keys are optional; these are the defaults:
 

@@ -381,3 +381,86 @@ test("a restart does not announce sessions that were already waiting", async () 
   ac.abort();
   expect(await p).toBe(0);
 });
+
+// --- single instance ---------------------------------------------------
+// Stacking daemons is not a harmless duplicate: each one holds its own
+// notified-set, so N daemons mean N notifications, and an old one left behind
+// by a failed `kill %1` keeps serving stale behaviour long after a rebuild.
+
+function fakeLock(holder: number | null = null) {
+  const state = { holder, released: 0, killed: [] as number[] };
+  return {
+    state,
+    lock: {
+      acquire: (_p: string) => {
+        if (state.holder !== null) return null;
+        state.holder = process.pid;
+        return { release: () => { state.released++; state.holder = null; } };
+      },
+      holder: (_p: string) => state.holder,
+      kill: (pid: number) => { state.killed.push(pid); state.holder = null; },
+    },
+  };
+}
+
+test("refuses to start when a live daemon already holds the lock", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const lg: string[] = [];
+  const f = fakeLock(4242);
+
+  const code = await runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", lockPath: "/run/u/agmux/notifyd.lock" },
+    baseDeps({ fs: fsDeps, lock: f.lock, log: (s) => lg.push(s),
+      makeFeed: () => ({ subscribe: () => () => {} }) }),
+  );
+
+  expect(code).toBe(1);
+  expect(lg.join(" ")).toContain("4242");
+  expect(lg.join(" ")).toContain("--replace");
+  expect(f.state.killed).toEqual([]);
+});
+
+test("--replace terminates the incumbent and takes over", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const f = fakeLock(4242);
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal, replace: true,
+      lockPath: "/run/u/agmux/notifyd.lock" },
+    baseDeps({ fs: fsDeps, lock: f.lock, makeFeed: () => ({ subscribe: () => () => {} }) }),
+  );
+  await flush();
+
+  expect(f.state.killed).toEqual([4242]);
+  ac.abort();
+  expect(await p).toBe(0);
+  expect(f.state.released).toBe(1);   // lock handed back on shutdown
+});
+
+test("releases the lock on shutdown so the next start is clean", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const f = fakeLock(null);
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal, lockPath: "/run/u/agmux/notifyd.lock" },
+    baseDeps({ fs: fsDeps, lock: f.lock, makeFeed: () => ({ subscribe: () => () => {} }) }),
+  );
+  await flush();
+  ac.abort();
+  expect(await p).toBe(0);
+  expect(f.state.released).toBe(1);
+  expect(f.state.holder).toBeNull();
+});
+
+test("without a lockPath the daemon starts unguarded (tests, one-offs)", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({ fs: fsDeps, makeFeed: () => ({ subscribe: () => () => {} }) }),
+  );
+  ac.abort();
+  expect(await p).toBe(0);
+});
