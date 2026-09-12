@@ -38,7 +38,10 @@ export async function isPaneVisible(
 
 function describe(ev: NotifyEvent): string {
   const r = ev.row;
-  const where = r.tmux_session ? `${r.tmux_session}:${r.tmux_window ?? ""}`.replace(/:$/, "") : r.agent_kind;
+  // Pane, not window: several agents routinely share one window, and a body
+  // reading "work:@31 needs permission" twice looks like one duplicate
+  // notification rather than two sessions that both want you.
+  const where = r.tmux_session ? `${r.tmux_session}:${r.tmux_pane ?? ""}`.replace(/:$/, "") : r.agent_kind;
   const what =
     ev.trigger === "permission" ? "needs permission" :
     ev.trigger === "prompt" ? "is waiting for input" :

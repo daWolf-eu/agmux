@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Omnigent → agmux: Architecture Analysis</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --panel2: #1d2129; --ink: #d7dce3;
+    --muted: #8b94a3; --accent: #6ea8fe; --accent2: #7ee2b8; --warn: #f0b860;
+    --danger: #f08a8a; --border: #2a2f3a; --code: #b9e6ff; --mono: ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 28px 120px; }
+  header.hero {
+    padding: 56px 28px 40px; background: linear-gradient(160deg,#1b2331,#11141a 70%);
+    border-bottom: 1px solid var(--border);
+  }
+  header.hero .inner { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -.4px; }
+  .sub { color: var(--muted); font-size: 16px; max-width: 760px; }
+  .tagrow { margin-top: 18px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .tag { font: 12px var(--mono); background: var(--panel2); border: 1px solid var(--border);
+    color: var(--accent); padding: 3px 9px; border-radius: 20px; }
+  nav.toc {
+    position: sticky; top: 0; z-index: 10; background: rgba(15,17,21,.92);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--border);
+    padding: 12px 28px; display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px;
+  }
+  nav.toc a { color: var(--muted); text-decoration: none; white-space: nowrap; }
+  nav.toc a:hover { color: var(--accent); }
+  section { margin-top: 52px; scroll-margin-top: 64px; }
+  h2 { font-size: 23px; margin: 0 0 6px; padding-bottom: 8px; border-bottom: 2px solid var(--border); letter-spacing: -.3px; }
+  h2 .q { color: var(--accent); font: 13px var(--mono); display: block; margin-bottom: 2px; }
+  h3 { font-size: 17px; margin: 28px 0 8px; color: #eef2f7; }
+  h4 { font-size: 14px; margin: 18px 0 6px; color: var(--accent2); text-transform: uppercase; letter-spacing: .5px; }
+  p { margin: 10px 0; }
+  code { font: 13px var(--mono); background: var(--panel2); color: var(--code);
+    padding: 1.5px 5px; border-radius: 4px; border: 1px solid var(--border); }
+  .file { color: var(--warn); }
+  ul, ol { margin: 10px 0; padding-left: 22px; }
+  li { margin: 5px 0; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 9px 11px; border: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--panel2); color: #eef2f7; font-weight: 600; }
+  tr:nth-child(even) td { background: var(--panel); }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; margin: 16px 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px){ .grid2 { grid-template-columns: 1fr; } nav.toc{ overflow-x:auto; } }
+  .callout { border-left: 3px solid var(--accent); background: var(--panel);
+    padding: 12px 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .callout.reuse { border-color: var(--accent2); }
+  .callout.skip { border-color: var(--danger); }
+  .callout.warn { border-color: var(--warn); }
+  .callout .lbl { font: 11px var(--mono); text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); display:block; margin-bottom: 4px; }
+  .callout.reuse .lbl { color: var(--accent2); }
+  .callout.skip .lbl { color: var(--danger); }
+  .callout.warn .lbl { color: var(--warn); }
+  .flow { font: 13px var(--mono); background: #0b0d11; border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px 16px; overflow-x: auto; color: #c9d3df; line-height: 1.55; }
+  .flow .step { color: var(--accent); }
+  .flow .arrow { color: var(--muted); }
+  .pill { display:inline-block; font:11px var(--mono); padding:1px 7px; border-radius:10px; border:1px solid var(--border); }
+  .pill.native { color: var(--warn); }
+  .pill.sdk { color: var(--accent2); }
+  footer { margin-top: 64px; padding-top: 20px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 12.5px; }
+  .lead { font-size: 16px; color: #e6ebf2; }
+  strong { color: #f2f5f9; }
+  .kicker { color: var(--muted); font: 12px var(--mono); }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="inner">
+    <div class="kicker">CODEBASE ANALYSIS · github.com/omnigent-ai/omnigent</div>
+    <h1>Omnigent through an agmux lens</h1>
+    <p class="sub">Omnigent is an open-source <strong>meta-harness</strong>: it wraps Claude Code, Codex, Cursor, Pi and SDK agents under one orchestration layer. agmux wants the opposite shape — provide the underlying <strong>mechanics, services and skills</strong> so those capabilities live <em>inside</em> the existing harnesses, with no harness built on top. This report extracts how omnigent solved the four shared problems and judges each mechanism for direct reuse.</p>
+    <div class="tagrow">
+      <span class="tag">Python 3.12 · FastAPI</span>
+      <span class="tag">~470 source files</span>
+      <span class="tag">9 harness adapters</span>
+      <span class="tag">tmux + app-server + SDK</span>
+      <span class="tag">MCP · hooks · skills</span>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#overview">Overview</a>
+  <a href="#monitor">1 · Monitoring</a>
+  <a href="#steer">2 · Steering</a>
+  <a href="#share">3 · Sharing artefacts</a>
+  <a href="#extend">4 · Extending harnesses</a>
+  <a href="#findings">Other findings</a>
+  <a href="#agmux">agmux synthesis</a>
+</nav>
+
+<div class="wrap">
+
+<!-- ============ OVERVIEW ============ -->
+<section id="overview">
+  <h2>General overview</h2>
+  <p class="lead">Omnigent's core bet: never make the agent runtimes speak a new protocol. Instead, run the <em>real</em> CLI/SDK and normalize everything it does into one canonical event model and one tool/policy transport — observing and steering from outside.</p>
+
+  <p>Two stacked abstractions carry the whole design:</p>
+  <ul>
+    <li><strong>Layer A — <code>Executor</code> contract</strong> (<span class="file">omnigent/inner/executor.py:495</span>). One abstract method <code>run_turn(...) → AsyncIterator[ExecutorEvent]</code> plus capability flags (<code>supports_streaming</code>, <code>handles_tools_internally</code>, <code>supports_live_message_queue</code>, <code>interrupt_session</code>…). Every backend is forced to yield the same event vocabulary: <code>TextChunk</code>, <code>ReasoningChunk</code>, <code>ToolCallRequest</code>, <code>ToolCallComplete</code>, <code>TurnComplete(usage)</code>, <code>ExecutorError</code>.</li>
+    <li><strong>Layer B — harness wrap</strong>. Each harness is a thin subprocess exporting a FastAPI <code>create_app()</code>, registered in <code>_HARNESS_MODULES</code> (<span class="file">omnigent/runtime/harnesses/__init__.py:34</span>) and served over a Unix socket by <code>HarnessProcessManager</code>.</li>
+  </ul>
+
+  <div class="card">
+    <h4>The single most important distinction in the codebase</h4>
+    <div class="grid2">
+      <div>
+        <p><span class="pill native">native</span> &nbsp;<strong>Native CLI/TUI bridges</strong> — <code>claude-native</code>, <code>codex-native</code>, <code>pi-native</code>.<br>
+        Omnigent does <em>not</em> run the model. The real <code>claude</code>/<code>codex</code> binary runs in a tmux pane (or app-server). Omnigent <strong>observes from the outside</strong> (hooks, file tailing, app-server RPC) and <strong>injects input</strong> (tmux send-keys / RPC). All capability is added via the CLI's own extension points.</p>
+      </div>
+      <div>
+        <p><span class="pill sdk">sdk</span> &nbsp;<strong>In-process SDK harnesses</strong> — <code>claude-sdk</code>, <code>codex</code>, <code>cursor</code>, <code>pi</code>, <code>openai-agents</code>, <code>antigravity</code>.<br>
+        Omnigent <em>is</em> the agent loop driver. It imports the vendor SDK, registers tools as the SDK's native type, and enforces policy via SDK callbacks (<code>can_use_tool</code>). Events come back lossless and real-time.</p>
+      </div>
+    </div>
+    <p style="margin-bottom:0"><strong>Why this matters for agmux:</strong> agmux lives <em>inside</em> harnesses (tmux panes / installed CLIs). That maps almost entirely onto omnigent's <span class="pill native">native</span> path — the extension-point injection and outside-in observation. The <span class="pill sdk">sdk</span> path and the FastAPI subprocess machinery are meta-harness scaffolding agmux does not need.</p>
+  </div>
+
+  <h3>How the four questions connect</h3>
+  <table>
+    <tr><th>Concern</th><th>Omnigent's answer (one line)</th><th>agmux fit</th></tr>
+    <tr><td><strong>Monitor</strong></td><td>Harness hooks + file tailing + app-server notifications → normalized <code>ServerStreamEvent</code> → SSE fan-out</td><td>High — hooks are in-harness instrumentation</td></tr>
+    <tr><td><strong>Steer</strong></td><td>tmux send-keys (bracketed paste) / app-server <code>turn/steer</code>; approvals park an <code>asyncio.Future</code></td><td>High — the tmux mechanics are the prize</td></tr>
+    <tr><td><strong>Share artefacts</strong></td><td>Metadata/blob split (FileStore + ArtifactStore) + <code>file_id→data: URI</code> resolver; git worktrees; diff-as-message</td><td>High — resolver &amp; worktree code lift cleanly</td></tr>
+    <tr><td><strong>Extend harnesses</strong></td><td>MCP server injection + shared command-hook policy bridge + skill bundling + gateway/credential proxies</td><td>Very high — this <em>is</em> "mechanics within the harness"</td></tr>
+  </table>
+</section>
+
+<!-- ============ Q1 MONITORING ============ -->
+<section id="monitor">
+  <h2><span class="q">QUESTION 1</span>How omnigent monitors the work of other harnesses</h2>
+  <p>Monitoring is normalized into one event stream regardless of backend. The key idea agmux should internalize: <strong>the harness's own lifecycle hooks are the instrumentation surface</strong> — zero CLI modification, full visibility.</p>
+
+  <h3>Mechanisms</h3>
+  <table>
+    <tr><th>Mechanism</th><th>Used by</th><th>Evidence</th></tr>
+    <tr><td><strong>Lifecycle hooks via <code>--settings</code> JSON</strong> — <code>SessionStart</code>, <code>Stop</code>, <code>PreToolUse</code>, <code>PostToolUse</code>, <code>UserPromptSubmit</code>, <code>PreCompact</code>, <code>MessageDisplay</code>, <code>TaskCreated/Completed</code></td><td><span class="pill native">claude-native</span></td><td><span class="file">claude_native_bridge.py:965</span> <code>build_hook_settings()</code></td></tr>
+    <tr><td><strong>Hook → append-only file</strong> for high-frequency events (text deltas → <code>message_deltas.jsonl</code>, statusLine → <code>context.json</code>). Never blocks streaming.</td><td><span class="pill native">claude-native</span></td><td><span class="file">claude_native_message_display_hook.py:54</span></td></tr>
+    <tr><td><strong>Hook → long-poll HTTP</strong> (24h timeout) for synchronous decisions (permission / policy / ask-user)</td><td><span class="pill native">claude-native</span></td><td><span class="file">claude_native_hook.py:575</span>, <code>_PERMISSION_TIMEOUT_S=86400</code></td></tr>
+    <tr><td><strong>Polling forwarder daemon</strong> — tails transcript JSONL + delta/hook files every 0.25s with durable byte/line cursors, POSTs normalized events</td><td><span class="pill native">claude-native</span></td><td><span class="file">claude_native_forwarder.py:443</span></td></tr>
+    <tr><td><strong>App-server JSON-RPC 2.0 over WebSocket</strong> — receives <code>turn/*</code>, <code>item/*</code>, <code>thread/tokenUsage/updated</code> notifications</td><td><span class="pill native">codex-native</span></td><td><span class="file">codex_native_app_server.py:295</span></td></tr>
+    <tr><td><strong>Canonical SSE event union</strong> — <code>ServerStreamEvent</code>, a ~40-variant Pydantic discriminated union served as <code>text/event-stream</code></td><td>all</td><td><span class="file">server/schemas.py:3405</span></td></tr>
+    <tr><td><strong>In-process pub-sub</strong> — <code>session_stream.publish()</code> is the single chokepoint; sync→async via <code>call_soon_threadsafe</code>; live-tail only</td><td>all</td><td><span class="file">runtime/session_stream.py:52</span></td></tr>
+    <tr><td><strong>inflight_text coalescing</strong> — per-turn delta accumulator + dedupe + gap-free replay snapshot for late/reconnecting subscribers</td><td>all</td><td><span class="file">runtime/inflight_text.py:118</span></td></tr>
+    <tr><td><strong>Cost dual-tracking</strong> — display cost (Claude's <code>/cost</code> statusLine verbatim) vs policy cost (<code>max(statusLine, transcript-estimate)</code>, incl. live sub-agent spend)</td><td><span class="pill native">claude-native</span></td><td><span class="file">claude_native_forwarder.py:1390</span></td></tr>
+  </table>
+
+  <h3>End-to-end flow — a claude-native tool call reaching the browser</h3>
+  <div class="flow">
+<span class="step">1</span> <code>claude</code> runs in tmux, launched with <code>--settings &lt;hook json&gt;</code> <span class="arrow">(all hook events registered)</span>
+<span class="step">2</span> model emits text <span class="arrow">→</span> <code>MessageDisplay</code> hook <span class="arrow">appends</span> {delta} to <code>message_deltas.jsonl</code> <span class="arrow">(file, not HTTP, so streaming never blocks)</span>
+<span class="step">3</span> tool result lands in Claude's <code>transcript_path</code> JSONL
+<span class="step">4</span> forwarder daemon (0.25s poll) tails deltas → items → hooks, POSTs to <code>/v1/sessions/&#123;id&#125;/events</code>
+<span class="step">5</span> server persists item <span class="arrow">→</span> <code>session_stream.publish()</code> <span class="arrow">→</span> <code>inflight_text</code> coalesces/dedupes
+<span class="step">6</span> browser/phone holds <code>GET /stream</code> (SSE) <span class="arrow">→</span> renders delta live; reconnect = snapshot prefix + live tail
+  </div>
+
+  <h3>Native CLI vs SDK monitoring</h3>
+  <table>
+    <tr><th>Aspect</th><th><span class="pill native">native CLI</span></th><th><span class="pill sdk">vendor SDK</span></th></tr>
+    <tr><td>Observation point</td><td>Outside the process — observes side-effects (files/hooks/RPC)</td><td>Inside the call — SDK returns structured events directly</td></tr>
+    <tr><td>Transport in</td><td>claude: filesystem tailed by 0.25s poll + hooks · codex: live JSON-RPC WS</td><td>In-process async iterator (<code>run_turn</code> yields events)</td></tr>
+    <tr><td>Cost/tokens</td><td>claude: scraped from statusLine + estimate · codex: <code>tokenUsage</code> notif</td><td>SDK <code>usage</code> on <code>TurnComplete</code></td></tr>
+    <tr><td>Fidelity</td><td>Polling/IO lag; ordering must be reconstructed (durable cursors)</td><td>Real-time, lossless, no reconstruction</td></tr>
+  </table>
+  <p class="kicker">Net: the SDK path is the clean reference; native paths reverse-engineer the same vocabulary out of whatever side-channels each CLI exposes.</p>
+
+  <div class="callout reuse"><span class="lbl">Reuse for agmux</span>
+    The <strong>hook-as-instrumentation pattern</strong> is the highest-leverage idea — it <em>is</em> "monitoring within the existing harness," zero CLI changes. Also lift: the <strong>fast/slow channel split</strong> (high-freq text → append file; rare decisions → long-poll), the small <strong><code>session_stream.py</code> (~150 LoC) + <code>inflight_text.py</code></strong> pub-sub/replay core, and the <strong>cost dual-tracking insight</strong> (the CLI's reported cost lags real spend, so keep a separate estimate for gating).
+  </div>
+  <div class="callout skip"><span class="lbl">Skip / over-engineered</span>
+    The <strong>polling forwarder + durable-cursor machinery</strong> exists only because omnigent observes from <em>outside</em>; if agmux instruments from within (hooks emit straight to a local collector) the entire tail-and-reconcile layer disappears. Also skip the <strong>runner↔server WS tunnel + SSE relay + central DB</strong> (NAT/multi-tenant SaaS scope) and the <strong>MLflow tracing backend</strong> (local OTel spans are the reusable kernel).
+  </div>
+</section>
+
+<!-- ============ Q2 STEERING ============ -->
+<section id="steer">
+  <h2><span class="q">QUESTION 2</span>How omnigent steers other harnesses &amp; injects prompts</h2>
+  <p>Input and output are asymmetric: <strong>input</strong> goes in via send-keys / injection-queue / RPC; <strong>output</strong> comes back via the file-tailing forwarder. For native CLIs, the harness's <code>run_turn</code> returns <em>immediately</em> after the paste lands — the turn is observed, not awaited.</p>
+
+  <h3>Mechanisms</h3>
+  <table>
+    <tr><th>Mechanism</th><th>What it does</th><th>Evidence</th></tr>
+    <tr><td><strong>tmux bracketed-paste injection</strong></td><td>Web/phone message typed into the live pane via <code>load-buffer</code> + <code>paste-buffer -p -d</code> (file buffer, not argv → dodges tmux's ~16KB cap and per-newline submit bug)</td><td><span class="file">claude_native_bridge.py:2288</span> <code>inject_user_message</code></td></tr>
+    <tr><td><strong>Readiness gating</strong></td><td>Waits for <code>tmux.json</code> + the <code>❯</code> prompt glyph before typing, so the first message isn't dropped into a booting TUI</td><td><span class="file">claude_native_bridge.py:2334</span></td></tr>
+    <tr><td><strong>Verified submit</strong></td><td>Polls <code>capture-pane</code> until the draft appears, sends <code>Enter</code>, re-polls and re-sends — Claude coalesces stdin bursts, so fire-and-forget <code>Enter</code> silently fails under load</td><td><span class="file">claude_native_bridge.py:2389</span></td></tr>
+    <tr><td><strong>Soft interrupt / hard stop</strong></td><td><code>send-keys Escape</code> cancels the in-flight response; <code>kill-session</code> ends the pane</td><td><span class="file">claude_native_bridge.py:2425 / 2454</span></td></tr>
+    <tr><td><strong>Scaffold injection queue</strong> <span class="pill sdk">sdk</span></td><td>Mid-turn message POSTed to the scaffold; the SDK sees it at the next tool-loop breakpoint. Exactly-once via <code>injection_id</code>, echoed back as <code>injection.consumed</code></td><td><span class="file">runner/app.py:9834</span>; adapter <span class="file">_executor_adapter.py:384</span></td></tr>
+    <tr><td><strong>Codex app-server RPC</strong> <span class="pill native">codex</span></td><td>Steering = <code>turn/steer</code> (with <code>expectedTurnId</code>); interrupt = <code>turn/interrupt</code> RPC, not a keystroke</td><td><span class="file">runner/app.py:6671</span>; <span class="file">codex_native_executor.py</span></td></tr>
+    <tr><td><strong>Future-park approval</strong></td><td>A policy ASK parks an <code>asyncio.Future</code> until a human verdict arrives; default fails <em>closed</em></td><td><span class="file">runner/pending_approvals.py:43</span></td></tr>
+  </table>
+
+  <h3>End-to-end flow — browser message → running claude-native pane</h3>
+  <div class="flow">
+<span class="step">1</span> browser <code>POST /v1/sessions/&#123;id&#125;/events</code> {type:"message",role:"user"} <span class="arrow">— needs only LEVEL_EDIT (lets a co-driver post)</span>
+<span class="step">2</span> input policy evaluated <em>before</em> forwarding; DENY → sentinel + {denied:true}
+<span class="step">3</span> resolve pinned runner (<code>conversations.runner_id</code>); native item <em>not persisted</em> — forwarder is the single writer
+<span class="step">4</span> forwarded over WS tunnel to runner <code>POST /events</code> <span class="arrow">→</span> no active turn → <code>create_task(_run_turn_bg)</code>
+<span class="step">5</span> <code>run_turn</code> → <code>await to_thread(inject_user_message, ...)</code> under <code>_inject_lock</code>
+<span class="step">6</span> wait for prompt glyph → clear box (<code>C-a</code>/<code>C-k</code>) → load buffer → <code>paste-buffer -p</code> → verify submit
+<span class="step">7</span> output mirrored back by forwarder <span class="arrow">→</span> SSE <span class="arrow">→</span> browser
+  </div>
+
+  <h3>Approval / elicitation / interrupt model</h3>
+  <p>Policy actions are exactly <code>{ALLOW, ASK, DENY}</code> (<span class="file">spec/types.py:1071</span>) — there is no <code>ESCALATE</code>. Four distinct, mostly in-memory concepts:</p>
+  <ul>
+    <li><strong>Approval</strong> (<span class="file">runner/pending_approvals.py</span>): <code>dict[str, Future[bool]]</code> keyed by <code>elicitation_id</code>; verdict arrives as an <code>approval</code> event → <code>set_result</code> → parked coroutine resumes and retries the tool.</li>
+    <li><strong>Server-side park</strong> (<span class="file">server/_elicitation_registry.py</span>): races the Future against "answered in the native TUI" and a disconnect poller — whichever resolves first wins.</li>
+    <li><strong>Elicitation index</strong> (<span class="file">runtime/pending_elicitations.py</span>): a UI badge index, not a park.</li>
+    <li><strong>Interrupt</strong>: dispatched per-harness — claude = Escape, codex = <code>turn/interrupt</code> RPC, pi = <code>abort()</code>, SDK = cancel the turn task (<span class="file">runner/app.py:10013</span>).</li>
+  </ul>
+
+  <h3>Supervisor → sub-agent delegation (the Polly pattern)</h3>
+  <p>Delegation is <strong>session-based, not in-context</strong>. A parent spawns a <em>child Omnigent conversation</em> and drives it via one merged tool, <code>sys_session_send</code> (<span class="file">tools/builtins/spawn.py:56</span>):</p>
+  <ul>
+    <li>Named mode <code>(agent, title)</code>: first call creates+starts the child; same pair later <strong>continues it</strong> (full history + new <code>args</code>) — this is how a parent re-steers a running child.</li>
+    <li>Dispatch is always async, returning <code>{task_id, conversation_id, status}</code>; parallel fan-out = multiple calls in one response. Child runs autonomously; the runner drops the result on the parent's inbox and posts a wake notice; parent collects via <code>sys_read_inbox</code>.</li>
+    <li><strong>Blocked-child escalation</strong>: <code>SubagentBlockNotifier</code> (<span class="file">runtime/subagent_block_notifier.py:97</span>) watches for a child blocked on a human approval, waits a 120s grace, then wakes the parent.</li>
+  </ul>
+
+  <div class="callout reuse"><span class="lbl">Reuse for agmux</span>
+    agmux already lives in tmux, so the prize is concentrated in ~140 lines of <code>inject_user_message</code> / <code>inject_interrupt</code> / <code>kill_session</code>. Lift specifically: <strong>bracketed-paste-via-file-buffer</strong> (the fix for the 16KB cap &amp; per-newline submit bug), <strong>verified submit</strong> (poll-Enter-repoll — don't skip it), <strong>prompt-glyph readiness gating</strong>, and the clean <strong>Escape=soft / kill=hard</strong> split. <strong>Session-based sub-agent delegation</strong> maps naturally onto agmux panes — each child is its own pane, the parent steers by re-sending — far simpler than in-context sub-agents, and cross-vendor mixing comes free.
+  </div>
+  <div class="callout skip"><span class="lbl">Skip / simplify</span>
+    Nearly all remaining complexity exists because omnigent is a <em>remote, multi-user, multi-host</em> meta-harness: the filesystem rendezvous (<code>tmux.json</code>/<code>bridge.json</code>), the runner↔server WS tunnel, persist-vs-bypass dispatch, dual Future-park registries, access levels, and <code>injection_id</code> exactly-once correlation. agmux owns its panes directly (no rendezvous needed) and is single-user-local. For pure-tmux agmux, <em>every</em> harness is a "native" pane, so the send-keys path is the only path — no scaffold injection queue, no continuation drain.
+  </div>
+</section>
+
+<!-- ============ Q3 SHARING ============ -->
+<section id="share">
+  <h2><span class="q">QUESTION 3</span>How omnigent shares data &amp; artefacts between harnesses</h2>
+  <p>Two persistence axes — <strong>metadata stores (SQL)</strong> + a <strong>blob store</strong> — tied by a shared opaque id, plus an ephemeral in-memory event bus. The standout cross-harness primitive is the <code>file_id → data: URI</code> resolver.</p>
+
+  <h3>Storage layers</h3>
+  <table>
+    <tr><th>Store</th><th>Persists</th><th>Backend / evidence</th></tr>
+    <tr><td><code>ArtifactStore</code></td><td>Raw blob <strong>bytes</strong> keyed by opaque id (file_id or <code>agents/&lt;id&gt;/bundle.tar.gz</code>); <code>put/get/delete/exists</code></td><td>Local FS or Databricks Volumes · <span class="file">stores/artifact_store/__init__.py:6</span></td></tr>
+    <tr><td><code>FileStore</code></td><td>File <strong>metadata</strong> (id, filename, bytes, content_type, <code>session_id</code>) — <em>not</em> bytes; cursor pagination, session-scoped</td><td>SQLAlchemy · <span class="file">stores/file_store/sqlalchemy_store.py:35</span></td></tr>
+    <tr><td><code>ConversationStore</code></td><td>Message items with monotonic <code>position</code> cursor + <code>created_at</code></td><td>SQLAlchemy · <span class="file">db/db_models.py:445</span></td></tr>
+    <tr><td><code>CommentStore</code></td><td>Review comments anchored to file path + char range (<code>start_index</code>/<code>end_index</code>, status draft/addressed)</td><td>SQLAlchemy · <span class="file">entities/comment.py</span></td></tr>
+    <tr><td><code>session_stream</code> (not a store)</td><td><strong>Ephemeral</strong> in-process pub-sub fan-out; no persistence, no replay</td><td>asyncio queues · <span class="file">runtime/session_stream.py</span></td></tr>
+  </table>
+  <p><strong>The load-bearing design point:</strong> the metadata/blob split. <code>FileStore.create()</code> returns a <code>file_id</code>; <code>ArtifactStore.put(stored.id, bytes)</code> stores bytes under that same id. Read reverses it. No FK gymnastics.</p>
+
+  <h3>How an artefact becomes visible to <em>any</em> harness</h3>
+  <div class="flow">
+<span class="step">content_resolver.resolve_content_references</span> <span class="arrow">(runtime/content_resolver.py:251)</span>
+  rewrites a {file_id} block <span class="arrow">→</span> <code>file_store.get</code> (ownership) <span class="arrow">→</span> <code>artifact_store.get</code>
+  <span class="arrow">→</span> <code>base64.b64encode</code> <span class="arrow">→</span> inline <code>data:</code> URI (image_url / file_data), per-turn cache
+  <span class="arrow">⇒ provider-agnostic: a file produced under harness A is injected inline into harness B's next message</span>
+  </div>
+
+  <h3>Git worktree strategy (Polly)</h3>
+  <p>Parallel coding sub-agents are isolated in <strong>sibling git worktrees</strong>, each on its own branch; only <strong>diffs</strong> cross to reviewers — never filesystem access.</p>
+  <ul>
+    <li><code>create_worktree()</code> runs <code>git worktree add -b &lt;branch&gt; &lt;path&gt;</code>, always resolving to the main repo root so worktrees are siblings, never nested (<span class="file">host/git_worktree.py:275</span>). Each child's <code>workspace</code> becomes its terminal <code>cwd</code>.</li>
+    <li>Polly extracts <code>git diff main...HEAD</code> (or <code>gh pr diff</code>) and dispatches it to a <strong>different-vendor</strong> reviewer that receives <em>only the diff text</em>. Sharing is <strong>diff-as-message</strong>, not shared FS.</li>
+    <li>Cleanup: <code>git worktree remove --force</code> + <code>git branch -D</code>.</li>
+  </ul>
+
+  <h3>Cross-device sync &amp; sandbox filesystem</h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>Sync (terminal / browser / phone)</h4>
+      <p>Durable ordered log + ephemeral fan-out, reconciled client-side by <strong>id dedup</strong>. Deliberately <strong>no replay machinery</strong>: SQL <code>position</code>-ordered log is the cursor; SSE fan-out is live-only; reconnect = open SSE + GET snapshot + dedupe by stable item id.</p>
+    </div>
+    <div class="card">
+      <h4>Sandbox (Modal / Daytona / Islo)</h4>
+      <p>No mounted volumes. All FS access is <strong>per-operation RPC</strong>: <code>OSEnvironment</code> ABC (read/write/edit/shell). Remote sandboxes run the same runner; the server reaches it through an <strong>HTTP-over-WebSocket tunnel</strong>, base64-streaming bodies back.</p>
+    </div>
+  </div>
+
+  <div class="callout reuse"><span class="lbl">Reuse for agmux</span>
+    Steal the <strong>metadata/blob split</strong> (clean, FK-free) and especially the <strong><code>file_id → data: URI</code> resolver</strong> — it is the single most reusable idea for "artefact from harness A visible to harness B," provider-agnostic by design. <strong><code>git_worktree.py</code> is almost lift-and-ship</strong> (sibling resolution, branch validation, create/remove). Adopt <strong>diff-as-message</strong> reviews and the <strong>snapshot+dedup-by-id reconnect contract</strong> (far simpler than event-sourced replay). Keep the download hardening (<code>Content-Disposition: attachment</code> + <code>nosniff</code>) — serving harness-produced files to a browser inherits the exact stored-XSS risk.
+  </div>
+  <div class="callout skip"><span class="lbl">Skip / simplify</span>
+    Drop the <strong>WS HTTP tunnel</strong> and <strong>per-op <code>OSEnvironment</code> RPC</strong> unless agmux must itself drive remote sandboxes — if harnesses own their sandboxes, agmux only needs metadata+blob+resolver and lets harnesses push artefacts in. The <strong>in-process <code>session_stream</code> won't survive multi-process</strong>: for independent harnesses you'd back the same <code>publish/subscribe</code> interface with Redis pub/sub or Postgres <code>LISTEN/NOTIFY</code>. Collapse comment/policy/permission/agent stores you don't need.
+  </div>
+</section>
+
+<!-- ============ Q4 EXTEND ============ -->
+<section id="extend">
+  <h2><span class="q">QUESTION 4 · most important for agmux</span>How omnigent adds its functionality to every harness</h2>
+  <p>This is the heart of the matter and where agmux and omnigent overlap most. The answer for the <span class="pill native">native</span> path is exactly "mechanics within the harness": <strong>MCP server injection</strong> for tools, a <strong>shared command-hook bridge</strong> for policy/monitoring, <strong>skill bundling</strong> via the plugin convention, and <strong>local proxies</strong> for credentials/gateway — all via the CLI's own documented extension points, with no file written into the user's real config.</p>
+
+  <h3>Per-harness integration (condensed)</h3>
+  <table>
+    <tr><th>Harness</th><th>Launch</th><th>Injected</th><th>Tools / Policy</th></tr>
+    <tr><td><span class="pill native">claude-native</span></td><td>real <code>claude</code> in tmux; argv via <code>augment_claude_args</code></td><td><code>--mcp-config</code> stdio server <code>omnigent</code>; <code>--settings</code> JSON (9 hooks + statusLine + apiKeyHelper); <code>--plugin-dir</code></td><td>tools via injected MCP (<code>mcp__omnigent__*</code>); policy via <code>PreToolUse</code>/<code>PostToolUse</code>/<code>UserPromptSubmit</code> hooks → <code>/policies/evaluate</code>; <code>PermissionRequest</code> hook (24h) routes consent to web</td></tr>
+    <tr><td><span class="pill native">codex-native</span></td><td><code>codex app-server --listen unix://</code> with private <code>CODEX_HOME</code></td><td><code>[mcp_servers.omnigent]</code> in <code>config.toml</code>; <code>hooks.json</code>; pinned model</td><td>same stdio MCP module; hook policy needs codex ≥0.129 + explicit <strong>trust flow</strong> (<code>hooks/list</code>→<code>config/batchWrite</code>), else fail-open</td></tr>
+    <tr><td><span class="pill sdk">claude-sdk</span></td><td>in-process <code>ClaudeSDKClient</code></td><td><code>create_sdk_mcp_server</code>; <code>ClaudeAgentOptions(mcp_servers, can_use_tool, plugins, …)</code></td><td>in-process MCP; unified <code>can_use_tool</code> callback = always-on policy eval + human elicitation</td></tr>
+    <tr><td><span class="pill sdk">cursor</span></td><td>in-process <code>cursor_sdk.AsyncClient</code></td><td>ToolSpecs → <code>custom_tools</code> (no MCP); <code>CURSOR_API_KEY</code></td><td>in-process custom tools; <strong>known gap:</strong> built-in coding tools bypass <code>on:[tool_call]</code> policies</td></tr>
+    <tr><td><span class="pill sdk">pi</span></td><td>Pi CLI subprocess</td><td><code>models.json</code> → gateway; skills via <code>--skill</code>/<code>--no-skills</code></td><td>CLI-native + bridged sys_* tools</td></tr>
+  </table>
+
+  <h3>The common injection primitives</h3>
+  <ol>
+    <li><strong>Stdio MCP server as the universal tool transport.</strong> Both native harnesses inject the <em>same</em> module — <code>python -I -m omnigent.claude_native_bridge serve-mcp --bridge-dir &lt;d&gt;</code> — differing only in config format (Claude: <code>--mcp-config</code> JSON; Codex: <code>[mcp_servers.omnigent]</code> TOML). It advertises the <code>sys_*</code> tools and relays calls back to the active turn.</li>
+    <li><strong>Shared command-hook policy bridge</strong> (<span class="file">omnigent/native_policy_hook.py</span>). Claude Code and Codex emit <em>identically-shaped</em> hook payloads, so one harness-neutral translator serves both: <code>hook_payload_to_evaluation_request</code> maps <code>PreToolUse→PHASE_TOOL_CALL</code>, <code>PostToolUse→PHASE_TOOL_RESULT</code>, <code>UserPromptSubmit→PHASE_REQUEST</code>; <code>evaluation_response_to_hook_output</code> maps verdicts back. <code>PreToolUse</code> fails <strong>closed</strong> on server outage; result phases fail open.</li>
+    <li><strong>Skill bundling</strong> (<span class="file">omnigent/inner/bundle_skills.py</span>). Materializes <code>skills/&lt;name&gt;/SKILL.md</code>, writes <code>.claude-plugin/plugin.json</code>, and translates a <code>skills_filter</code> into <code>--plugin-dir</code> / <code>--setting-sources ""</code> CLI args. Pure Claude Code plugin convention — no orchestration needed.</li>
+    <li><strong>Credential proxy &amp; gateway shim.</strong> <code>credential_proxy.py</code> keeps real secrets in the parent and swaps them in at an egress MITM proxy per-host (with <code>oa_cred_*</code> placeholders + a cross-host 403 leak guard). <code>claude_gateway_shim.py</code> is a localhost reverse proxy (pointed at via <code>ANTHROPIC_BASE_URL</code>) that patches request bodies the Claude CLI mis-builds for non-Anthropic gateways.</li>
+  </ol>
+
+  <h4>Claude Code specifically — the extension points used (all via inline flags, nothing written to <code>~/.claude/settings.json</code>)</h4>
+  <ul>
+    <li><code>--mcp-config &lt;json&gt;</code> → the tool transport (single stdio server).</li>
+    <li><code>--settings &lt;json&gt;</code> → hooks for <code>SessionStart/Stop/StopFailure/UserPromptSubmit/PreToolUse/PostToolUse/PreCompact/MessageDisplay/PermissionRequest/TaskCreated/Completed</code>, plus a chainable custom <code>statusLine</code> and <code>apiKeyHelper</code>.</li>
+    <li><code>--plugin-dir</code> + <code>--setting-sources</code> → skills via the plugin convention.</li>
+    <li>Transcript mirroring by persisted byte offset; workspace pre-trust seeds <code>~/.claude.json</code> to skip onboarding hangs. Notably <strong>no <code>--append-system-prompt</code></strong> — the native terminal owns its prompt.</li>
+  </ul>
+
+  <h4>Codex specifically</h4>
+  <p>Uses the <code>codex app-server</code> JSON-RPC protocol, not keystrokes. Injection writes into a <em>private per-session</em> <code>CODEX_HOME</code> (never the user's real config): <code>[mcp_servers.omnigent]</code> appended to <code>config.toml</code>, <code>hooks.json</code> registered, model pinned. Hooks require codex ≥0.129 and must be explicitly <strong>trusted</strong> via the same <code>hooks/list</code>→<code>config/batchWrite</code> flow the TUI uses, or they're silently skipped.</p>
+
+  <div class="callout reuse"><span class="lbl">Reuse for agmux — the reusable core is items 1–3</span>
+    <strong>(1) The shared command-hook bridge</strong> (<code>native_policy_hook.py</code>) is the single most reusable file — pure stdin→JSON→HTTP→stdout, harness-agnostic because Claude and Codex emit identical payloads. Ship a hook script + a settings/hooks writer and you get policy/monitoring into any CLI with a hook system, no meta-harness. Copy the fail-closed/fail-open phase semantics verbatim. <strong>(2) MCP server injection</strong> (write <code>[mcp_servers.X]</code> / <code>--mcp-config</code>) is exactly how agmux exposes its services as tools <em>inside</em> the harness — and copy the symlink-materialization care so the user's real config is never edited. <strong>(3) Skill bundling</strong> (<code>plugin.json</code> + <code>--plugin-dir</code>) is directly portable. The credential/gateway proxies are standalone localhost proxies, reusable for secret injection / request fixups.
+  </div>
+  <div class="callout skip"><span class="lbl">Tied to the meta-harness — not reusable</span>
+    The <strong><code>Executor</code>/<code>ExecutorEvent</code> abstraction + <code>_HARNESS_MODULES</code>/<code>ExecutorAdapter</code> FastAPI-subprocess machinery</strong> exists to normalize backends so omnigent can <em>drive</em> them — agmux, living inside the harness, never re-implements a runtime's loop. The <strong>SDK in-process integrations</strong> (<code>create_sdk_mcp_server</code>, <code>can_use_tool</code>, cursor <code>custom_tools</code>) require owning the process and importing the vendor SDK; agmux must use the <em>external</em> extension points instead. <strong><code>ProxyMcpManager</code> central policy routing</strong> assumes a server holding session state — agmux enforces locally in the injected hook/MCP server.
+  </div>
+  <div class="callout warn"><span class="lbl">Concrete recommendation</span>
+    agmux's reusable kernel = a per-harness <strong>config writer</strong> (settings.json hooks + MCP config + plugin dir) + a <strong>shared stdin/stdout hook bridge</strong> + a <strong>stdio MCP server</strong>. Reuse omnigent's <code>native_policy_hook.py</code> translation table and <code>bundle_skills.py</code> almost verbatim; reimplement enforcement to be <em>local</em> rather than routed through a server.
+  </div>
+</section>
+
+<!-- ============ FINDINGS ============ -->
+<section id="findings">
+  <h2>Other interesting findings (agmux-relevant)</h2>
+
+  <div class="card">
+    <h4>The repo dogfoods skills for its own development</h4>
+    <p><code>.claude/skills/cursor-sdk-e2e-dev</code> and <code>antigravity-sdk-e2e-dev</code> are <code>SKILL.md</code> files used to develop the harness adapters themselves. Confirms the maintainers treat skills as a first-class extension surface — the same lever agmux wants to offer.</p>
+  </div>
+
+  <div class="card">
+    <h4>Cross-vendor review is a product principle, not a feature</h4>
+    <p>Polly mandates that a diff written by one vendor is reviewed by a <em>different</em> vendor (claude-native code → codex reviewer, etc.). Mechanically free because delegation is session-based and harness-agnostic. A strong validation of agmux's multi-harness premise: heterogeneity is an asset when the substrate normalizes it.</p>
+  </div>
+
+  <div class="card">
+    <h4>Fail-closed vs fail-open is phase-specific, and deliberate</h4>
+    <p><code>PreToolUse</code> fails <strong>closed</strong> (deny on server outage) — you must not let an unreviewed dangerous tool run. <code>PostToolUse</code>/<code>UserPromptSubmit</code> fail <strong>open</strong> — blocking after the fact or on prompt submit only harms UX. A small, well-reasoned safety stance worth copying exactly.</p>
+  </div>
+
+  <div class="card">
+    <h4>Two costs, because the CLI's number lies</h4>
+    <p>Claude's <code>/cost</code> statusLine lags real spend (especially with sub-agents), so omnigent gates budgets on <code>max(statusLine, transcript-estimate)</code> while still <em>displaying</em> the verbatim CLI value. If agmux ever enforces spend caps over a wrapped CLI, this gotcha is non-obvious and load-bearing.</p>
+  </div>
+
+  <div class="card">
+    <h4>Versioned protocol fragility &amp; trust gating</h4>
+    <p>Codex hook enforcement silently disables below v0.129 and requires an explicit trust handshake. Practical reminder: in-harness instrumentation rides on the host CLI's evolving extension API — agmux needs version detection and graceful, surfaced degradation, not silent failure.</p>
+  </div>
+
+  <div class="card">
+    <h4>The hard-won tmux details are the real IP</h4>
+    <p>Bracketed-paste-via-file-buffer (16KB cap + per-newline submit bug, referencing <code>anthropics/claude-code#52126</code>), verified-submit polling, and prompt-glyph readiness gating are the kind of fixes only found by hitting the bugs in production. For agmux these ~140 lines are worth more than the entire surrounding architecture.</p>
+  </div>
+</section>
+
+<!-- ============ AGMUX SYNTHESIS ============ -->
+<section id="agmux">
+  <h2>Synthesis — what agmux takes, what it leaves</h2>
+  <p class="lead">Omnigent and agmux share the same four problems but invert the topology. Omnigent <em>drives</em> harnesses from a central server; agmux <em>augments</em> harnesses from inside. Almost everything omnigent built for the <span class="pill native">native</span> path transfers; almost everything built for being a remote multi-tenant orchestrator does not.</p>
+
+  <table>
+    <tr><th>Capability</th><th style="color:var(--accent2)">Take (in-harness mechanics)</th><th style="color:var(--danger)">Leave (meta-harness scaffolding)</th></tr>
+    <tr>
+      <td><strong>Monitor</strong></td>
+      <td>Hook-as-instrumentation; fast/slow channel split; <code>session_stream</code> + <code>inflight_text</code> core; cost dual-tracking</td>
+      <td>Polling forwarder + durable cursors; WS tunnel + SSE relay + central DB; MLflow backend</td>
+    </tr>
+    <tr>
+      <td><strong>Steer</strong></td>
+      <td>The ~140 LoC tmux trio (bracketed paste, verified submit, glyph gating); Escape/kill split; session-based sub-agent delegation</td>
+      <td>FS rendezvous; runner affinity; dual Future-park registries; <code>injection_id</code> exactly-once; access levels</td>
+    </tr>
+    <tr>
+      <td><strong>Share</strong></td>
+      <td>Metadata/blob split; <code>file_id→data: URI</code> resolver; <code>git_worktree.py</code>; diff-as-message; snapshot+dedup reconnect; download hardening</td>
+      <td>WS HTTP tunnel; per-op <code>OSEnvironment</code> RPC; comment/policy/permission stores; in-process-only fan-out</td>
+    </tr>
+    <tr>
+      <td><strong>Extend</strong></td>
+      <td><code>native_policy_hook.py</code> bridge (≈verbatim); MCP server injection + config writer; <code>bundle_skills.py</code>; credential/gateway proxies</td>
+      <td><code>Executor</code>/<code>ExecutorAdapter</code> FastAPI-subprocess machinery; SDK in-process integrations; <code>ProxyMcpManager</code> central routing</td>
+    </tr>
+  </table>
+
+  <div class="callout reuse"><span class="lbl">The one-paragraph thesis</span>
+    Omnigent has already proven that Claude Code and Codex can be fully instrumented and tool-extended <strong>through their own published extension points</strong> — hooks, MCP config, plugin/skill dirs, gateway env — with zero modification to the CLIs and (for native) without driving the agent loop at all. That proof is exactly agmux's design space. agmux should harvest the four self-contained primitives (<strong>hook bridge, MCP/config injection, skill bundling, tmux steering</strong>) and the small event/replay core, then build them as <em>local</em> services rather than as clients of a central orchestrator — discarding the <code>Executor</code> normalization layer, the runner/server tunnel, and the multi-tenant persistence that only exist because omnigent chose to be the harness on top.
+  </div>
+</section>
+
+<footer>
+  <p>Generated from a read-only analysis of <code>github.com/omnigent-ai/omnigent</code> (cloned to a temp path; not modified). Findings derived from a central architectural survey plus four parallel deep-dive passes, each citing <code>file:line</code> evidence. File/line references reflect the cloned <code>main</code> at analysis time and may drift.</p>
+  <p class="kicker">Report for the agmux project · prepared 2026-06-18</p>
+</footer>
+
+</div>
+</body>
+</html>
