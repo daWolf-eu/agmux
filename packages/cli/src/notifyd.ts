@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { execFile } from "node:child_process";
 import type { SessionRow } from "@agmux/protocol";
-import { PollingSessionFeed, formatStatusLine, createDetectState, detectNotifications } from "@agmux/tui";
+import { PollingSessionFeed, formatStatusLine, createDetectState, primeDetectState, detectNotifications } from "@agmux/tui";
 import type { AttentionConfig } from "./attention-config.ts";
 import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
 import { dispatchNotification, type SinkDeps } from "./sinks.ts";
@@ -148,6 +148,11 @@ export async function runNotifyd(
     (rows) => {
       writeLineAtomic(file, formatStatusLine(rows, { show, max, format }), deps.fs);
       beat();
+      // The first observation is a baseline, not a wave of transitions: an
+      // empty DetectState would otherwise read every already-waiting session
+      // as brand new and announce the whole board on startup. The status line
+      // written just above still shows all of them.
+      if (lastRows === null) primeDetectState(detectState, rows);
       lastRows = rows;
       evaluate(rows);
       deps.onRows?.(rows);
