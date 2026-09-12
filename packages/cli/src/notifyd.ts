@@ -67,8 +67,9 @@ export interface NotifydDeps {
   onRows?: (rows: SessionRow[]) => void;   // sink hook; Task 12 attaches notifications here
   log?: (s: string) => void;
   sinkDeps?: SinkDeps;   // test seam; defaults to real tmux/notifier shell-outs
-  setIntervalImpl?: typeof setInterval;   // test seam for the heartbeat timer
+  setIntervalImpl?: typeof setInterval;   // test seam for the daemon tick timer
   clearIntervalImpl?: typeof clearInterval;
+  now?: () => number;   // test seam for the debounce clock
 }
 
 export async function runNotifyd(
@@ -96,33 +97,59 @@ export async function runNotifyd(
   const sinkDeps: SinkDeps = deps.sinkDeps ?? { run: realRun, capture: realCapture, which: whichSync, log, warned: new Set<string>() };
   const notify = deps.config.notify;
 
-  // Heartbeat must reflect daemon liveness, not session-change liveness: the
-  // feed's onUpdate only fires when rows actually changed (by design — see
-  // PollingSessionFeed), so in a quiet steady state relying solely on that
-  // callback lets the heartbeat go stale while the daemon is perfectly
-  // healthy, and `statusline --check` falsely reports it dead. This timer
-  // writes the heartbeat on a fixed cadence independent of session activity;
-  // the feed's own beat() calls on update/error are kept too since they cost
-  // nothing extra and keep the heartbeat maximally fresh.
+  const now = deps.now ?? Date.now;
+
+  // The last rows the feed delivered, kept so the tick timer below can
+  // re-evaluate them. `null` until the first update arrives.
+  let lastRows: SessionRow[] | null = null;
+
+  // detectNotifications is a pure function of (state, rows, now): with rows
+  // unchanged it is idempotent — `fired` dedups an event that already went
+  // out, and a pending entry keeps the `since` it was first given. That makes
+  // it safe, and necessary, to call on a clock rather than only on change.
+  const evaluate = (rows: SessionRow[]): void => {
+    if (!notify.enabled) return;
+    const events = detectNotifications(
+      detectState, rows, { delayMs: notify.delayMs, triggers: notify.triggers }, now(),
+    );
+    for (const ev of events) {
+      // dispatchNotification already swallows its own shell-out failures;
+      // this catch is belt-and-braces so a notification bug can never
+      // take the daemon down.
+      dispatchNotification(ev, notify, sinkDeps).catch((e) => log(`agmux: notify dispatch failed: ${e}`));
+    }
+  };
+
+  // Both things this timer does exist because the feed's onUpdate fires only
+  // when rows actually changed (by design — see PollingSessionFeed), while
+  // both of them are functions of elapsed time:
+  //
+  //  - The heartbeat must reflect daemon liveness, not session-change
+  //    liveness, or a quiet steady state makes `statusline --check` falsely
+  //    report a perfectly healthy daemon dead.
+  //  - A debounced notification becomes due delayMs AFTER the change that
+  //    armed it. Evaluating only inside onUpdate means the change that arms a
+  //    wait is the last evaluation it ever gets, so the notification sits
+  //    there until some unrelated session changes and drags it out late —
+  //    the status line goes yellow immediately while the toast and sound
+  //    arrive minutes later, attached to the wrong event.
+  //
+  // Re-evaluating stale rows while the hub is unreachable is deliberate: the
+  // wait was real when we last saw it, and `fired` still caps it at one
+  // notification per episode.
   const setIntervalImpl = deps.setIntervalImpl ?? setInterval;
   const clearIntervalImpl = deps.clearIntervalImpl ?? clearInterval;
-  const heartbeatTimer = setIntervalImpl(beat, intervalMs);
+  const tickTimer = setIntervalImpl(() => {
+    beat();
+    if (lastRows) evaluate(lastRows);
+  }, intervalMs);
 
   const unsubscribe = feed.subscribe(
     (rows) => {
       writeLineAtomic(file, formatStatusLine(rows, { show, max, format }), deps.fs);
       beat();
-      if (notify.enabled) {
-        const events = detectNotifications(
-          detectState, rows, { delayMs: notify.delayMs, triggers: notify.triggers }, Date.now(),
-        );
-        for (const ev of events) {
-          // dispatchNotification already swallows its own shell-out failures;
-          // this catch is belt-and-braces so a notification bug can never
-          // take the daemon down.
-          dispatchNotification(ev, notify, sinkDeps).catch((e) => log(`agmux: notify dispatch failed: ${e}`));
-        }
-      }
+      lastRows = rows;
+      evaluate(rows);
       deps.onRows?.(rows);
     },
     () => { writeLineAtomic(file, staleMarker("hub down"), deps.fs); beat(); },
@@ -137,7 +164,7 @@ export async function runNotifyd(
     const stop = () => {
       if (done) return;
       done = true;
-      clearIntervalImpl(heartbeatTimer);
+      clearIntervalImpl(tickTimer);
       unsubscribe();
       process.off("SIGINT", onSignal);
       process.off("SIGTERM", onSignal);
