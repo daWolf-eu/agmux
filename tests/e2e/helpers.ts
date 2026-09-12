@@ -2,7 +2,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export interface TestEnv { stateDir: string; configPath: string; hubBin: string; wrapBin: string; cliBin: string; }
+export interface TestEnv { root: string; stateDir: string; configPath: string; hubBin: string; wrapBin: string; cliBin: string; }
+
+// Every env handed out and not yet torn down. A test that throws mid-body never
+// reaches its own cleanup, so teardown is driven from afterEach via
+// cleanupAllTestEnvs() rather than from the test body.
+const liveEnvs = new Set<TestEnv>();
+let exitHookInstalled = false;
 
 export function makeTestEnv(): TestEnv {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-e2e-"));
@@ -47,7 +53,61 @@ args = ["-c", "while true; do sleep 1; echo .; done"]
   fs.writeFileSync(cliBin, `#!/bin/sh\n${envLine}\nexec bun ${cliScript} "$@"\n`);
   fs.chmodSync(cliBin, 0o755);
 
-  return { stateDir, configPath, hubBin, wrapBin, cliBin };
+  const env: TestEnv = { root, stateDir, configPath, hubBin, wrapBin, cliBin };
+  liveEnvs.add(env);
+  installExitHook();
+  return env;
+}
+
+function readPid(file: string): number | null {
+  try {
+    const n = Number(fs.readFileSync(file, "utf8").trim());
+    return Number.isInteger(n) && n > 0 ? n : null;
+  } catch { return null; }
+}
+
+function isAlive(pid: number): boolean {
+  try { process.kill(pid, 0); return true; } catch (e: any) { return e?.code === "EPERM"; }
+}
+
+/**
+ * Terminate the hub this env spawned. The pid is read from the env's OWN
+ * temp stateDir, so there is no path by which this reaches the developer's
+ * real hub at ~/.agmux/hub.pid.
+ *
+ * Synchronous throughout so the same code serves both afterEach and the
+ * process-exit safety net below, where async work would not run.
+ */
+function killHub(stateDir: string): void {
+  const pid = readPid(path.join(stateDir, "hub.pid"));
+  if (pid === null || !isAlive(pid)) return;
+  try { process.kill(pid, "SIGTERM"); } catch { return; }
+  const deadline = Date.now() + 2000;
+  while (Date.now() < deadline) {
+    if (!isAlive(pid)) return;
+    Bun.sleepSync(50);
+  }
+  try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+}
+
+/** Tear down one env: its hub, then its temp tree. Never throws. */
+export function cleanupTestEnv(env: TestEnv): void {
+  try { killHub(env.stateDir); } catch { /* best effort */ }
+  try { fs.rmSync(env.root, { recursive: true, force: true }); } catch { /* best effort */ }
+  liveEnvs.delete(env);
+}
+
+/** Tear down every env this file has handed out. Call from afterEach. */
+export function cleanupAllTestEnvs(): void {
+  for (const env of [...liveEnvs]) cleanupTestEnv(env);
+}
+
+// Safety net for the paths afterEach cannot cover — a crashed or timed-out
+// runner. Sync-only by necessity: nothing async runs during 'exit'.
+function installExitHook(): void {
+  if (exitHookInstalled) return;
+  exitHookInstalled = true;
+  process.on("exit", () => { try { cleanupAllTestEnvs(); } catch { /* exiting anyway */ } });
 }
 
 export async function waitFor(check: () => Promise<boolean> | boolean, timeoutMs = 5000): Promise<void> {

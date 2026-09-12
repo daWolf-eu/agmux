@@ -1,14 +1,24 @@
-import { test, expect } from "bun:test";
+import { test, expect, afterEach } from "bun:test";
 import { $ } from "bun";
-import { makeTestEnv, waitFor, warmHub } from "./helpers.ts";
+import { makeTestEnv, waitFor, warmHub, cleanupAllTestEnvs } from "./helpers.ts";
+
+// Override the wrapper's internal tmux session name so we never touch the user's real "agmux".
+const innerSession = "agmux-e2e-internal";
+
+// Teardown runs here, not at the end of the test body: an assertion that
+// fails mid-test skips the rest of the body, which is how e2e runs used to
+// strand a hub per test in a temp dir nobody deleted.
+afterEach(async () => {
+  try { await $`tmux kill-session -t agmux-e2e`.quiet(); } catch {}
+  try { await $`tmux kill-session -t agmux-e2e-internal`.quiet(); } catch {}
+  cleanupAllTestEnvs();
+});
 
 test("run → ls shows session → kill ends it", async () => {
   const env = makeTestEnv();
-  // Override the wrapper's internal tmux session name so we never touch the user's real "agmux".
-  const innerSession = "agmux-e2e-internal";
   const baseEnv = {
-    HOME: env.stateDir.replace(/\.agmux$/, ""),
-    XDG_CONFIG_HOME: env.stateDir.replace(/\.agmux$/, "") + "/.config",
+    HOME: env.root,
+    XDG_CONFIG_HOME: `${env.root}/.config`,
     AGMUX_HUB_BIN: env.hubBin,
     AGMUX_WRAP_BIN: env.wrapBin,
     AGMUX_TMUX_SESSION: innerSession,
@@ -46,7 +56,4 @@ test("run → ls shows session → kill ends it", async () => {
     return out.includes(" ended ");
   }, 15000);
 
-  // Cleanup — only kill sessions this test created; never touch the user's "agmux".
-  try { await $`tmux kill-session -t agmux-e2e`; } catch {}
-  try { await $`tmux kill-session -t ${innerSession}`; } catch {}
 }, 30000);
