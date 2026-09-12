@@ -67,6 +67,8 @@ export interface NotifydDeps {
   onRows?: (rows: SessionRow[]) => void;   // sink hook; Task 12 attaches notifications here
   log?: (s: string) => void;
   sinkDeps?: SinkDeps;   // test seam; defaults to real tmux/notifier shell-outs
+  setIntervalImpl?: typeof setInterval;   // test seam for the heartbeat timer
+  clearIntervalImpl?: typeof clearInterval;
 }
 
 export async function runNotifyd(
@@ -93,6 +95,18 @@ export async function runNotifyd(
   const detectState = createDetectState();
   const sinkDeps: SinkDeps = deps.sinkDeps ?? { run: realRun, capture: realCapture, which: whichSync, log, warned: new Set<string>() };
   const notify = deps.config.notify;
+
+  // Heartbeat must reflect daemon liveness, not session-change liveness: the
+  // feed's onUpdate only fires when rows actually changed (by design — see
+  // PollingSessionFeed), so in a quiet steady state relying solely on that
+  // callback lets the heartbeat go stale while the daemon is perfectly
+  // healthy, and `statusline --check` falsely reports it dead. This timer
+  // writes the heartbeat on a fixed cadence independent of session activity;
+  // the feed's own beat() calls on update/error are kept too since they cost
+  // nothing extra and keep the heartbeat maximally fresh.
+  const setIntervalImpl = deps.setIntervalImpl ?? setInterval;
+  const clearIntervalImpl = deps.clearIntervalImpl ?? clearInterval;
+  const heartbeatTimer = setIntervalImpl(beat, intervalMs);
 
   const unsubscribe = feed.subscribe(
     (rows) => {
@@ -123,6 +137,7 @@ export async function runNotifyd(
     const stop = () => {
       if (done) return;
       done = true;
+      clearIntervalImpl(heartbeatTimer);
       unsubscribe();
       process.off("SIGINT", onSignal);
       process.off("SIGTERM", onSignal);
