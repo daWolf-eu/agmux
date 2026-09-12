@@ -122,7 +122,14 @@ async function main(): Promise<number> {
       let config;
       try { config = loadAttentionConfigFile(configPath); }
       catch { config = loadAttentionConfig(""); }
-      return runNotifyd({ hubUrl }, { env: process.env, config });
+      return runNotifyd(
+        {
+          hubUrl,
+          lockPath: path.join(stateDir, "notifyd.lock"),
+          replace: argv.includes("--replace"),
+        },
+        { env: process.env, config },
+      );
     }
     case "run": {
       const parsed = parseRunArgs(argv.slice(1));

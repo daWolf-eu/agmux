@@ -6,6 +6,7 @@ import { PollingSessionFeed, formatStatusLine, createDetectState, primeDetectSta
 import type { AttentionConfig } from "./attention-config.ts";
 import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
 import { dispatchNotification, type SinkDeps } from "./sinks.ts";
+import { acquireSingletonLock } from "@agmux/hub";
 
 // No shell involved (execFile, not exec), and `which` is a plain PATH scan —
 // no subprocess at all — so there is nothing here that can execute untrusted
@@ -58,6 +59,24 @@ export function writeLineAtomic(file: string, text: string, deps: AtomicFsDeps =
   } catch { /* best-effort */ }
 }
 
+/**
+ * Single-instance guard. Two daemons are not a harmless duplicate: each keeps
+ * its own in-memory notified-set, so N daemons mean N notifications for one
+ * event — and a daemon left behind by a `kill %1` that missed (job numbers are
+ * per-shell) goes on serving pre-rebuild behaviour indefinitely.
+ */
+export interface NotifydLock {
+  acquire: (lockPath: string) => { release: () => void } | null;
+  holder: (lockPath: string) => number | null;
+  kill: (pid: number) => void;
+}
+
+const realLock: NotifydLock = {
+  acquire: (p) => acquireSingletonLock(p),
+  holder: (p) => { try { return Number(fs.readFileSync(p, "utf8").trim()) || null; } catch { return null; } },
+  kill: (pid) => { try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ } },
+};
+
 export interface NotifydDeps {
   env: Record<string, string | undefined>;
   config: AttentionConfig;
@@ -67,13 +86,14 @@ export interface NotifydDeps {
   onRows?: (rows: SessionRow[]) => void;   // sink hook; Task 12 attaches notifications here
   log?: (s: string) => void;
   sinkDeps?: SinkDeps;   // test seam; defaults to real tmux/notifier shell-outs
+  lock?: NotifydLock;    // test seam; defaults to the hub's O_EXCL singleton lock
   setIntervalImpl?: typeof setInterval;   // test seam for the daemon tick timer
   clearIntervalImpl?: typeof clearInterval;
   now?: () => number;   // test seam for the debounce clock
 }
 
 export async function runNotifyd(
-  opts: { hubUrl: string; intervalMs?: number; stop?: AbortSignal },
+  opts: { hubUrl: string; intervalMs?: number; stop?: AbortSignal; lockPath?: string; replace?: boolean },
   deps: NotifydDeps,
 ): Promise<number> {
   const file = cachePath(deps.env);
@@ -88,6 +108,32 @@ export async function runNotifyd(
   const beat = () => writeLineAtomic(heartbeatPath(file), new Date().toISOString(), deps.fs);
 
   const log = deps.log ?? ((s: string) => { process.stderr.write(`${s}\n`); });
+
+  // Acquire before anything else observable happens: a refused start must not
+  // have written a status line or fired a notification first.
+  let lockHandle: { release: () => void } | null = null;
+  if (opts.lockPath) {
+    const lock = deps.lock ?? realLock;
+    lockHandle = lock.acquire(opts.lockPath);
+    if (!lockHandle) {
+      const holder = lock.holder(opts.lockPath);
+      if (!opts.replace) {
+        log(`agmux: notifyd is already running (pid ${holder ?? "unknown"}). ` +
+            `Use 'agmux notifyd --replace' to restart it, or kill ${holder ?? "it"} first.`);
+        return 1;
+      }
+      if (holder !== null) lock.kill(holder);
+      // The incumbent releases on SIGTERM; give it a moment, then take over.
+      for (let i = 0; i < 50 && !lockHandle; i++) {
+        await new Promise((r) => setTimeout(r, 20));
+        lockHandle = lock.acquire(opts.lockPath);
+      }
+      if (!lockHandle) {
+        log(`agmux: notifyd ${holder ?? "incumbent"} did not exit; not starting.`);
+        return 1;
+      }
+    }
+  }
   // Two independent pieces of dedup state, both caller-owned and created once
   // for the daemon's lifetime, right next to each other: DetectState dedups
   // which transitions have already fired, `warned` dedups which "notifier
@@ -171,6 +217,7 @@ export async function runNotifyd(
       done = true;
       clearIntervalImpl(tickTimer);
       unsubscribe();
+      lockHandle?.release();
       process.off("SIGINT", onSignal);
       process.off("SIGTERM", onSignal);
       opts.stop?.removeEventListener("abort", onAbort);
