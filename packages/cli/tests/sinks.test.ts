@@ -36,6 +36,31 @@ function deps(over: Partial<SinkDeps> = {}): SinkDeps & { calls: string[][] } {
 
 const ev = { session_id: "agx-1", trigger: "permission" as const, row: mkRow({ session_id: "agx-1", tmux_session: "work", tmux_window: "2", tmux_pane: "%3" }) };
 
+test("the body identifies the session by pane, so two agents in one window are distinguishable", async () => {
+  const d = deps();
+  const other = { session_id: "agx-2", trigger: "permission" as const,
+    row: mkRow({ session_id: "agx-2", tmux_session: "work", tmux_window: "2", tmux_pane: "%9" }) };
+  await dispatchNotification(ev, CFG, d);
+  await dispatchNotification(other, CFG, d);
+  const bodies = d.calls.map((c) => c.join(" ")).filter((c) => c.includes("needs permission"));
+  expect(bodies.length).toBeGreaterThan(0);
+  for (const b of bodies) expect(b).not.toContain("work:2");
+  expect(bodies.some((b) => b.includes("work:%3"))).toBe(true);
+  expect(bodies.some((b) => b.includes("work:%9"))).toBe(true);
+});
+
+test("falls back to the session name alone when the pane is unknown", async () => {
+  const d = deps();
+  await dispatchNotification(
+    { session_id: "agx-3", trigger: "permission" as const,
+      row: mkRow({ session_id: "agx-3", tmux_session: "work", tmux_pane: null }) },
+    CFG, d,
+  );
+  const body = d.calls.map((c) => c.join(" ")).find((c) => c.includes("needs permission"))!;
+  expect(body).toContain("work needs permission");
+  expect(body).not.toContain("work:");
+});
+
 test("fires both the tmux toast and the OS notifier", async () => {
   const d = deps();
   await dispatchNotification(ev, CFG, d);

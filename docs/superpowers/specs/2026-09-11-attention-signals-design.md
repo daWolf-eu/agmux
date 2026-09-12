@@ -212,7 +212,7 @@ enabled  = true
 position = "status2"       # status2 | status-right | off
 show     = "all"           # all | unread | waiting
 max      = 6               # max sessions rendered; overflow collapses to a "+N" chip
-format   = "{glyph} {tmux_session}:{tmux_window}"
+format   = "{glyph} {tmux_session}:{tmux_pane}"
 sort     = "activity"      # reuses the existing ls sort vocabulary
 ```
 
@@ -248,11 +248,13 @@ Notes on specific keys:
   unchanged). `{tmux_session}` is abbreviated to fit `max` entries on one line —
   truncated from the middle, which keeps a numeric or branch-like suffix legible.
 
-  The default is `{glyph} {tmux_session}:{tmux_window}` because the status line's job is
+  The default is `{glyph} {tmux_session}:{tmux_pane}` because the status line's job is
   to let you *identify which session this is and go there*, and the tmux coordinates are
-  the only fields that reliably do that today. `profile` is deliberately excluded: it
-  names how a session was launched, not which conversation it is, so several concurrent
-  sessions routinely share one profile and the line stops being discriminating.
+  the only fields that reliably do that today. The pane is the identifying coordinate,
+  not the window: agents are routinely split into several panes of one window, and a
+  window-keyed line renders those as visually identical entries — the same collision
+  `profile` was excluded for. (`profile` names how a session was launched, not which
+  conversation it is.) `{tmux_window}` remains available for anyone who wants it.
 
   This is the weakest part of the design, and it is a data problem rather than a
   formatting one — agmux has no human-meaningful session label yet. The natural fix is a

@@ -104,7 +104,7 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
       show: oneOf(s.show, SHOW_MODES, "statusline.show", "all"),
       max: positiveInt(s.max, "statusline.max", 6),
-      format: str(s.format, "statusline.format", "{glyph} {tmux_session}:{tmux_window}"),
+      format: str(s.format, "statusline.format", "{glyph} {tmux_session}:{tmux_pane}"),
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),
     },
   };

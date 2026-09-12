@@ -10,7 +10,7 @@ test("empty config yields documented defaults", () => {
   expect(c.statusline.show).toBe("all");
   expect(c.statusline.max).toBe(6);
   expect(c.statusline.position).toBe("status2");
-  expect(c.statusline.format).toBe("{glyph} {tmux_session}:{tmux_window}");
+  expect(c.statusline.format).toBe("{glyph} {tmux_session}:{tmux_pane}");
 });
 
 test("parses durations in both forms", () => {
@@ -112,5 +112,5 @@ test("omitting all newly-validated fields still yields the documented defaults",
   expect(c.notify.tmuxMessage).toBe(true);
   expect(c.notify.suppressWhenVisible).toBe(true);
   expect(c.statusline.enabled).toBe(false);
-  expect(c.statusline.format).toBe("{glyph} {tmux_session}:{tmux_window}");
+  expect(c.statusline.format).toBe("{glyph} {tmux_session}:{tmux_pane}");
 });

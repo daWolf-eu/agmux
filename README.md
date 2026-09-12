@@ -173,7 +173,7 @@ enabled  = false
 position = "status2"       # status2 | status-right | off
 show     = "all"           # all | unread | waiting
 max      = 6               # max sessions rendered
-format   = "{glyph} {tmux_session}:{tmux_window}"
+format   = "{glyph} {tmux_session}:{tmux_pane}"
 sort     = "activity"      # started | activity
 ```
 

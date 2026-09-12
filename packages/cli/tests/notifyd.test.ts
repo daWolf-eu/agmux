@@ -35,7 +35,7 @@ test("a write failure is swallowed — the daemon must not die over a cache file
 const row: SessionRow = {
   session_id: "agx-1", agent_kind: "claude", profile: null, native_session_id: null,
   command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
-  tmux_session: "work", tmux_window: "2", tmux_socket: null, tmux_pane: null,
+  tmux_session: "work", tmux_window: "@2", tmux_socket: null, tmux_pane: "%7",
   host: "h", project: null, parent_session_id: null, start_ts: "2026-09-11T10:00:00.000Z",
   last_heartbeat_ts: null, end_ts: null, exit_code: null, signal: null,
   status: "running", origin: "native",
@@ -81,7 +81,7 @@ test("a feed update writes the rendered line and the heartbeat", async () => {
   capturedOnUpdate!([row]);
 
   const cache = "/run/u/agmux/statusline";
-  expect(files[cache]).toContain("work:2");
+  expect(files[cache]).toContain("work:%7");
   expect(files[heartbeatPath(cache)]).toBeTruthy();
 
   ac.abort();
