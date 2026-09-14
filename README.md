@@ -137,6 +137,34 @@ interval = 30
 
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
 
+### Session glyphs
+
+`agmux dash` and the tmux status line share one glyph, which encodes two
+independent things — colour for status, shape for whether you have seen it:
+
+| Colour | Status |
+| --- | --- |
+| green | `running` |
+| amber | `waiting` (needs your input) |
+| grey | `idle` |
+| red | `ended` non-zero or on a signal |
+| dim grey | `ended` cleanly, or `lost` |
+
+| Shape | Read-ness |
+| --- | --- |
+| `●` solid | unread — an attention event is newer than your last acknowledgement |
+| `○` outlined | read |
+
+So an amber `●` is a session waiting on you that you haven't looked at, and an
+amber `○` is one you have already seen and chose to leave blocked. A session
+becomes read when you attach to it, when you press `u` on its row in `dash`, or
+via `agmux seen`; it becomes unread again on the next `input.required`,
+`turn.ended`, or `session.ended`. See [Attention signals](#attention-signals) for
+the read/unread model in full.
+
+The glyphs are fixed for now — themes and per-status customisation are not yet
+implemented.
+
 ### Attention signals
 
 `agmux notifyd` is a long-running daemon that watches sessions and drives two

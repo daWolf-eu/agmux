@@ -389,3 +389,50 @@ test("f re-queries: each activity group subscribes to its own feed", async () =>
   expect(subscribed).toEqual(["open", "closed", "all"]);
   renderer.destroy();
 });
+
+test("the row glyph is solid when unread and outlined when read", async () => {
+  const rows = [
+    mkRow({ session_id: "agx-unread-01", status: "waiting", unread: true }),
+    mkRow({ session_id: "agx-read-0002", status: "waiting", unread: false }),
+  ];
+  const { renderer, renderOnce, captureCharFrame } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+
+  const lines = captureCharFrame().split("\n");
+  const unreadLine = lines.find((l) => l.includes("agx-unread-01")) ?? "";
+  const readLine = lines.find((l) => l.includes("agx-read-0002")) ?? "";
+  // Both rows share a status, so only the shape may differ between them.
+  expect(unreadLine).toContain("●");
+  expect(unreadLine).not.toContain("○");
+  expect(readLine).toContain("○");
+  expect(readLine).not.toContain("●");
+  renderer.destroy();
+});
+
+test("the help overlay documents both glyph axes", async () => {
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed([mkRow({ session_id: "agx-help-001" })])} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("?"); });
+  await renderOnce();
+
+  const frame = captureCharFrame();
+  expect(frame).toContain("colour = status, shape = read");
+  for (const tone of ["running", "waiting", "idle", "error", "closed"]) expect(frame).toContain(tone);
+  expect(frame).toContain("● unread");
+  expect(frame).toContain("○ read");
+  renderer.destroy();
+});

@@ -9,6 +9,7 @@ import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { yankFields } from "../shared/yank.ts";
 import { pad } from "../shared/columns.ts";
+import { STATUS_COLORS, READ_SHAPE, UNREAD_SHAPE, type StatusTone } from "../shared/glyph.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
@@ -41,6 +42,10 @@ const TABS: PreviewMode[] = ["mirror", "detail"];
 
 // Muted panel border — softer than the renderer's default white. Easy to tune.
 const BORDER = "#7f849c";
+
+// Help-overlay legend for the status colours. The tone names double as the
+// user-facing labels; STATUS_COLORS stays the single source of the palette.
+const TONE_LEGEND = Object.keys(STATUS_COLORS) as StatusTone[];
 
 export function DashApp(props: DashAppProps) {
   const { feedFor, hubUrl } = props;
@@ -203,6 +208,16 @@ export function DashApp(props: DashAppProps) {
         <text>j/k move · g/G top/bottom · s sort · f filter · / search</text>
         <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
         <text>y yank field · x kill · u mark read · ? help · q quit</text>
+        <text> </text>
+        <text fg="#6c7086">glyph: colour = status, shape = read</text>
+        <text>
+          {TONE_LEGEND.map((tone, i) => (
+            <span key={tone} fg={STATUS_COLORS[tone]}>
+              {`${i > 0 ? "  " : ""}${UNREAD_SHAPE} ${tone}`}
+            </span>
+          ))}
+        </text>
+        <text fg="#6c7086">{`${UNREAD_SHAPE} unread \u00b7 ${READ_SHAPE} read`}</text>
         <text fg="#6c7086">? or esc to close</text>
       </box>
     );
