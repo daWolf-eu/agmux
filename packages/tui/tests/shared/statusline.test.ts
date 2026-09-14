@@ -6,7 +6,7 @@ const OPTS: StatusLineOpts = { show: "all", max: 6, format: "{glyph} {tmux_sessi
 
 test("renders one entry with glyph colour and tmux coords", () => {
   const rows = [mkRow({ session_id: "agx-1", status: "running", tmux_session: "work", tmux_window: "2" })];
-  expect(formatStatusLine(rows, OPTS)).toBe("#[range=user|agx-1]#[fg=#a6e3a1]● work:2#[default]#[norange]");
+  expect(formatStatusLine(rows, OPTS)).toBe("#[range=user|agx-1]#[fg=#a6e3a1]○ work:2#[default]#[norange]");
 });
 
 test("separates multiple entries with two spaces", () => {
@@ -15,13 +15,21 @@ test("separates multiple entries with two spaces", () => {
     mkRow({ session_id: "b", status: "waiting", tmux_session: "w", tmux_window: "2" }),
   ];
   const out = formatStatusLine(rows, OPTS);
-  expect(out).toContain("#[fg=#a6e3a1]● w:1#[default]#[norange]  #[range=user|b]");
+  expect(out).toContain("#[fg=#a6e3a1]○ w:1#[default]#[norange]  #[range=user|b]");
 });
 
 test("null fields collapse the separator rather than leaving a dangling colon", () => {
   const rows = [mkRow({ session_id: "a", status: "idle", tmux_session: "w", tmux_window: null })];
   expect(formatStatusLine(rows, OPTS)).toContain("○ w");
   expect(formatStatusLine(rows, OPTS)).not.toContain("w:");
+});
+
+test("{glyph} carries read-ness in its shape and status in its colour", () => {
+  const base = { session_id: "a", status: "waiting" as const, tmux_session: "w", tmux_window: "1" };
+  const unread = formatStatusLine([mkRow({ ...base, unread: true })], OPTS);
+  const read = formatStatusLine([mkRow({ ...base, unread: false })], OPTS);
+  expect(unread).toContain("#[fg=#f9e2af]● w:1");
+  expect(read).toContain("#[fg=#f9e2af]○ w:1");
 });
 
 test("show=waiting keeps only waiting rows", () => {
@@ -65,7 +73,7 @@ test("preserves data with trailing separators in renderFormat", () => {
   expect(out1).not.toContain("foo/ ");
 
   const out2 = formatStatusLine(rows, { ...OPTS, format: "{glyph} {tmux_session}:{tmux_window}" });
-  expect(out2).toContain("● work");
+  expect(out2).toContain("○ work");
   expect(out2).not.toContain("work:");
 });
 

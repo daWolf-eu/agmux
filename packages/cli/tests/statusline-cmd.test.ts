@@ -26,7 +26,7 @@ test("prints the rendered line to stdout", async () => {
   let printed = "";
   const code = await statuslineCmd({ hubUrl: "http://127.0.0.1:1" }, deps({ out: (s) => { printed = s; } }));
   expect(code).toBe(0);
-  expect(printed).toContain("● work:%7");
+  expect(printed).toContain("○ work:%7");
 });
 
 test("a hub error prints a dim marker and still exits 0", async () => {

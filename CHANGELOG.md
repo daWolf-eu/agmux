@@ -34,6 +34,16 @@ The single source of truth for the running version is
 - dash: `y` yanks a field of the selected session to the system clipboard via a
   digit-prefixed popup (autodetects pbcopy/wl-copy/xclip/xsel, OSC 52 fallback).
 
+### Changed
+- Session glyphs now encode two independent axes: colour is status (green running,
+  amber waiting, grey idle, red errored, dim grey closed/lost) and shape is
+  read-ness (`●` unread, `○` read). This replaces the per-status shapes — `◉`
+  waiting, `✕` errored, and `·` closed are gone, and `closed` was darkened to
+  `#45475a` so it stays distinguishable from `idle` now that only colour
+  separates them. Applies to both surfaces that draw glyphs, `agmux dash` and the
+  tmux status line, and makes the `u` dismiss key visibly do something. Glyphs
+  remain hard-coded; themes and customisation are not yet implemented.
+
 ### Fixed
 - `[statusline] enabled` / `position` in `config.toml` were parsed and validated
   but never actually consulted — only the `@agmux-statusline` /
