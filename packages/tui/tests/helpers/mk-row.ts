@@ -8,6 +8,6 @@ export function mkRow(over: Partial<SessionRow> = {}): SessionRow {
     parent_session_id: null, start_ts: "2026-06-20T10:00:00.000Z", last_heartbeat_ts: null,
     end_ts: null, exit_code: null, signal: null, status: "running", origin: "native",
     turn_count: null, unread: null, last_tool: null, last_tool_detail: null, last_input_kind: null,
-    activity_ts: null, ...over,
+    activity_ts: null, attention_ts: null, ...over,
   };
 }

@@ -360,9 +360,11 @@ test("a restart does not announce sessions that were already waiting", async () 
   // The board as a fresh daemon finds it: everything already wants attention.
   const board: SessionRow[] = [
     { ...row, session_id: "agx-1", status: "waiting", last_input_kind: "permission",
-      activity_ts: "2026-09-12T09:00:00.000Z" },
-    { ...row, session_id: "agx-2", status: "idle", activity_ts: "2026-09-12T09:00:00.000Z" },
-    { ...row, session_id: "agx-3", status: "idle", activity_ts: "2026-09-12T09:00:00.000Z" },
+      attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
+    { ...row, session_id: "agx-2", status: "idle",
+      attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
+    { ...row, session_id: "agx-3", status: "idle",
+      attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
   ];
   capturedOnUpdate!(board);
   clock += 60_000;
@@ -370,13 +372,79 @@ test("a restart does not announce sessions that were already waiting", async () 
   await flush();
   expect(fired).toEqual([]);
 
-  // But a genuine transition after startup still gets through.
+  // But a genuine transition after startup still gets through. It has to move
+  // attention_ts: a fresh activity_ts alone is just a tool call, which must stay
+  // silent (see transitions.ts — that was the subagent notification-spam bug).
   capturedOnUpdate!([...board.slice(1),
-    { ...board[0]!, activity_ts: "2026-09-12T09:30:00.000Z" }]);
+    { ...board[0]!, attention_ts: "2026-09-12T09:30:00.000Z", activity_ts: "2026-09-12T09:30:00.000Z" }]);
   clock += 10_000;
   timer.advance();
   await flush();
   expect(fired.length).toBeGreaterThan(0);
+
+  ac.abort();
+  expect(await p).toBe(0);
+});
+
+// Regression: a subagent's tool calls stream tool.used into the PARENT session,
+// bumping activity_ts while the row stays stale-`waiting` (nothing emits
+// input.received, and Claude's Stop hook does not fire while a subagent runs).
+// The daemon must announce that one permission prompt once, then stay silent for
+// the whole run, no matter how much tool activity goes by.
+test("a subagent's tool activity does not re-announce an unchanged wait", async () => {
+  const { fs: fsDeps } = memFsDeps();
+  const ac = new AbortController();
+  const timer = fakeTimer();
+  let clock = 1_000_000;
+  const fired: string[] = [];
+  let capturedOnUpdate: ((rows: SessionRow[]) => void) | undefined;
+
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      now: () => clock,
+      setIntervalImpl: timer.setIntervalImpl,
+      clearIntervalImpl: timer.clearIntervalImpl,
+      sinkDeps: {
+        run: async (cmd, args) => { fired.push(`${cmd} ${args.join(" ")}`); return 0; },
+        capture: async () => "",
+        which: () => true,
+        log: () => {},
+        warned: new Set<string>(),
+      },
+      makeFeed: () => ({
+        subscribe: (onUpdate) => { capturedOnUpdate = onUpdate; return () => {}; },
+      }),
+    }),
+  );
+
+  const waiting = (activity: string): SessionRow[] => [{
+    ...row, session_id: "agx-1", status: "waiting", last_input_kind: "permission",
+    attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: activity,
+  }];
+
+  // The daemon starts with the session already running, so priming does not
+  // silence it; the permission prompt then arrives and is announced once.
+  capturedOnUpdate!([{ ...row, session_id: "agx-1", status: "running" }]);
+  timer.advance();
+  await flush();
+  capturedOnUpdate!(waiting("2026-09-12T09:00:00.000Z"));
+  clock += 60_000;
+  timer.advance();
+  await flush();
+  const afterFirst = fired.length;
+  expect(afterFirst).toBeGreaterThan(0);
+
+  // Now the subagent runs: a tool call every 10s, each a new activity_ts, every
+  // gap far wider than the debounce. None of it is news.
+  for (const min of ["09:01", "09:02", "09:03", "09:04", "09:05", "09:06"]) {
+    capturedOnUpdate!(waiting(`2026-09-12T${min}:00.000Z`));
+    clock += 10_000;
+    timer.advance();
+    await flush();
+  }
+  expect(fired.length).toBe(afterFirst);
 
   ac.abort();
   expect(await p).toBe(0);

@@ -41,13 +41,14 @@ function decodeRow(raw: any): SessionRow {
     last_tool_detail: raw.last_tool_detail ?? null,
     last_input_kind: raw.last_input_kind ?? null,
     activity_ts: raw.activity_ts ?? null,
+    attention_ts: raw.attention_ts ?? null,
     unread: raw.unread === 1 || raw.unread === true,
   };
 }
 
 export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow | null {
   const raw = db.query<any, [string]>(
-    `SELECT s.*, a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
+    `SELECT s.*, a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts, a.attention_ts,
             ${UNREAD_EXPR} AS unread
        FROM sessions s
        LEFT JOIN session_activity a ON a.session_id = s.session_id
@@ -92,7 +93,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   const limit = opts.limit ?? 200;
 
   const sql = `SELECT s.*, u.turn_count,
-                      a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
+                      a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts, a.attention_ts,
                       ${UNREAD_EXPR} AS unread
                FROM sessions s
                LEFT JOIN session_usage u ON u.session_id = s.session_id
