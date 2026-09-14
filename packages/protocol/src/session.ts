@@ -55,6 +55,12 @@ export interface SessionRow {
   last_tool_detail?: string | null;
   last_input_kind?: string | null;
   activity_ts?: string | null;
+  // Joined from the session_activity projection. Moves ONLY on attention-worthy
+  // events (input.required / turn.ended / session.ended) — never on tool.used,
+  // unlike activity_ts. This is the identity of an "attention episode": the unit
+  // both the unread flag and the notification debounce are keyed on, so that a
+  // busy session cannot manufacture new episodes by running tools.
+  attention_ts?: string | null;
 }
 
 // `agmux ls --status` vocabulary: group aliases over the raw statuses.

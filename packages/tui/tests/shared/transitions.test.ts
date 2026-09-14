@@ -3,7 +3,7 @@ import { createDetectState, primeDetectState, detectNotifications, type DetectCo
 import { mkRow } from "../helpers/mk-row.ts";
 
 const CFG: DetectConfig = { delayMs: 5000, triggers: ["permission", "prompt", "turn_end", "session_end"] };
-const waiting = (over = {}) => mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", activity_ts: "t1", ...over });
+const waiting = (over = {}) => mkRow({ session_id: "s1", status: "waiting", last_input_kind: "permission", attention_ts: "a1", activity_ts: "t1", ...over });
 
 test("does not fire before the debounce elapses", () => {
   const st = createDetectState();
@@ -30,8 +30,8 @@ test("a new attention event re-arms the notification", () => {
   const st = createDetectState();
   detectNotifications(st, [waiting()], CFG, 1000);
   detectNotifications(st, [waiting()], CFG, 7000);
-  detectNotifications(st, [waiting({ activity_ts: "t2" })], CFG, 8000);
-  expect(detectNotifications(st, [waiting({ activity_ts: "t2" })], CFG, 20000).length).toBe(1);
+  detectNotifications(st, [waiting({ attention_ts: "a2" })], CFG, 8000);
+  expect(detectNotifications(st, [waiting({ attention_ts: "a2" })], CFG, 20000).length).toBe(1);
 });
 
 test("leaving waiting cancels a pending notification", () => {
@@ -274,7 +274,7 @@ test("priming suppresses every session that was already eligible at startup", ()
 test("priming only silences the episode it saw — a later transition still fires", () => {
   const st = createDetectState();
   primeDetectState(st, [waiting({ session_id: "s1" })]);
-  const next = [waiting({ session_id: "s1", activity_ts: "t2" })];
+  const next = [waiting({ session_id: "s1", attention_ts: "a2" })];
   expect(detectNotifications(st, next, CFG, 1000)).toEqual([]);   // debouncing
   expect(detectNotifications(st, next, CFG, 7000).length).toBe(1);
 });
@@ -292,4 +292,76 @@ test("priming does not silence a session that appears after startup", () => {
   primeDetectState(st, []);
   detectNotifications(st, [waiting()], CFG, 1000);
   expect(detectNotifications(st, [waiting()], CFG, 7000).length).toBe(1);
+});
+
+// --- regression: subagent tool churn must not re-notify -----------------------
+// A subagent's work streams tool.used events into the PARENT session. Those bump
+// activity_ts but not attention_ts, and nothing moves the session out of
+// `waiting` in between: no adapter emits input.received, and Claude's Stop hook
+// does not fire while a subagent runs. Keying the attention episode on
+// activity_ts therefore made every tool call look like a fresh attention event,
+// re-arming the debounce; the next lull in tool activity longer than delayMs
+// fired the SAME permission prompt again, for the whole length of the run.
+//
+// notifyd polls every DEFAULT_POLL_INTERVAL_MS (1s) against a 5s default delay,
+// so these tests poll at 1s and space tool calls 8s apart — the shape that
+// produced the observed spam.
+const POLL = 1000;
+
+function pollUntil(
+  st: ReturnType<typeof createDetectState>,
+  row: () => ReturnType<typeof mkRow>,
+  from: number,
+  to: number,
+) {
+  const fired: string[] = [];
+  for (let t = from; t <= to; t += POLL) {
+    for (const ev of detectNotifications(st, [row()], CFG, t)) fired.push(ev.trigger);
+  }
+  return fired;
+}
+
+const subagentWait = (activity: string) =>
+  mkRow({
+    session_id: "s1", status: "waiting", last_input_kind: "permission",
+    attention_ts: "a1", activity_ts: activity,
+  });
+
+test("a subagent's tool calls do not re-notify an unchanged wait", () => {
+  const st = createDetectState();
+  // The real permission prompt: fires once, correctly.
+  expect(pollUntil(st, () => subagentWait("t1"), 0, 8000)).toEqual(["permission"]);
+
+  // The subagent now runs for a minute: a tool call every 8s, each bumping
+  // activity_ts, with 1s polls in between seeing a stable value. Every one of
+  // those 8s lulls used to exceed the 5s debounce and re-fire.
+  let now = 8000;
+  const spam: string[] = [];
+  for (const tick of ["t2", "t3", "t4", "t5", "t6", "t7", "t8"]) {
+    spam.push(...pollUntil(st, () => subagentWait(tick), now + POLL, now + 8000));
+    now += 8000;
+  }
+  expect(spam).toEqual([]);
+});
+
+test("a genuinely new attention event still notifies after tool churn", () => {
+  const st = createDetectState();
+  pollUntil(st, () => subagentWait("t1"), 0, 8000);
+  pollUntil(st, () => subagentWait("t2"), 9000, 16000);
+
+  // A second real permission prompt bumps attention_ts — must still notify.
+  const second = () => mkRow({
+    session_id: "s1", status: "waiting", last_input_kind: "permission",
+    attention_ts: "a2", activity_ts: "t3",
+  });
+  expect(pollUntil(st, second, 17000, 25000)).toEqual(["permission"]);
+});
+
+test("tool activity after a turn ends does not re-notify turn_end", () => {
+  const st = createDetectState();
+  const idle = (activity: string) =>
+    mkRow({ session_id: "s1", status: "idle", attention_ts: "a1", activity_ts: activity });
+  expect(pollUntil(st, () => idle("t1"), 0, 8000)).toEqual(["turn_end"]);
+  expect(pollUntil(st, () => idle("t2"), 9000, 17000)).toEqual([]);
+  expect(pollUntil(st, () => idle("t3"), 18000, 26000)).toEqual([]);
 });

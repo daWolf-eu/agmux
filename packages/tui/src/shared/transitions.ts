@@ -16,7 +16,7 @@ export interface NotifyEvent {
 export interface DetectState {
   /** session_id → { key, since } for a wait that has not yet fired. */
   pending: Map<string, { key: string; since: number; trigger: NotifyTrigger }>;
-  /** session_id -> the activity_ts of the episode we last notified about.
+  /** session_id -> the attention_ts of the episode we last notified about.
    *  Bounded by live session count: pruned alongside `pending` when a session
    *  stops being notify-eligible. Keyed on the attention EPISODE rather than the
    *  trigger label, so a prompt->permission flip within one wait is still one wait. */
@@ -28,9 +28,21 @@ export function createDetectState(): DetectState {
 }
 
 // A session's "attention identity": the same wait keeps one key, so a repeated
-// poll cannot re-fire, while a genuinely new event (new activity_ts) re-arms.
+// poll cannot re-fire, while a genuinely new attention event re-arms.
+//
+// This MUST be attention_ts, not activity_ts. activity_ts also moves on every
+// tool.used, and a session stays in `waiting`/`idle` across tool calls (nothing
+// emits input.received, and Claude's Stop hook does not fire while a subagent
+// runs), so activity_ts minted a new episode per tool call and re-fired the same
+// prompt on the next lull longer than delayMs — loudest under subagents, whose
+// tool calls stream into the parent session for minutes. attention_ts moves only
+// on input.required / turn.ended / session.ended, which is exactly one episode.
+function episodeOf(r: SessionRow): string {
+  return r.attention_ts ?? "";
+}
+
 function dedupKey(r: SessionRow, trigger: NotifyTrigger): string {
-  return `${r.session_id}:${trigger}:${r.activity_ts ?? ""}`;
+  return `${r.session_id}:${trigger}:${episodeOf(r)}`;
 }
 
 function triggerFor(r: SessionRow): NotifyTrigger | null {
@@ -56,13 +68,13 @@ function triggerFor(r: SessionRow): NotifyTrigger | null {
  * first tick.
  *
  * Only the episode observed here is silenced. A session that later moves to a
- * new activity_ts notifies normally, and a session not eligible at startup
+ * new attention_ts notifies normally, and a session not eligible at startup
  * (running, or not yet born) is never touched.
  */
 export function primeDetectState(state: DetectState, rows: SessionRow[]): void {
   for (const row of rows) {
     if (!triggerFor(row)) continue;
-    state.fired.set(row.session_id, row.activity_ts ?? "");
+    state.fired.set(row.session_id, episodeOf(row));
   }
 }
 
@@ -82,7 +94,7 @@ export function detectNotifications(
     eligibleThisTick.add(row.session_id);
     if (!cfg.triggers.includes(trigger)) continue;
 
-    const episodeKey = row.activity_ts ?? "";
+    const episodeKey = episodeOf(row);
     if (state.fired.get(row.session_id) === episodeKey) continue;
 
     // A terminal session is not "waiting" for anything — debouncing it would only

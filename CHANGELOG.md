@@ -45,6 +45,16 @@ The single source of truth for the running version is
   remain hard-coded; themes and customisation are not yet implemented.
 
 ### Fixed
+- notifyd re-fired the same notification for the whole length of a subagent's run.
+  The attention episode was keyed on `activity_ts`, which also moves on every
+  `tool.used`; since nothing moves a session out of `waiting`/`idle` in between
+  (no adapter emits `input.received`, and Claude's `Stop` hook does not fire while
+  a subagent runs), each of the subagent's tool calls minted a fresh episode and
+  the next lull longer than `[notify].delay` re-announced the same prompt. Keyed
+  on `attention_ts` now — bumped only by `input.required` / `turn.ended` /
+  `session.ended`, which is exactly one episode — so a wait notifies once and a
+  genuinely new attention event still re-arms. `attention_ts` is exposed on
+  `SessionRow` for this.
 - `[statusline] enabled` / `position` in `config.toml` were parsed and validated
   but never actually consulted — only the `@agmux-statusline` /
   `@agmux-statusline-position` tmux options controlled the status line, so
