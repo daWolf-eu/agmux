@@ -18,27 +18,62 @@ const TIOCSWINSZ = isDarwin
   ? (await import("./ffi-darwin.ts")).TIOCSWINSZ
   : (await import("./ffi-linux.ts")).TIOCSWINSZ;
 
-// Inline-source TinyCC shim for non-variadic ioctl(TIOCSWINSZ).
-// Hard-coded value lets the same C source build on both platforms.
-const C_SRC = `#include <sys/ioctl.h>
-#include <termios.h>
-int agmux_set_winsize(int fd, unsigned short rows, unsigned short cols, unsigned int tiocswinsz_val) {
-  struct winsize ws; ws.ws_row = rows; ws.ws_col = cols; ws.ws_xpixel = 0; ws.ws_ypixel = 0;
+// Inline-source TinyCC shim for ioctl(TIOCSWINSZ): Bun's FFI cannot express a
+// variadic call, so the one non-variadic wrapper gets compiled at runtime.
+//
+// Deliberately includes NO system headers. `struct winsize` (four unsigned
+// shorts) and ioctl's signature are stable ABI on both darwin and linux, so
+// declaring them here costs nothing and buys a lot: TinyCC needs no SDK headers,
+// which used to make this module unusable whenever macOS could not resolve one.
+// (`xcrun` failing — an unaccepted Xcode licence after an update, or an
+// xcode-select path pointing at a moved Xcode.app — is enough to hide
+// sys/ioctl.h entirely.)
+const C_SRC = `struct agmux_winsize { unsigned short ws_row, ws_col, ws_xpixel, ws_ypixel; };
+extern int ioctl(int, unsigned long, ...);
+int agmux_set_winsize(int fd, unsigned short rows, unsigned short cols, unsigned long tiocswinsz_val) {
+  struct agmux_winsize ws; ws.ws_row = rows; ws.ws_col = cols; ws.ws_xpixel = 0; ws.ws_ypixel = 0;
   return ioctl(fd, tiocswinsz_val, &ws);
 }`;
 
-const cFile = path.join(os.tmpdir(), `agmux-setwinsz-${process.pid}.c`);
-fs.writeFileSync(cFile, C_SRC);
-const winszLib = cc({
-  source: cFile,
-  symbols: {
-    agmux_set_winsize: { args: ["int", "u16", "u16", "u32"], returns: "int" },
-  },
-});
-try { fs.unlinkSync(cFile); } catch {}
+type WinszFn = (fd: number, rows: number, cols: number, req: number) => number;
+
+// Compiled on first use, never at import. The wrapper barrel re-exports this
+// module alongside the TOML config loaders, so a top-level cc() made every agmux
+// command — `hub restart`, `ls`, `dash` — compile C just to read a config file,
+// and fail outright when the toolchain could not. Only a live PTY resize needs
+// this, so only a live PTY resize pays for it.
+let winsz: WinszFn | null = null;
+let winszFailed = false;
+
+function loadWinsz(): WinszFn | null {
+  if (winsz) return winsz;
+  if (winszFailed) return null;
+  const cFile = path.join(os.tmpdir(), `agmux-setwinsz-${process.pid}.c`);
+  try {
+    fs.writeFileSync(cFile, C_SRC);
+    const lib = cc({
+      source: cFile,
+      symbols: {
+        agmux_set_winsize: { args: ["int", "u16", "u16", "u64"], returns: "int" },
+      },
+    });
+    winsz = lib.symbols.agmux_set_winsize as WinszFn;
+    return winsz;
+  } catch (e) {
+    // Losing resize propagation degrades an agent session; throwing out of a
+    // SIGWINCH handler would kill it. Say so once and carry on.
+    winszFailed = true;
+    console.error(`agmux-wrap: terminal resize will not propagate (cannot build ioctl shim: ${e instanceof Error ? e.message : String(e)})`);
+    return null;
+  } finally {
+    try { fs.unlinkSync(cFile); } catch {}
+  }
+}
 
 export function setWinsize(fd: number, rows: number, cols: number): number {
-  return winszLib.symbols.agmux_set_winsize(fd, rows, cols, TIOCSWINSZ);
+  const fn = loadWinsz();
+  if (!fn) return -1;
+  return fn(fd, rows, cols, TIOCSWINSZ);
 }
 
 export interface PtyHandles { master: number; slave: number; slaveOut: number; slaveErr: number; }
