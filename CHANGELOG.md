@@ -45,6 +45,17 @@ The single source of truth for the running version is
   remain hard-coded; themes and customisation are not yet implemented.
 
 ### Fixed
+- Every agmux command could die with `include file 'sys/ioctl.h' not found`. The
+  PTY module compiles a small ioctl shim with TinyCC, and did so at import time;
+  the wrapper barrel re-exports it next to the TOML config loaders, so `agmux hub
+  restart`, `ls` and `dash` all compiled C just to read a config file — and a mac
+  whose SDK headers had gone missing (an unaccepted Xcode licence after an
+  update, or `xcode-select` pointing at a moved Xcode.app) could run nothing at
+  all. The shim now includes no system headers, declaring `struct winsize` and
+  `ioctl` itself; it is built on first use rather than on import; and if it
+  cannot be built, agmux says resize will not propagate and carries on instead of
+  throwing out of a SIGWINCH handler.
+
 - notifyd re-fired the same notification for the whole length of a subagent's run.
   The attention episode was keyed on `activity_ts`, which also moves on every
   `tool.used`; since nothing moves a session out of `waiting`/`idle` in between
