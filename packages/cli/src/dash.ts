@@ -42,7 +42,7 @@ function buildGroupQueries(opts: DashOpts): Record<ActivityGroup, GroupQuery> {
 }
 
 export async function dashCmd(
-  opts: DashOpts & { hubUrl: string; wrapBin: string },
+  opts: DashOpts & { hubUrl: string; wrapBin: string; resolveHubUrl?: () => string | null | undefined },
   deps: DashCmdDeps = defaultDeps,
 ): Promise<number> {
   if (!deps.isTTY()) {
@@ -51,6 +51,7 @@ export async function dashCmd(
   }
   return deps.runManageImpl({
     hubUrl: opts.hubUrl,
+    resolveHubUrl: opts.resolveHubUrl,
     // One query per activity group (key `f`), each with its own limit and
     // cadence; switching groups switches feeds. `--status`/config only seeds the
     // initial group.

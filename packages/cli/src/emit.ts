@@ -66,6 +66,29 @@ export function discoverHubUrl(env: Record<string, string | undefined>, stateDir
   return undefined;
 }
 
+// Hub URL for a LONG-LIVED subscriber (dash, notifyd), re-read on every poll.
+//
+// Deliberately the reverse precedence of discoverHubUrl: the live port file
+// first, AGMUX_HUB_URL only as a fallback. For a one-shot command the env var is
+// a deliberate override and wins; but the wrapper also injects it into every
+// agent session (child-env.ts), so a dash popup opened inside an agent pane
+// inherits a SNAPSHOT of whatever port the hub had when that session started.
+// The hub binds an ephemeral port, so `agmux hub restart` moves it and that
+// snapshot goes stale — which showed up as a dash frozen on old rows and a
+// status line reading "hub down" moments after a successful restart. The port
+// file is authoritative for a local hub; where there is none (a remote hub, or
+// no local hub at all) the env var still applies.
+export function resolveLiveHubUrl(
+  env: Record<string, string | undefined>,
+  stateDir: string,
+): string | null {
+  try {
+    const port = Number(fs.readFileSync(path.join(stateDir, "hub.port"), "utf8").trim());
+    if (Number.isInteger(port) && port > 0) return `http://127.0.0.1:${port}`;
+  } catch { /* no local hub → fall through to the env override */ }
+  return env[AGMUX_HUB_URL_ENV] ?? null;
+}
+
 // Fill tmux_session/window on session.registered payloads (best effort: fires once
 // per registration, never throws, leaves coords null on miss).
 export async function enrichTmuxCoords(

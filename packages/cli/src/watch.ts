@@ -15,7 +15,7 @@ const defaultDeps: WatchCmdDeps = {
 };
 
 export async function watchCmd(
-  opts: WatchOpts & { hubUrl: string },
+  opts: WatchOpts & { hubUrl: string; resolveHubUrl?: () => string | null | undefined },
   deps: WatchCmdDeps = defaultDeps,
 ): Promise<number> {
   if (!deps.isTTY()) {
@@ -24,6 +24,7 @@ export async function watchCmd(
   }
   return deps.runWatchImpl({
     hubUrl: opts.hubUrl,
+    resolveHubUrl: opts.resolveHubUrl,
     query: buildLsQuery(opts),
     intervalMs: opts.intervalMs,
     reverse: opts.reverse,

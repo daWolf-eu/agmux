@@ -3,7 +3,7 @@
 // <text> takes `fg` directly; createRoot(renderer).render(...) is correct.
 import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
-import { PollingSessionFeed } from "../feed.ts";
+import { PollingSessionFeed, type HubUrlSource } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activePaneId } from "./attached.ts";
 import { tmuxSocketFromEnv } from "@agmux/protocol";
@@ -18,7 +18,9 @@ export interface GroupQuery {
 }
 
 export interface RunManageOpts {
-  hubUrl: string;
+  hubUrl: string;              // display only
+  // Re-resolved per poll so an open dash survives a hub restart (HubUrlSource).
+  resolveHubUrl?: HubUrlSource;
   groupQueries: Record<ActivityGroup, GroupQuery>;
   intervalMs: number;   // preview refresh cadence
   defaultPreview: PreviewMode;
@@ -36,7 +38,7 @@ function resolveHandoff(pending: Handoff | null): Handoff | null {
 export async function runManage(o: RunManageOpts): Promise<number> {
   // A feed subscribes once, so build a fresh one per group switch.
   const feedFor = (g: ActivityGroup) =>
-    new PollingSessionFeed({ hubUrl: o.hubUrl, query: o.groupQueries[g].query, intervalMs: o.groupQueries[g].intervalMs });
+    new PollingSessionFeed({ hubUrl: o.resolveHubUrl ?? o.hubUrl, query: o.groupQueries[g].query, intervalMs: o.groupQueries[g].intervalMs });
   let pending: Handoff | null = null;
 
   const activePane = await activePaneId();

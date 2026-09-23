@@ -11,8 +11,15 @@ export interface SessionFeed {
   subscribe(onUpdate: (rows: SessionRow[]) => void, onError: (e: Error) => void): () => void;
 }
 
+// A hub URL, or a resolver called before every poll. The hub binds an ephemeral
+// port and records it in the state dir, so `agmux hub restart` moves it — a feed
+// holding a fixed URL then polls a dead port forever, reporting "hub down" while
+// the hub is in fact up. Pass a resolver (the CLI re-reads hub.port) so a feed
+// outlives a hub restart; a plain string stays fine for tests and fixed URLs.
+export type HubUrlSource = string | (() => string | null | undefined);
+
 export interface PollingFeedOpts {
-  hubUrl: string;
+  hubUrl: HubUrlSource;
   query: URLSearchParams;     // built by the caller (cli: buildLsQuery)
   intervalMs?: number;        // default 1000
   // Injection points for tests.
@@ -26,7 +33,8 @@ export class PollingSessionFeed implements SessionFeed {
 
   subscribe(onUpdate: (rows: SessionRow[]) => void, onError: (e: Error) => void): () => void {
     const fetchImpl = this.o.fetchImpl ?? fetch;
-    const url = `${this.o.hubUrl}/sessions?${this.o.query.toString()}`;
+    const src = this.o.hubUrl;
+    const resolve = (): string | null | undefined => (typeof src === "function" ? src() : src);
     let inFlight = false;
     let stopped = false;
     let lastKey = "";
@@ -35,7 +43,11 @@ export class PollingSessionFeed implements SessionFeed {
       if (inFlight || stopped) return;
       inFlight = true;
       try {
-        const r = await fetchImpl(url);
+        // Resolved per poll, not once per subscription: that is what lets a
+        // long-lived dash or notifyd follow the hub across a restart.
+        const base = resolve();
+        if (!base) throw new Error("hub down");
+        const r = await fetchImpl(`${base}/sessions?${this.o.query.toString()}`);
         if (!r.ok) throw new Error(`hub error ${r.status}`);
         const { sessions } = (await r.json()) as { sessions: SessionRow[] };
         const key = JSON.stringify(sessions);

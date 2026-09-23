@@ -23,7 +23,7 @@ import { statuslineCmd } from "../src/statusline-cmd.ts";
 import { staleMarker } from "../src/statusline-cache.ts";
 import { runNotifyd } from "../src/notifyd.ts";
 import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
-import { discoverHubUrl } from "../src/emit.ts";
+import { discoverHubUrl, resolveLiveHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
 import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
@@ -125,6 +125,8 @@ async function main(): Promise<number> {
       return runNotifyd(
         {
           hubUrl,
+          // The daemon outlives hub restarts, which move the port — re-resolve.
+          resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir),
           lockPath: path.join(stateDir, "notifyd.lock"),
           replace: argv.includes("--replace"),
         },
@@ -228,7 +230,8 @@ async function main(): Promise<number> {
     case "watch": {
       const parsed = parseWatchArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
-      return watchCmd({ ...parsed.opts, hubUrl });
+      // Long-lived view: follow the hub across restarts (see resolveLiveHubUrl).
+      return watchCmd({ ...parsed.opts, hubUrl, resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir) });
     }
     case "dash": {
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
@@ -237,7 +240,8 @@ async function main(): Promise<number> {
       catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       const parsed = parseDashArgs(argv.slice(1), dashDefaults);
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
-      return dashCmd({ ...parsed.opts, hubUrl, wrapBin });
+      // Long-lived view: follow the hub across restarts (see resolveLiveHubUrl).
+      return dashCmd({ ...parsed.opts, hubUrl, wrapBin, resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir) });
     }
     case "attach": {
       const id = argv[1]; if (!id) usage();

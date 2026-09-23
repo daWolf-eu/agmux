@@ -93,7 +93,12 @@ export interface NotifydDeps {
 }
 
 export async function runNotifyd(
-  opts: { hubUrl: string; intervalMs?: number; stop?: AbortSignal; lockPath?: string; replace?: boolean },
+  opts: {
+    hubUrl: string;                 // display / fallback
+    // Re-resolved per poll so the daemon follows the hub across a restart.
+    resolveHubUrl?: () => string | null | undefined;
+    intervalMs?: number; stop?: AbortSignal; lockPath?: string; replace?: boolean;
+  },
   deps: NotifydDeps,
 ): Promise<number> {
   const file = cachePath(deps.env);
@@ -103,7 +108,7 @@ export async function runNotifyd(
 
   const feed = deps.makeFeed
     ? deps.makeFeed(opts.hubUrl, query)
-    : new PollingSessionFeed({ hubUrl: opts.hubUrl, query, intervalMs });
+    : new PollingSessionFeed({ hubUrl: opts.resolveHubUrl ?? opts.hubUrl, query, intervalMs });
 
   const beat = () => writeLineAtomic(heartbeatPath(file), new Date().toISOString(), deps.fs);
 

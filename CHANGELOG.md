@@ -45,6 +45,18 @@ The single source of truth for the running version is
   remain hard-coded; themes and customisation are not yet implemented.
 
 ### Fixed
+- `agmux dash`, `agmux watch` and `agmux notifyd` did not survive a hub restart.
+  The polling feed resolved its URL once per subscription, but the hub binds an
+  ephemeral port, so `agmux hub restart` moved it and every long-lived subscriber
+  then polled a dead port indefinitely — silently, since "hub down" is a normal
+  render state. Symptoms: a dash frozen on stale rows, notifications drying up
+  for days, and a tmux status line reading "hub down" moments after a successful
+  restart. The feed now re-resolves before every poll and recovers on its own.
+  `resolveLiveHubUrl` prefers the live port file over `AGMUX_HUB_URL`, the
+  reverse of `discoverHubUrl`: the wrapper injects that variable into every agent
+  session, so a dash popup opened in an agent pane would otherwise follow a
+  snapshot of the port the hub had when that session started.
+
 - Every agmux command could die with `include file 'sys/ioctl.h' not found`. The
   PTY module compiles a small ioctl shim with TinyCC, and did so at import time;
   the wrapper barrel re-exports it next to the TOML config loaders, so `agmux hub
