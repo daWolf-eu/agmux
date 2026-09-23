@@ -101,3 +101,88 @@ test("unsubscribe silences a late rejection too", async () => {
   await Bun.sleep(0);
   expect(errors).toEqual([]);
 });
+
+// --- following the hub across a restart --------------------------------------
+// The hub binds an ephemeral port recorded in the state dir, so `agmux hub
+// restart` moves it. A feed that resolved its URL once at subscribe time then
+// polled the dead port forever — silently, because "hub down" is a normal render
+// state. That is what left a dash frozen on days-old rows and a tmux status line
+// reading "hub down" seconds after a successful restart.
+function resolverHarness(
+  resolve: () => string | null | undefined,
+  responses: Array<(url: string) => Promise<Response>>,
+) {
+  let call = 0;
+  const urls: string[] = [];
+  const fetchImpl = ((url: string) => {
+    urls.push(String(url));
+    const r = responses[Math.min(call, responses.length - 1)]!;
+    call++;
+    return r(String(url));
+  }) as unknown as typeof fetch;
+
+  let tick: Tick = () => {};
+  const setIntervalImpl = ((fn: Tick) => { tick = fn; return 1 as any; }) as typeof setInterval;
+  const clearIntervalImpl = ((_: any) => {}) as typeof clearInterval;
+
+  const feed = new PollingSessionFeed({
+    hubUrl: resolve,
+    query: new URLSearchParams({ status: "open" }),
+    fetchImpl, setIntervalImpl, clearIntervalImpl,
+  });
+  return { feed, urls, tickRef: () => tick };
+}
+
+test("a resolver is consulted on every poll, not once per subscription", async () => {
+  let port = 1111;
+  const h = resolverHarness(() => `http://127.0.0.1:${port}`, [ok(rowsA)]);
+  h.feed.subscribe(() => {}, () => {});
+  await Bun.sleep(0);
+
+  // The hub restarts onto a new port mid-subscription.
+  port = 2222;
+  await h.tickRef()();
+  await h.tickRef()();
+
+  expect(h.urls[0]).toBe("http://127.0.0.1:1111/sessions?status=open");
+  expect(h.urls.at(-1)).toBe("http://127.0.0.1:2222/sessions?status=open");
+});
+
+test("a feed recovers on its own once the hub comes back on a new port", async () => {
+  let url: string | null = "http://127.0.0.1:1111";
+  const h = resolverHarness(
+    () => url,
+    [
+      // Old port: connection refused, as after a hub restart.
+      (u) => u.includes("1111") ? Promise.reject(new Error("ECONNREFUSED")) : Promise.resolve(Response.json({ sessions: rowsA })),
+    ],
+  );
+  const updates: unknown[] = [];
+  const errors: Error[] = [];
+  h.feed.subscribe((r) => updates.push(r), (e) => errors.push(e));
+  await Bun.sleep(0);
+  expect(errors.length).toBe(1);
+  expect(updates).toEqual([]);
+
+  // The hub is back; the port file now names the new port.
+  url = "http://127.0.0.1:2222";
+  await h.tickRef()();
+  expect(updates).toEqual([rowsA]);
+});
+
+test("no resolvable hub reports an error rather than fetching a junk URL", async () => {
+  const h = resolverHarness(() => null, [ok(rowsA)]);
+  const errors: Error[] = [];
+  h.feed.subscribe(() => { throw new Error("unexpected update"); }, (e) => errors.push(e));
+  await Bun.sleep(0);
+  expect(errors.map((e) => e.message)).toEqual(["hub down"]);
+  expect(h.urls).toEqual([]);
+});
+
+test("a plain string hubUrl still works", async () => {
+  const h = harness([ok(rowsA)]);
+  const updates: unknown[] = [];
+  h.feed.subscribe((r) => updates.push(r), () => {});
+  await Bun.sleep(0);
+  expect(updates).toEqual([rowsA]);
+});
