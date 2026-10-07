@@ -4,6 +4,7 @@ import { normalizeClaude } from "./normalize.ts";
 import { claudeResumePlan } from "./resume.ts";
 import { claudeHeadlessPlan } from "./headless.ts";
 import { claudeInstall, claudeUninstall, claudeStatus, ADAPTER_VERSION } from "./install.ts";
+import { claudeSessionName } from "./session-name.ts";
 
 // The plugin payload is embedded code (plugin-files.ts) — no on-disk data files,
 // no import.meta.dir, so the adapter behaves identically from source and from a
@@ -21,4 +22,5 @@ export const claudeAdapter: Adapter = {
   resumePlan: claudeResumePlan,
   headlessPlan: claudeHeadlessPlan,
   nativeIdFromEnv: (env) => env.CLAUDE_CODE_SESSION_ID ?? null,
+  sessionName: claudeSessionName,
 };

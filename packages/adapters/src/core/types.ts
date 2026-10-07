@@ -1,5 +1,5 @@
 import type {
-  AgentKind, AdapterEventKind, CapabilityMap, CapabilitySourceType,
+  AgentKind, AdapterEventKind, CapabilityMap, CapabilitySourceType, SessionMetadataPayload,
 } from "@agmux/protocol";
 
 // The fixed, agent-agnostic hook-point vocabulary (spec §3.1). Finest grain so a
@@ -173,4 +173,12 @@ export interface Adapter {
   // and tries env first, then this — so ambient (directly-launched) sessions can
   // still self-register. `raw` is the parsed stdin JSON (unknown shape).
   nativeIdFromStdin?(raw: unknown): string | null;
+  // The session's human-readable name as the AGENT knows it — a user rename
+  // wins over the agent's own generated title. Read from what the agent
+  // already stores (transcript, session index, hook payload); never generated.
+  // `emit` calls it at session.registered and turn.ended and sends the result
+  // in session.metadata. Optional: null/absent = no name known.
+  sessionName?(raw: unknown, env: Record<string, string | undefined>): SessionName | null;
 }
+
+export type SessionName = NonNullable<SessionMetadataPayload["name"]>;

@@ -93,6 +93,7 @@ agmux ls --sort activity     # order by last activity instead of start time (--a
 agmux ls --status active     # active (running|waiting), open (+idle), closed (ended|lost), or raw statuses
 agmux ls --all               # uncapped   (--live = alias for --status open)
 # ls/watch show an ACTIVITY column: current tool while running, awaited input kind while waiting
+# ls also shows NAME (the agent's session title), REPO and BRANCH — see "Session metadata"
 agmux watch                  # fullscreen live view of ls (status open, sorted by start); q quits
 agmux watch -i 2 --agent claude   # accepts ls filter flags + -i/--interval seconds
 agmux dash                         # interactive TUI: sortable session table + preview pane; q quits
@@ -190,6 +191,26 @@ How agmux decides a session's status, beyond the agent hooks for turn start/end:
 - **`agmux explain <id>|--pane <pane_id>`** prints why a session is in its state:
   the rule that decided it, the event that set it, attention vs seen timestamps,
   and the title signal.
+
+### Session metadata
+
+Every session carries human-readable metadata, collected by the agent's own
+hooks (`agmux emit`) at registration and after every turn — no extra setup, no
+summarizer:
+
+- **`name`** — the session's title as the agent knows it. A user rename wins over
+  the agent's own title: Claude `/rename` (`custom-title`) > Claude's generated
+  `ai-title` (both read from the transcript); Codex `thread_name`
+  (`$CODEX_HOME/session_index.jsonl`); pi `/name`. Without one, the name in the
+  agent's terminal title (`✳ name`) is used. `name_source` says which
+  (`user` | `agent` | `terminal`).
+- **`git_branch`, `git_repo`, `git_remote`, `git_root`** — probed with read-only
+  `git` in the hook's cwd. `git_repo` is the origin remote's repo name, else the
+  main checkout's folder (shared by all its worktrees); `git_branch` is null on a
+  detached HEAD.
+
+Shown by `agmux ls` (NAME, REPO, BRANCH) and `agmux explain`; available on every
+`/sessions` row.
 
 `agmux notifyd` is a long-running daemon that watches sessions and drives two
 surfaces: an always-visible tmux status line, and debounced notifications when a

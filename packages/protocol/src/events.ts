@@ -21,6 +21,7 @@ export const EVENT_KINDS_ADAPTER = [
   "tool.started",
   "tool.used",
   "title.changed",
+  "session.metadata",
   "prompt.sent",
   "compaction",
   "session.adapter_attached",
@@ -189,6 +190,33 @@ export interface TitleChangedPayload {
   activity: TitleActivity | null;
 }
 
+// Human-readable session metadata, observed on the agent's host (by `agmux
+// emit`) at registration and at every turn end. Each group is optional:
+// absent = not observed this time (keep what the projection has). `git: null`
+// means the cwd is not inside a git work tree (clears the git fields).
+export const NAME_SOURCES = ["user", "agent", "terminal"] as const;
+// user     = the user named the session (Claude /rename, pi /name)
+// agent    = the agent named it itself (Claude ai-title, Codex thread_name)
+// terminal = read-time fallback to the terminal-title name (never sent)
+export type NameSource = (typeof NAME_SOURCES)[number];
+
+export interface GitMetadata {
+  // Current branch; null when HEAD is detached.
+  branch: string | null;
+  // Repo name from the origin remote ("agmux"); without a remote, the main
+  // checkout's folder name minus ".git" (stable across worktrees).
+  repo: string | null;
+  // The raw origin URL, if any.
+  remote: string | null;
+  // The work tree's top-level directory (differs per worktree).
+  root: string;
+}
+
+export interface SessionMetadataPayload {
+  git?: GitMetadata | null;
+  name?: { name: string; source: Exclude<NameSource, "terminal"> };
+}
+
 export interface PromptSentPayload {
   chars?: number | null;
   redacted: true;
@@ -228,6 +256,7 @@ export type UsageReportedEvent = EventEnvelope<UsageReportedPayload> & { kind: "
 export type ToolUsedEvent = EventEnvelope<ToolUsedPayload> & { kind: "tool.used" };
 export type ToolStartedEvent = EventEnvelope<ToolStartedPayload> & { kind: "tool.started" };
 export type TitleChangedEvent = EventEnvelope<TitleChangedPayload> & { kind: "title.changed" };
+export type SessionMetadataEvent = EventEnvelope<SessionMetadataPayload> & { kind: "session.metadata" };
 export type PromptSentEvent = EventEnvelope<PromptSentPayload> & { kind: "prompt.sent" };
 export type CompactionEvent = EventEnvelope<CompactionPayload> & { kind: "compaction" };
 export type AdapterAttachedEvent = EventEnvelope<AdapterAttachedPayload> & { kind: "session.adapter_attached" };
@@ -249,6 +278,7 @@ export type KnownEvent =
   | ToolUsedEvent
   | ToolStartedEvent
   | TitleChangedEvent
+  | SessionMetadataEvent
   | PromptSentEvent
   | CompactionEvent
   | AdapterAttachedEvent;

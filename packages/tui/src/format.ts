@@ -1,6 +1,13 @@
 import type { SessionRow } from "@agmux/protocol";
 
 const ACTIVITY_MAX = 40;
+const NAME_MAX = 32;
+const BRANCH_MAX = 24;
+
+function clip(s: string | null | undefined, max: number): string {
+  if (!s) return "-";
+  return s.length > max ? s.slice(0, max - 1) + "…" : s;
+}
 
 // What the agent is doing right now, derived from status + the
 // session_activity fields. Only running/waiting have anything to say; stale
@@ -16,9 +23,10 @@ export function activityCell(r: SessionRow): string {
 }
 
 export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
-  const header = ["ID", "AGENT", "PROFILE", "STATUS", "TURNS", "ACTIVITY", "PID", "TMUX", "START", "LAST_SEEN"];
+  const header = ["ID", "NAME", "AGENT", "PROFILE", "STATUS", "TURNS", "ACTIVITY", "REPO", "BRANCH", "PID", "TMUX", "START", "LAST_SEEN"];
   const data = rows.map((r) => [
     r.session_id.slice(0, 23),
+    clip(r.name, NAME_MAX),
     r.agent_kind,
     r.profile ?? "-",
     r.status,
@@ -26,6 +34,8 @@ export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
     // (nothing to resume); >0 = a real conversation.
     r.turn_count == null ? "-" : String(r.turn_count),
     activityCell(r),
+    r.git_repo ?? "-",
+    clip(r.git_branch, BRANCH_MAX),
     r.pid?.toString() ?? "-",
     r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
     short(r.start_ts),

@@ -78,6 +78,7 @@ Key session attributes:
 - `tmux_session`, `tmux_window`, `tmux_pane` (nullable when not in tmux)
 - `host`, `start`, `end`, `status`
 - `parent_session_id` (nullable) — delegation/orchestration lineage
+- human-readable metadata (nullable, `session.metadata` → `session_meta`): `name` (the agent's own session title, never generated) and git `branch` / `repo` / `remote` / `root`, observed on the agent's host
 
 ### Schema evolution principle
 

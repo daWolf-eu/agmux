@@ -59,3 +59,19 @@ test("formatTable: reverse flips data rows but keeps the header on top", () => {
   expect(flipped[1]).toStartWith("bbbb");
   expect(flipped[2]).toStartWith("aaaa");
 });
+
+test("formatTable shows NAME, REPO and BRANCH; long names and branches are clipped", () => {
+  const lines = formatTable([mkRow({ name: "n".repeat(40), git_repo: "agmux", git_branch: "feature/" + "b".repeat(30) })], false);
+  const header = lines[0]!.split(/\s{2,}/);
+  expect(header.indexOf("NAME")).toBe(1);
+  expect(header.indexOf("BRANCH")).toBe(header.indexOf("REPO") + 1);
+  const cells = lines[1]!.split(/\s{2,}/);
+  expect(cells[1]).toBe("n".repeat(31) + "…");
+  expect(cells[header.indexOf("REPO")]).toBe("agmux");
+  expect(cells[header.indexOf("BRANCH")]!.length).toBe(24);
+});
+
+test("formatTable renders '-' for sessions without metadata", () => {
+  const cells = formatTable([mkRow()], false)[1]!.split(/\s{2,}/);
+  expect(cells[1]).toBe("-");
+});

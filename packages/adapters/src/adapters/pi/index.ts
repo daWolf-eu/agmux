@@ -26,4 +26,10 @@ export const piAdapter: Adapter = {
     const id = (raw as { session_id?: unknown } | null)?.session_id;
     return typeof id === "string" && id !== "" ? id : null;
   },
+  // The extension reads pi's own name (ctx.sessionManager.getSessionName(): the
+  // latest session_info entry, written by /name) into the hook payload.
+  sessionName: (raw) => {
+    const n = (raw as { session_name?: unknown } | null)?.session_name;
+    return typeof n === "string" && n.trim() !== "" ? { name: n.trim(), source: "user" } : null;
+  },
 };
