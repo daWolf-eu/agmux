@@ -43,7 +43,7 @@ test("SessionStart re-links on clear/compact (native id rotates mid-process)", (
   expect(h.hooks.SessionStart[0].matcher).toBe("startup|resume|clear|compact");
 });
 
-test("plugin is v1.3.0 and SessionStart emits session.registered with AGMUX_AGENT_PID, not session.linked", () => {
+test("plugin is v1.4.0 and SessionStart emits session.registered with AGMUX_AGENT_PID, not session.linked", () => {
   const manifest = JSON.parse(PLUGIN_FILES.find((f) => f.path === ".claude-plugin/plugin.json")!.content);
   expect(manifest.version).toBe(PLUGIN_VERSION);
   const hooks = JSON.parse(PLUGIN_FILES.find((f) => f.path === "hooks/hooks.json")!.content);
@@ -61,6 +61,13 @@ test("PreCompact hook emits the compaction point (async)", () => {
   expect(cmds[0].command).toContain("--point=compaction");
 });
 
-test("plugin version is 1.3.0", () => {
-  expect(PLUGIN_VERSION).toBe("1.3.0");
+test("plugin version is 1.4.0", () => {
+  expect(PLUGIN_VERSION).toBe("1.4.0");
+});
+
+test("PreToolUse (every tool) emits tool.started, async", () => {
+  const h = JSON.parse(file("hooks/hooks.json").content);
+  expect(h.hooks.PreToolUse[0].matcher).toBe("*");
+  expect(h.hooks.PreToolUse[0].hooks[0].async).toBe(true);
+  expect(h.hooks.PreToolUse[0].hooks[0].command).toContain("--point=tool.started");
 });

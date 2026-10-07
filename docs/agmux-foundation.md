@@ -64,7 +64,7 @@ Two layers feed the same ingest API:
 ## 6. Data Model
 
 - **One relational database.** SQLite for baseline, accessed directly via `bun:sqlite`. Postgres-portability for (B) is a deferred goal: the swap-to-Postgres interface is **not yet in place** (no dialect abstraction today). The schema is kept simple enough to keep the door open; the abstraction is introduced when (B) actually demands it.
-- **Append-only event log is the source of truth.** Every fact is an immutable event (`session.started`, `heartbeat`, `tool.used`, `prompt.sent`, `tmux.reattached`, `message.sent`, `session.ended`, `session.seen` — user acknowledged a session; projected into `session_seen`, drives the unread flag, …).
+- **Append-only event log is the source of truth.** Every fact is an immutable event (`session.started`, `heartbeat`, `tool.used`, `prompt.sent`, `tmux.reattached`, `message.sent`, `session.ended`, `session.seen` — user acknowledged a session; projected into `session_seen`; together with the attention timestamp it splits a finished session into `done` (unseen) and `idle` (seen), …).
 - **Projection tables (`sessions`, `hosts`, …) are derived** from the log, maintained by the hub as events arrive, and rebuildable at any time. Consumers needing live state read the fast projection; analytics reads the raw log.
 - **Unified, not two stores.** Event log and projections live in the same DB and relate by key — every event carries a `session_id` FK into `sessions`. One datasource.
 

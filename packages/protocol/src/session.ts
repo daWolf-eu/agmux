@@ -1,7 +1,13 @@
-export const SESSION_STATUSES = ["idle", "running", "waiting", "ended", "lost"] as const;
+// Read-ness is part of the status vocabulary, not a separate axis:
+//   done  = the turn finished and you have not looked at it since
+//   idle  = finished/quiet and seen (or nothing has happened yet)
+// `done` is never stored: the projection keeps `idle` plus the attention/seen
+// timestamps, and the query layer derives `done` from them (like `lost`). A
+// `waiting` session needs action, not reading, so it has no seen/unseen split.
+export const SESSION_STATUSES = ["idle", "done", "running", "waiting", "ended", "lost"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
-export const LIVE_STATUSES: readonly SessionStatus[] = ["idle", "running", "waiting"];
+export const LIVE_STATUSES: readonly SessionStatus[] = ["idle", "done", "running", "waiting"];
 export const TERMINAL_STATUSES: readonly SessionStatus[] = ["ended", "lost"];
 
 // Single source of truth for known agent kinds. Adding a kind here flows to the
@@ -45,9 +51,6 @@ export interface SessionRow {
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.
   turn_count?: number | null;
-  // Joined from the session_seen projection (see session_activity.attention_ts).
-  // true = an attention-worthy event is newer than the last session.seen.
-  unread?: boolean | null;
   // Joined from the session_activity projection (null/absent = nothing
   // observed). last_tool/_detail are only meaningful while status=running;
   // last_input_kind ("prompt" | "permission" | "confirm") while status=waiting.
@@ -61,16 +64,32 @@ export interface SessionRow {
   // both the unread flag and the notification debounce are keyed on, so that a
   // busy session cannot manufacture new episodes by running tools.
   attention_ts?: string | null;
+  // Provenance (`agmux explain`): which event last set the STORED status, and
+  // which event last moved attention_ts. `status` itself is the derived value.
+  status_kind?: string | null;
+  status_ts?: string | null;
+  attention_kind?: string | null;
+  // Joined from the session_seen projection: the last acknowledgement and what
+  // caused it (attach | dismiss | focus | prompt | input).
+  seen_ts?: string | null;
+  seen_source?: string | null;
+  // Joined from the session_activity projection: the agent's last terminal
+  // title, with the status glyph stripped, and what it said about activity.
+  title?: string | null;
+  title_activity?: string | null;
+  title_ts?: string | null;
 }
 
 // `agmux ls --status` vocabulary: group aliases over the raw statuses.
 export const STATUS_GROUPS: Record<string, readonly SessionStatus[]> = {
   active: ["running", "waiting"],
+  // Wants you: blocked on input, or finished and not yet seen.
+  attention: ["waiting", "done"],
   open: LIVE_STATUSES,
   closed: TERMINAL_STATUSES,
 };
 
-// "active" | "open" | "closed" | comma-separated raw statuses → status list.
+// "active" | "attention" | "open" | "closed" | comma-separated raw statuses → status list.
 // Returns null for anything else (caller decides how to error).
 export function expandStatusFilter(value: string): SessionStatus[] | null {
   const group = STATUS_GROUPS[value];
@@ -83,4 +102,30 @@ export function expandStatusFilter(value: string): SessionStatus[] | null {
     out.push(p as SessionStatus);
   }
   return out;
+}
+
+// Why a session shows the status it does (`agmux explain`). Built by the same
+// function that derives `status` for every query, so the two cannot disagree.
+export type StatusRule =
+  | "terminal"          // stored ended/lost, reported as-is
+  | "heartbeat-stale"   // wrapper row with no heartbeat for LOST_THRESHOLD_MS → lost
+  | "working-timeout"   // running with no evidence of work for WORKING_TIMEOUT_MS → idle
+  | "unseen"            // idle, but the last attention event is newer than the last seen → done
+  | "stored";           // the projection's status, unchanged
+
+export interface StatusDecision {
+  session_id: string;
+  status: SessionStatus;
+  stored_status: SessionStatus;
+  rule: StatusRule;
+  reason: string;
+  status_event: { kind: string | null; ts: string | null };
+  attention: { kind: string | null; ts: string | null };
+  seen: { source: string | null; ts: string | null };
+  title: { title: string | null; activity: string | null; ts: string | null };
+  last_input_kind: string | null;
+  last_tool: string | null;
+  // Newest evidence the agent was working (input to the working timeout).
+  last_work_ts: string | null;
+  now: string;
 }

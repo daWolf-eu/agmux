@@ -3,7 +3,7 @@
 // source and from a `bun build --compile` binary (where import.meta.dir points
 // into the virtual /$bunfs and on-disk data files don't exist).
 
-export const PLUGIN_VERSION = "1.3.0";
+export const PLUGIN_VERSION = "1.4.0";
 
 const EMIT = "${AGMUX_BIN:-agmux} emit --from=claude";
 
@@ -50,6 +50,17 @@ const HOOKS = {
       {
         hooks: [
           { type: "command", async: true, command: `${EMIT} --source=hook-command --point=input.required` },
+        ],
+      },
+    ],
+    // Fires BEFORE each tool runs (and before its permission check): the
+    // running edge after an approved permission, the current tool up front,
+    // and AskUserQuestion → input.required{question}.
+    PreToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          { type: "command", async: true, command: `${EMIT} --source=hook-command --point=tool.started` },
         ],
       },
     ],

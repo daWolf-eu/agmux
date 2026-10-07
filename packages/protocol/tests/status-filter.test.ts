@@ -3,7 +3,8 @@ import { expandStatusFilter } from "../src/session.ts";
 
 test("expands group aliases", () => {
   expect(expandStatusFilter("active")).toEqual(["running", "waiting"]);
-  expect(expandStatusFilter("open")).toEqual(["idle", "running", "waiting"]);
+  expect(expandStatusFilter("attention")).toEqual(["waiting", "done"]);
+  expect(expandStatusFilter("open")).toEqual(["idle", "done", "running", "waiting"]);
   expect(expandStatusFilter("closed")).toEqual(["ended", "lost"]);
 });
 

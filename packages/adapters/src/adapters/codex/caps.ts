@@ -8,7 +8,7 @@ export const CODEX_SOURCES: CapabilitySource[] = [
   {
     type: "hook-command",
     activation: "event-triggered",
-    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.used", "prompt.sent"],
+    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "input.required", "tool.started", "tool.used", "prompt.sent"],
   },
   {
     type: "transcript-delta",
@@ -28,6 +28,7 @@ export const CODEX_CAPABILITIES: CapabilityMap = {
   "turn.ended": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "input.required": { fulfil: "partial", source: "hook-command", liveness: "live" },
   "usage.reported": { fulfil: "yes", source: "transcript-delta", liveness: "backfilled" },
+  "tool.started": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "tool.used": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "prompt.sent": { fulfil: "yes", source: "hook-command", liveness: "live" },
 };

@@ -9,7 +9,7 @@ export const PI_SOURCES: CapabilitySource[] = [
   {
     type: "hook-command",
     activation: "event-triggered",
-    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "tool.used", "prompt.sent", "usage.reported"],
+    points: ["session.registered", "session.linked", "turn.started", "turn.ended", "tool.started", "tool.used", "prompt.sent", "usage.reported"],
   },
 ];
 
@@ -22,6 +22,7 @@ export const PI_CAPABILITIES: CapabilityMap = {
   "session.linked": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "turn.started": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "turn.ended": { fulfil: "yes", source: "hook-command", liveness: "live" },
+  "tool.started": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "tool.used": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "prompt.sent": { fulfil: "yes", source: "hook-command", liveness: "live" },
   "usage.reported": { fulfil: "yes", source: "hook-command", liveness: "live" },

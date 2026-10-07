@@ -5,13 +5,16 @@ import {
   AGMUX_SESSION_ID_ENV,
   AGMUX_TMUX_SESSION_ENV,
   AGMUX_TMUX_SESSION_DEFAULT,
+  TITLE_KEEPALIVE_MS,
+  TitleSignal,
 } from "@agmux/protocol";
 import { buildChildEnv, reexecEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
 import type { ProfileConfig } from "./profile.ts";
 import { HubClient } from "./hub-client.ts";
 import { mintSessionId } from "./ids.ts";
-import { buildStartedEvent, buildEndedEvent, buildResumedEvent } from "./lifecycle.ts";
+import { buildStartedEvent, buildEndedEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
+import { OscTitleParser } from "./osc-title.ts";
 import { startHeartbeat } from "./heartbeat.ts";
 import {
   ensureAgmuxSession, readCurrentTmuxCoords, newAgmuxWindow, tmuxVersion,
@@ -19,7 +22,8 @@ import {
 export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig, type DashGroupConfig, type DashGroupKey, DASH_GROUP_KEYS } from "./profile.ts";
 export { HubClient, type HubClientOpts } from "./hub-client.ts";
 export { mintSessionId, mintEventId } from "./ids.ts";
-export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent } from "./lifecycle.ts";
+export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
+export { OscTitleParser } from "./osc-title.ts";
 
 export interface RunOpts {
   profile: ProfileConfig;
@@ -121,8 +125,22 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   if (stdinIsTty) process.stdin.setRawMode(true);
   const restore = () => { if (stdinIsTty) { try { process.stdin.setRawMode(false); } catch {} } };
 
+  // Title signal: the agent's own OSC title writes, observed (never altered)
+  // on their way to the terminal. Fire-and-forget — telemetry must never
+  // stall the output pump.
+  const titleParser = new OscTitleParser();
+  const titleSignal = new TitleSignal(profile.agent_kind, TITLE_KEEPALIVE_MS);
+  const onOutput = (chunk: Buffer): void => {
+    let titles: string[];
+    try { titles = titleParser.feed(chunk); } catch { return; }
+    for (const t of titles) {
+      const sig = titleSignal.observe(t, Date.now());
+      if (sig) void client.post(buildTitleChangedEvent({ sessionId, host, ...sig }));
+    }
+  };
+
   const mr = fs.createReadStream("", { fd: master, autoClose: false });
-  mr.on("data", (chunk) => process.stdout.write(chunk));
+  mr.on("data", (chunk) => { process.stdout.write(chunk); onOutput(chunk as Buffer); });
   mr.on("error", () => {});
   process.stdin.on("data", (chunk: Buffer) => { try { fs.writeSync(master, chunk); } catch {} });
   if (stdinIsTty) process.stdin.resume();

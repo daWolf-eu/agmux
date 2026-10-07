@@ -4,7 +4,7 @@ import { parse as parseToml } from "smol-toml";
 export const NOTIFY_TRIGGERS = ["permission", "prompt", "turn_end", "session_end"] as const;
 export type NotifyTrigger = (typeof NOTIFY_TRIGGERS)[number];
 
-export const SHOW_MODES = ["all", "unread", "waiting"] as const;
+export const SHOW_MODES = ["all", "attention", "done", "waiting"] as const;
 export type ShowMode = (typeof SHOW_MODES)[number];
 
 export const POSITIONS = ["status2", "status-right", "off"] as const;
@@ -102,7 +102,8 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
     statusline: {
       enabled: bool(s.enabled, "statusline.enabled", false),
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
-      show: oneOf(s.show, SHOW_MODES, "statusline.show", "all"),
+      // "unread" predates `done` being a status; it meant exactly that.
+      show: oneOf(s.show === "unread" ? "done" : s.show, SHOW_MODES, "statusline.show", "all"),
       max: positiveInt(s.max, "statusline.max", 6),
       format: str(s.format, "statusline.format", "{glyph} {tmux_session}:{tmux_pane}"),
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseEmitArgs, runEmit, enrichTmuxCoords } from "../src/emit.ts";
+import { parseEmitArgs, runEmit, enrichTmuxCoords, hookFiredAt } from "../src/emit.ts";
 import { createRegistry, createDefaultRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 import * as fs from "node:fs";
@@ -195,4 +195,10 @@ test("runEmit discovers the hub via the port file when AGMUX_HUB_URL is unset", 
   expect(postedUrl).toBe("http://127.0.0.1:54321/ingest");
   expect(posted).toHaveLength(1);
   expect(fs.existsSync(path.join(stateDir, "queue", "nat-d.jsonl"))).toBe(false);
+});
+
+test("hook events are stamped with the process spawn time, so spawn order = event order", () => {
+  const fired = Date.parse(hookFiredAt());
+  expect(fired).toBe(Math.floor(performance.timeOrigin));
+  expect(fired).toBeLessThanOrEqual(Date.now());
 });

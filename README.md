@@ -139,33 +139,57 @@ Run it inside tmux so `⏎` switches you to the agent's window while dash stays 
 
 ### Session glyphs
 
-`agmux dash` and the tmux status line share one glyph, which encodes two
-independent things — colour for status, shape for whether you have seen it:
+`agmux dash` and the tmux status line share one glyph. Whether you have seen a
+session is part of its status: a finished turn you haven't looked at is `done`;
+once seen it is `idle`.
 
 | Colour | Status |
 | --- | --- |
 | green | `running` |
-| amber | `waiting` (needs your input) |
-| grey | `idle` |
+| amber | `waiting` (blocked on you: a permission, a question, an input prompt) |
+| grey | `done` (finished, not yet seen) and `idle` (seen, or nothing happened yet) |
 | red | `ended` non-zero or on a signal |
 | dim grey | `ended` cleanly, or `lost` |
 
-| Shape | Read-ness |
+| Shape | Meaning |
 | --- | --- |
-| `●` solid | unread — an attention event is newer than your last acknowledgement |
-| `○` outlined | read |
+| `●` solid | `done` — finished and you haven't seen it yet |
+| `○` outlined | everything else |
 
-So an amber `●` is a session waiting on you that you haven't looked at, and an
-amber `○` is one you have already seen and chose to leave blocked. A session
-becomes read when you attach to it, when you press `u` on its row in `dash`, or
-via `agmux seen`; it becomes unread again on the next `input.required`,
-`turn.ended`, or `session.ended`. See [Attention signals](#attention-signals) for
-the read/unread model in full.
+`waiting` has no seen/unseen split: it needs an answer, not a look, and clears
+when you answer it. A `done` session becomes `idle` when you reach its pane by any
+route (prefix keys, mouse, choose-tree, or the terminal regaining focus — via the
+`pane-focus-in` hook `agmux.tmux` installs), when the turn ends while a focused
+client is already showing that pane, when you type the next prompt, when you
+attach, press `u` on its row in `dash`, or run `agmux seen`. It becomes `done`
+again on the next `turn.ended`. See [Attention signals](#attention-signals).
 
 The glyphs are fixed for now — themes and per-status customisation are not yet
 implemented.
 
 ### Attention signals
+
+How agmux decides a session's status, beyond the agent hooks for turn start/end:
+
+- **Permission answered → `running` immediately.** A `PreToolUse` hook emits
+  `tool.started` before every tool runs (Claude, Codex; pi's
+  `tool_execution_start`), so an approved permission no longer leaves the session
+  `waiting` until the turn ends. Claude's `AskUserQuestion` is reported as
+  `waiting` for a `question`, not a permission.
+- **A `Stop` that keeps working is not a finish.** `stop_reason=tool_use` or live
+  background tasks keep the session `running` — no false `done`, no notification.
+- **The terminal title is a second "working" signal.** Claude (and Codex/pi)
+  spin a braille glyph in the title while working; Claude shows `✳` when idle. The
+  PTY wrapper reads it from the output stream as it happens; for native sessions
+  in tmux, `agmux notifyd` reads `#{pane_title}`. It catches turns whose hooks were
+  missed and turns that ended without a `Stop` (Esc / interrupt).
+- **Running decays.** `running` with no evidence of work (status change, tool
+  event or title update) for 180 s is reported as `idle`.
+- **Late hooks can't win.** Hooks run asynchronously; each event is stamped with
+  the moment its hook fired and an older event never overwrites a newer status.
+- **`agmux explain <id>|--pane <pane_id>`** prints why a session is in its state:
+  the rule that decided it, the event that set it, attention vs seen timestamps,
+  and the title signal.
 
 `agmux notifyd` is a long-running daemon that watches sessions and drives two
 surfaces: an always-visible tmux status line, and debounced notifications when a
@@ -205,7 +229,8 @@ suppress_when_visible = true
 [statusline]
 enabled  = false
 position = "status2"       # status2 | status-right | off
-show     = "all"           # all | unread | waiting
+show     = "all"           # all | attention (waiting + done) | done | waiting
+                            # ("unread" is still accepted as an alias of "done")
 max      = 6               # max sessions rendered
 format   = "{glyph} {tmux_session}:{tmux_pane}"
 sort     = "activity"      # started | activity
@@ -231,6 +256,10 @@ Notes:
   while the terminal sits behind another window. The OS notification is exactly the
   signal that should still fire when you've tabbed away, so it always fires
   regardless of pane visibility.
+  Marking a turn seen because "you were watching when it ended" is stricter: it
+  needs the tmux client to report OS focus (`focused` in `#{client_flags}`, which
+  requires `focus-events on`). A turn that ends while the terminal sits behind
+  another window stays `done` and still notifies.
 - **`agmux notifyd` must be running for the status line to update.** `status-format`
   (or `status-right`) only `cat`s a cache file the daemon writes once per poll —
   it does not invoke `agmux` itself. Without the daemon running, the line goes
@@ -259,7 +288,8 @@ alongside the options in [tmux plugin (TPM)](#tmux-plugin-tpm) below):
 | `@agmux-statusline-position` | `[statusline].position` from `config.toml` (default `status2`) | `status2` or `status-right`; overrides config.toml |
 | `@agmux-statusline-interval` | `2`       | sets tmux's `status-interval`                                |
 | `@agmux-statusline-mouse`    | `on`      | click a status-line entry to attach; opt-out because it installs a root-table `MouseDown1Status` binding |
-| `@agmux-mark-read-key`       | `u`       | prefix key that marks the session owning the current pane read (`agmux seen --pane`) |
+| `@agmux-mark-read-key`       | `u`       | prefix key that marks the session owning the current pane seen (`agmux seen --pane`) |
+| `@agmux-seen-on-focus`       | `on`      | a pane gaining focus marks its `done` session seen (installs a `pane-focus-in[99]` hook and turns on `focus-events`) |
 
 Multi-line status needs tmux ≥ 3.3. On 3.2 the status line falls back to
 `status-right` automatically — the documented tmux floor stays at 3.2.

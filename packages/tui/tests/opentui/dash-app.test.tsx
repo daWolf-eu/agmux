@@ -259,7 +259,7 @@ test("yanking an empty field shows an is-empty notice and does not copy", async 
 test("pressing u marks the highlighted row seen", async () => {
   const seen: string[] = [];
   const actions: Actions = { ...noActions, async markSeen(row) { seen.push(row.session_id); } };
-  const rows = [mkRow({ session_id: "agx-mark-1", unread: true })];
+  const rows = [mkRow({ session_id: "agx-mark-1", status: "done" })];
   const { renderer, renderOnce, mockInput } = await testRender(
     <DashApp
       feedFor={fakeFeed(rows)} source={noSource} actions={actions}
@@ -390,10 +390,10 @@ test("f re-queries: each activity group subscribes to its own feed", async () =>
   renderer.destroy();
 });
 
-test("the row glyph is solid when unread and outlined when read", async () => {
+test("the row glyph is solid when done and outlined when idle", async () => {
   const rows = [
-    mkRow({ session_id: "agx-unread-01", status: "waiting", unread: true }),
-    mkRow({ session_id: "agx-read-0002", status: "waiting", unread: false }),
+    mkRow({ session_id: "agx-unread-01", status: "done" }),
+    mkRow({ session_id: "agx-read-0002", status: "idle" }),
   ];
   const { renderer, renderOnce, captureCharFrame } = await testRender(
     <DashApp
@@ -408,7 +408,7 @@ test("the row glyph is solid when unread and outlined when read", async () => {
   const lines = captureCharFrame().split("\n");
   const unreadLine = lines.find((l) => l.includes("agx-unread-01")) ?? "";
   const readLine = lines.find((l) => l.includes("agx-read-0002")) ?? "";
-  // Both rows share a status, so only the shape may differ between them.
+  // done and idle share a colour, so only the shape tells them apart.
   expect(unreadLine).toContain("●");
   expect(unreadLine).not.toContain("○");
   expect(readLine).toContain("○");

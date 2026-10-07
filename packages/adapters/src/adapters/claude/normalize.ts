@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import type { NormalizeInput, NormalizeOutput, CanonicalEvent } from "../../core/types.ts";
 import { pickEnv } from "../../core/env-capture.ts";
+import { stopKeepsWorking } from "../../core/normalize.ts";
 import { CLAUDE_RELAUNCH_ENV_KEYS } from "./caps.ts";
 
 interface ClaudeHookStdin {
@@ -13,7 +14,15 @@ interface ClaudeHookStdin {
   notification_type?: string;
   reason?: string;
   trigger?: string;
+  stop_reason?: string;
+  background_tasks?: unknown;
 }
+
+// Claude's structured-question tool. Its PreToolUse is the moment the agent
+// starts waiting on you; Claude then ALSO sends a permission_prompt
+// Notification for it, which the projection folds into this same wait.
+const QUESTION_TOOL = "AskUserQuestion";
+
 
 export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
   const raw = (input.raw ?? {}) as ClaudeHookStdin & Record<string, unknown>;
@@ -54,7 +63,15 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
     case "turn.started":
       return { events: [{ kind: "turn.started", payload: {} }] };
     case "turn.ended":
+      if (stopKeepsWorking(raw)) return { events: [] };
       return { events: [{ kind: "turn.ended", payload: { reason: raw.reason ?? null } }] };
+    case "tool.started": {
+      // PreToolUse. Proof the agent is working — including that a permission
+      // prompt was just answered, which nothing else reports until Stop.
+      const tool = typeof raw.tool_name === "string" ? raw.tool_name : "unknown";
+      if (tool === QUESTION_TOOL) return { events: [{ kind: "input.required", payload: { kind: "question" } }] };
+      return { events: [{ kind: "tool.started", payload: { tool } }] };
+    }
     case "input.required": {
       // Claude's Notification hook is multi-purpose (https://code.claude.com/docs/en/hooks):
       // classify by notification_type. Only genuine blocks become input.required → status
@@ -76,8 +93,12 @@ export function normalizeClaude(input: NormalizeInput): NormalizeOutput {
       // Absent either signal we default to ok — never invent a failure we can't see.
       const tr = raw.tool_response;
       const failed = tr != null && (tr.is_error === true || tr.success === false);
-      if (failed) return { events: [{ kind: "tool.used", payload: { tool, ok: false, detail: "error" } }] };
-      return { events: [{ kind: "tool.used", payload: { tool, ok: true } }] };
+      const used: CanonicalEvent = failed
+        ? { kind: "tool.used", payload: { tool, ok: false, detail: "error" } }
+        : { kind: "tool.used", payload: { tool, ok: true } };
+      // The question was answered: the wait opened by its PreToolUse is over.
+      if (tool === QUESTION_TOOL) return { events: [used, { kind: "input.received", payload: {} }] };
+      return { events: [used] };
     }
     case "usage.reported":
       return normalizeUsage(input, raw);

@@ -32,29 +32,17 @@ test("closed is dimmer than idle, the two now differing only by colour", () => {
   expect(idle.color).not.toBe(closed.color);
 });
 
-// --- shape axis: read-ness ---------------------------------------------------
-test("unread → solid circle", () => {
-  expect(statusGlyph(mkRow({ unread: true })).glyph).toBe(UNREAD_SHAPE);
+// --- shape axis: seen-ness ---------------------------------------------------
+test("done (finished, unseen) → solid circle", () => {
+  expect(statusGlyph(mkRow({ status: "done" })).glyph).toBe(UNREAD_SHAPE);
+  expect(isUnread(mkRow({ status: "done" }))).toBe(true);
 });
-test("read → outlined circle", () => {
-  expect(statusGlyph(mkRow({ unread: false })).glyph).toBe(READ_SHAPE);
-});
-test("unread absent (null/undefined) defaults to read", () => {
-  expect(statusGlyph(mkRow({ unread: null })).glyph).toBe(READ_SHAPE);
-  expect(statusGlyph(mkRow({ unread: undefined })).glyph).toBe(READ_SHAPE);
-  expect(isUnread(mkRow({ unread: null }))).toBe(false);
-});
-
-// --- the axes are independent -------------------------------------------------
-test("shape varies with read-ness while colour stays pinned to status", () => {
-  for (const row of [
-    mkRow({ status: "running" }), mkRow({ status: "waiting" }), mkRow({ status: "idle" }),
-    mkRow({ status: "ended", exit_code: 1 }), mkRow({ status: "ended", exit_code: 0 }),
-  ]) {
-    const read = statusGlyph({ ...row, unread: false });
-    const unread = statusGlyph({ ...row, unread: true });
-    expect(read.color).toBe(unread.color);
-    expect(read.glyph).toBe(READ_SHAPE);
-    expect(unread.glyph).toBe(UNREAD_SHAPE);
+test("every other status → outlined circle", () => {
+  for (const status of ["idle", "running", "waiting", "ended", "lost"] as const) {
+    expect(statusGlyph(mkRow({ status })).glyph).toBe(READ_SHAPE);
+    expect(isUnread(mkRow({ status }))).toBe(false);
   }
+});
+test("done keeps the idle colour (palette rework is separate)", () => {
+  expect(statusGlyph(mkRow({ status: "done" })).color).toBe(statusGlyph(mkRow({ status: "idle" })).color);
 });

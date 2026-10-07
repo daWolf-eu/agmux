@@ -4,7 +4,7 @@
 // `bun build --compile` binary (where import.meta.dir is virtual). No published
 // package, no network — the only externality is the `codex` binary on PATH.
 
-export const PLUGIN_VERSION = "1.0.1";
+export const PLUGIN_VERSION = "1.1.0";
 export const MARKETPLACE_NAME = "agmux";
 export const PLUGIN_NAME = "agmux";
 
@@ -73,6 +73,14 @@ const HOOKS = {
       {
         hooks: [
           { type: "command", command: bg(`${EMIT} --source=hook-command --point=input.required`) },
+        ],
+      },
+    ],
+    PreToolUse: [
+      {
+        matcher: "*",
+        hooks: [
+          { type: "command", command: bg(`${EMIT} --source=hook-command --point=tool.started`) },
         ],
       },
     ],

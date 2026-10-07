@@ -262,3 +262,24 @@ test("@agmux-mark-read-key overrides the default binding key and honors a custom
     await tmuxCmd(socket, ["kill-server"]);
   }
 });
+
+test("focus-seen installs focus-events and a namespaced pane-focus-in hook", async () => {
+  const socket = `agmux-test-focus-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "focus-events", "off"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      agmux_tmux_install_focus_seen "/opt/agmux"
+    `);
+    expect(await tmuxCmd(socket, ["show-option", "-gv", "focus-events"])).toBe("on");
+    const hooks = await tmuxCmd(socket, ["show-hooks", "-gw"]); // pane hooks live in the window scope
+    const line = hooks.split("\n").find((l) => l.startsWith("pane-focus-in[99]")) ?? "";
+    expect(line).toContain("run-shell -b");
+    expect(line).toContain("/opt/agmux");
+    expect(line).toContain("seen --pane");
+    expect(line).toContain("--source focus");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});

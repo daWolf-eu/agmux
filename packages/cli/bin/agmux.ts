@@ -13,6 +13,7 @@ import { parseWatchArgs } from "../src/parse-watch.ts";
 import { dashCmd } from "../src/dash.ts";
 import { parseDashArgs } from "../src/parse-dash.ts";
 import { inspectCmd } from "../src/inspect.ts";
+import { explainCmd } from "../src/explain.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { seenCmd } from "../src/seen.ts";
@@ -21,7 +22,8 @@ import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { runHubCmd } from "../src/hub-cmd.ts";
 import { statuslineCmd } from "../src/statusline-cmd.ts";
 import { staleMarker } from "../src/statusline-cache.ts";
-import { runNotifyd } from "../src/notifyd.ts";
+import { runNotifyd, postIngest } from "../src/notifyd.ts";
+import { execFile } from "node:child_process";
 import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
 import { discoverHubUrl, resolveLiveHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
@@ -112,6 +114,24 @@ async function main(): Promise<number> {
     return statuslineCmd({ hubUrl }, deps);
   }
 
+  // `seen` runs from tmux's pane-focus-in hook on every pane switch: it must be
+  // cheap and must never spawn a hub — no hub means nothing to acknowledge.
+  if (verb === "seen") {
+    const flag = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+    const pane = flag("--pane");
+    const socket = flag("--socket") || undefined;
+    const source = flag("--source");
+    const id = pane ? undefined : argv[1];
+    if (!pane && !id) usage();
+    if (source !== undefined && source !== "dismiss" && source !== "focus") usage();
+    const seenHub = discoverHubUrl(process.env, stateDir);
+    if (!seenHub) return pane ? 0 : 1;
+    return seenCmd(
+      { idOrPrefix: id, pane, socket, source: source as "dismiss" | "focus" | undefined, hubUrl: seenHub, host: os.hostname() },
+      { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
+    );
+  }
+
   // Hub required for every verb. `run` would also accept a still-spawning hub
   // because the wrapper queues to disk; for simplicity here we ensure it for all.
   const hubUrl = await ensureHubRunning(stateDir, hubBin);
@@ -130,7 +150,17 @@ async function main(): Promise<number> {
           lockPath: path.join(stateDir, "notifyd.lock"),
           replace: argv.includes("--replace"),
         },
-        { env: process.env, config },
+        {
+          env: process.env, config,
+          paneSignals: {
+            capture: (cmd, args) => new Promise((resolve, reject) => {
+              execFile(cmd, args, (err, stdout) => { if (err) reject(err); else resolve(stdout); });
+            }),
+            host: os.hostname(),
+            newId: () => crypto.randomUUID(),
+            post: postIngest,
+          },
+        },
       );
     }
     case "run": {
@@ -247,21 +277,21 @@ async function main(): Promise<number> {
       const id = argv[1]; if (!id) usage();
       return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
     }
-    case "seen": {
-      const paneIdx = argv.indexOf("--pane");
-      const pane = paneIdx >= 0 ? argv[paneIdx + 1] : undefined;
-      const id = paneIdx >= 0 ? undefined : argv[1];
-      if (!pane && !id) usage();
-      return seenCmd(
-        { idOrPrefix: id, pane, hubUrl, host: os.hostname() },
-        { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
-      );
-    }
     case "kill": {
       const id = argv[1]; if (!id) usage();
       const sigIdx = argv.indexOf("--signal");
       const signal = sigIdx >= 0 ? argv[sigIdx + 1]! : "SIGTERM";
       return killCmd({ idOrPrefix: id, signal, hubUrl });
+    }
+    case "explain": {
+      const paneIdx = argv.indexOf("--pane");
+      const pane = paneIdx >= 0 ? argv[paneIdx + 1] : undefined;
+      const id = argv.slice(1).find((a, i, all) => !a.startsWith("--") && all[i - 1] !== "--pane");
+      if (!pane && !id) usage();
+      return explainCmd(
+        { idOrPrefix: id, pane, json: argv.includes("--json"), hubUrl },
+        { fetchImpl: fetch, out: (s) => console.log(s), err: (s) => console.error(s) },
+      );
     }
     case "inspect": {
       const id = argv[1]; if (!id) usage();

@@ -5,7 +5,7 @@ export const SORT_KEYS: SortKey[] = ["status", "last", "id"];
 
 // Needs-input first, then working, then idle, then closed (ended/lost share a rank).
 const STATUS_RANK: Record<SessionStatus, number> = {
-  waiting: 0, running: 1, idle: 2, ended: 3, lost: 3,
+  waiting: 0, running: 1, done: 2, idle: 2, ended: 3, lost: 3,
 };
 
 function tsOf(r: SessionRow): number {

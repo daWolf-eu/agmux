@@ -31,9 +31,8 @@ export function createDetectState(): DetectState {
 // poll cannot re-fire, while a genuinely new attention event re-arms.
 //
 // This MUST be attention_ts, not activity_ts. activity_ts also moves on every
-// tool.used, and a session stays in `waiting`/`idle` across tool calls (nothing
-// emits input.received, and Claude's Stop hook does not fire while a subagent
-// runs), so activity_ts minted a new episode per tool call and re-fired the same
+// tool.used, and a session stays in `waiting`/`done` across tool calls (Claude's
+// Stop hook does not fire while a subagent runs), so activity_ts minted a new episode per tool call and re-fired the same
 // prompt on the next lull longer than delayMs — loudest under subagents, whose
 // tool calls stream into the parent session for minutes. attention_ts moves only
 // on input.required / turn.ended / session.ended, which is exactly one episode.
@@ -52,7 +51,10 @@ function triggerFor(r: SessionRow): NotifyTrigger | null {
     if (k === "permission" || k === "confirm") return "permission";
     return "prompt";
   }
-  if (r.status === "idle") return "turn_end";
+  // Only an UNSEEN finish notifies: once it is seen (you focused the pane, or
+  // were already watching when it ended) it is `idle`, and a pending debounce
+  // for it is pruned below instead of firing.
+  if (r.status === "done") return "turn_end";
   return null;
 }
 

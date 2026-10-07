@@ -109,6 +109,16 @@ export async function enrichTmuxCoords(
   for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
 }
 
+// Stamp hook events with the moment this process was SPAWNED, not the moment
+// it got around to stamping. Hooks fire async, one `agmux emit` per hook, and
+// cold starts vary by tens of ms — a PreToolUse emit could otherwise be stamped
+// after the permission Notification that the agent fired after it, and the
+// projection's ordering guard (status_ts) would then believe the wrong one.
+// Spawn order is the agent's firing order.
+export function hookFiredAt(): string {
+  return new Date(performance.timeOrigin).toISOString();
+}
+
 // Hot-path contract (spec §4.2): NEVER throws, NEVER writes stdout, drops on
 // missing identity, falls back to the per-session queue on any post failure.
 export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
@@ -152,7 +162,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     if (events.length === 0) return;
 
     const stamped = stampIngestEvents(events, {
-      agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now, newId: deps.newId,
+      agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now ?? hookFiredAt, newId: deps.newId,
     });
     await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)));
     await postOrQueue(stamped, {

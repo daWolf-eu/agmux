@@ -7,6 +7,8 @@ import type { AttentionConfig } from "./attention-config.ts";
 import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
 import { dispatchNotification, type SinkDeps } from "./sinks.ts";
 import { acquireSingletonLock } from "@agmux/hub";
+import type { IngestEnvelope } from "@agmux/protocol";
+import { collectPaneSignals, createPaneSignalState, type PaneSignalDeps } from "./pane-signals.ts";
 
 // No shell involved (execFile, not exec), and `which` is a plain PATH scan —
 // no subprocess at all — so there is nothing here that can execute untrusted
@@ -90,6 +92,20 @@ export interface NotifydDeps {
   setIntervalImpl?: typeof setInterval;   // test seam for the daemon tick timer
   clearIntervalImpl?: typeof clearInterval;
   now?: () => number;   // test seam for the debounce clock
+  // tmux-derived attention signals (pane titles of native sessions, seen when a
+  // turn ends under a focused client). Off unless provided — the bin wires the
+  // real one; tests opt in with fakes. See pane-signals.ts.
+  paneSignals?: Omit<PaneSignalDeps, "now"> & {
+    post: (hubUrl: string, events: IngestEnvelope[]) => Promise<void>;
+  };
+}
+
+export async function postIngest(hubUrl: string, events: IngestEnvelope[]): Promise<void> {
+  try {
+    await fetch(`${hubUrl}/ingest`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(events),
+    });
+  } catch { /* hub down: the next tick re-observes */ }
 }
 
 export async function runNotifyd(
@@ -188,11 +204,28 @@ export async function runNotifyd(
   // Re-evaluating stale rows while the hub is unreachable is deliberate: the
   // wait was real when we last saw it, and `fired` still caps it at one
   // notification per episode.
+  // At most one pass in flight: a slow tmux must not stack up passes.
+  const signalState = createPaneSignalState();
+  let signalsBusy = false;
+  const runPaneSignals = (rows: SessionRow[]): void => {
+    const ps = deps.paneSignals;
+    if (!ps || signalsBusy) return;
+    signalsBusy = true;
+    collectPaneSignals(signalState, rows, { ...ps, now })
+      .then(async (events) => {
+        if (events.length === 0) return;
+        const hub = opts.resolveHubUrl?.() ?? opts.hubUrl;
+        await ps.post(hub, events);
+      })
+      .catch((e) => log(`agmux: pane signals failed: ${e}`))
+      .finally(() => { signalsBusy = false; });
+  };
+
   const setIntervalImpl = deps.setIntervalImpl ?? setInterval;
   const clearIntervalImpl = deps.clearIntervalImpl ?? clearInterval;
   const tickTimer = setIntervalImpl(() => {
     beat();
-    if (lastRows) evaluate(lastRows);
+    if (lastRows) { evaluate(lastRows); runPaneSignals(lastRows); }
   }, intervalMs);
 
   const unsubscribe = feed.subscribe(
@@ -206,6 +239,7 @@ export async function runNotifyd(
       if (lastRows === null) primeDetectState(detectState, rows);
       lastRows = rows;
       evaluate(rows);
+      runPaneSignals(rows);
       deps.onRows?.(rows);
     },
     () => { writeLineAtomic(file, staleMarker("hub down"), deps.fs); beat(); },

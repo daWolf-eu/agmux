@@ -24,12 +24,12 @@ test("null fields collapse the separator rather than leaving a dangling colon", 
   expect(formatStatusLine(rows, OPTS)).not.toContain("w:");
 });
 
-test("{glyph} carries read-ness in its shape and status in its colour", () => {
-  const base = { session_id: "a", status: "waiting" as const, tmux_session: "w", tmux_window: "1" };
-  const unread = formatStatusLine([mkRow({ ...base, unread: true })], OPTS);
-  const read = formatStatusLine([mkRow({ ...base, unread: false })], OPTS);
-  expect(unread).toContain("#[fg=#f9e2af]● w:1");
-  expect(read).toContain("#[fg=#f9e2af]○ w:1");
+test("{glyph} is solid for done and outlined for idle, in the same colour", () => {
+  const base = { session_id: "a", tmux_session: "w", tmux_window: "1" };
+  const done = formatStatusLine([mkRow({ ...base, status: "done" })], OPTS);
+  const idle = formatStatusLine([mkRow({ ...base, status: "idle" })], OPTS);
+  expect(done).toContain("#[fg=#6c7086]● w:1");
+  expect(idle).toContain("#[fg=#6c7086]○ w:1");
 });
 
 test("show=waiting keeps only waiting rows", () => {
@@ -38,10 +38,20 @@ test("show=waiting keeps only waiting rows", () => {
   expect(formatStatusLine(rows, { ...OPTS, show: "waiting" })).not.toContain("range=user|a");
 });
 
-test("show=unread keeps only unread rows", () => {
-  const rows = [mkRow({ session_id: "a", unread: false }), mkRow({ session_id: "b", unread: true })];
-  expect(formatStatusLine(rows, { ...OPTS, show: "unread" })).not.toContain("range=user|a");
-  expect(formatStatusLine(rows, { ...OPTS, show: "unread" })).toContain("range=user|b");
+test("show=done keeps only done rows", () => {
+  const rows = [mkRow({ session_id: "a", status: "idle" }), mkRow({ session_id: "b", status: "done" })];
+  expect(formatStatusLine(rows, { ...OPTS, show: "done" })).not.toContain("range=user|a");
+  expect(formatStatusLine(rows, { ...OPTS, show: "done" })).toContain("range=user|b");
+});
+
+test("show=attention keeps waiting and done rows", () => {
+  const rows = [
+    mkRow({ session_id: "a", status: "idle" }), mkRow({ session_id: "b", status: "done" }),
+    mkRow({ session_id: "c", status: "waiting" }), mkRow({ session_id: "d", status: "running" }),
+  ];
+  const out = formatStatusLine(rows, { ...OPTS, show: "attention" });
+  for (const id of ["b", "c"]) expect(out).toContain(`range=user|${id}`);
+  for (const id of ["a", "d"]) expect(out).not.toContain(`range=user|${id}`);
 });
 
 test("overflow past max collapses to a +N chip", () => {

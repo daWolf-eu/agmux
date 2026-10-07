@@ -51,6 +51,8 @@ export function normalizePi(input: NormalizeInput): NormalizeOutput {
       return { events: [{ kind: "turn.ended", payload: { reason: raw.reason ?? null } }] };
     case "prompt.sent":
       return { events: [{ kind: "prompt.sent", payload: { chars: typeof raw.prompt === "string" ? raw.prompt.length : null, redacted: true } }] };
+    case "tool.started":
+      return { events: [{ kind: "tool.started", payload: { tool: typeof raw.tool_name === "string" ? raw.tool_name : "unknown" } }] };
     case "tool.used": {
       const tool = typeof raw.tool_name === "string" ? raw.tool_name : "unknown";
       // pi reports failure directly via is_error; mirror claude/codex `detail`.
