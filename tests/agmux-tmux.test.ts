@@ -1,7 +1,13 @@
 import { test, expect } from "bun:test";
+import * as path from "node:path";
+
+// Absolute, never "./agmux.tmux": scripts sourced inside `tmux run-shell` run in
+// whatever directory the tmux server chooses (on CI's tmux that is not the repo
+// root), and a failed `source` there is silent — the test just sees no effect.
+const PLUGIN = path.resolve(import.meta.dir, "../agmux.tmux");
 
 async function callFn(fn: string, args: string[], env: Record<string, string> = {}): Promise<string> {
-  const p = Bun.spawn(["bash", "-c", `AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux; ${fn} ${args.join(" ")}`], {
+  const p = Bun.spawn(["bash", "-c", `AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'; ${fn} ${args.join(" ")}`], {
     env: { ...process.env, ...env }, stdout: "pipe", stderr: "pipe",
   });
   return (await new Response(p.stdout).text()).trim();
@@ -43,7 +49,7 @@ test("with @agmux-statusline off/unset, nothing is set", async () => {
 
     // Run the install function with statusline off and check nothing changes
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       agmux_tmux_install_statusline "agmux" "off" "2" "on" "3.6a"
     `;
 
@@ -69,7 +75,7 @@ test("with @agmux-statusline on and tmux >= 3.3, status becomes 2", async () => 
 
     // Run the install function with version 3.6a (>= 3.3)
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       agmux_tmux_install_statusline "agmux" "status2" "2" "on" "3.6a"
     `;
 
@@ -96,7 +102,7 @@ test("with @agmux-statusline on and tmux < 3.3, uses status-right instead", asyn
 
     // Run the install function with version 3.2 (< 3.3)
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       agmux_tmux_install_statusline "agmux" "status2" "2" "on" "3.2"
     `;
 
@@ -144,7 +150,7 @@ test("config.toml position is used as the default when @agmux-statusline-positio
     // @agmux-statusline-position deliberately left unset.
 
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       main
     `;
     await tmuxRunShell(socket, script);
@@ -172,7 +178,7 @@ test("an explicit @agmux-statusline-position tmux option overrides config.toml's
     await tmuxCmd(socket, ["set-option", "-g", "@agmux-statusline-position", "off"]);
 
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       main
     `;
     await tmuxRunShell(socket, script);
@@ -203,7 +209,7 @@ test("config.toml enabled=true turns the status line on even though @agmux-statu
     // @agmux-statusline deliberately left unset — config.toml's enabled=true should win.
 
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       main
     `;
     await tmuxRunShell(socket, script);
@@ -223,7 +229,7 @@ test("main() binds @agmux-mark-read-key (default u) to a quoted-$bin seen --pane
     await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
 
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       main
     `;
     await tmuxRunShell(socket, script);
@@ -247,7 +253,7 @@ test("@agmux-mark-read-key overrides the default binding key and honors a custom
     await tmuxCmd(socket, ["set-option", "-g", "@agmux-bin", "/opt/my bin/agmux"]);
 
     const script = `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       main
     `;
     await tmuxRunShell(socket, script);
@@ -269,7 +275,7 @@ test("focus-seen installs focus-events and a namespaced pane-focus-in hook", asy
     await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
     await tmuxCmd(socket, ["set-option", "-g", "focus-events", "off"]);
     await tmuxRunShell(socket, `
-      AGMUX_TMUX_LIB_ONLY=1 source ./agmux.tmux
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
       agmux_tmux_install_focus_seen "/opt/agmux"
     `);
     expect(await tmuxCmd(socket, ["show-option", "-gv", "focus-events"])).toBe("on");
