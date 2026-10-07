@@ -5,9 +5,12 @@ export interface Glyph {
   color: string;
 }
 
-// Two independent axes, so one character decodes both without a legend:
+// Two axes, so one character decodes both without a legend:
 //   color → status (running / waiting / idle / error / closed)
-//   shape → read-ness (unread = solid, read = outlined)
+//   shape → seen-ness (done = finished and unseen = solid, everything else = outlined)
+// Seen-ness is part of the status vocabulary now (`done` vs `idle`); the solid
+// shape is simply how `done` is drawn. The palette is unchanged here on purpose
+// — restyling the dash is separate work.
 // Geometric, single-width BMP glyphs (no emoji / nerdfont): they render as plain
 // text on any terminal and stay visually consistent.
 //
@@ -36,7 +39,8 @@ export function statusTone(r: SessionRow): StatusTone {
   switch (r.status) {
     case "waiting": return "waiting";
     case "running": return "running";
-    case "idle": return "idle";
+    case "idle":
+    case "done": return "idle";
     case "ended":
       return (r.exit_code != null && r.exit_code !== 0) || r.signal ? "error" : "closed";
     case "lost": return "closed";
@@ -44,11 +48,10 @@ export function statusTone(r: SessionRow): StatusTone {
   }
 }
 
-// Only an explicit `true` counts as unread: the field is optional on SessionRow
-// and absent wherever the projection wasn't joined, so read is the safe default
-// (matches the ?unread=1 filter predicate in @agmux/store).
+// `done` is the only unseen status: a waiting session needs action, not
+// reading, and running/idle have nothing new to look at.
 export function isUnread(r: SessionRow): boolean {
-  return r.unread === true;
+  return r.status === "done";
 }
 
 export function statusGlyph(r: SessionRow): Glyph {

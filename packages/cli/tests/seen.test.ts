@@ -44,21 +44,57 @@ test("seenCmd resolves --pane to the session owning that tmux pane", async () =>
     if (String(u).includes("/sessions?status=open")) {
       return new Response(JSON.stringify({
         sessions: [
-          { session_id: "other", tmux_pane: "%1" },
-          { session_id: "agx-2", tmux_pane: "%42" },
+          { session_id: "other", tmux_pane: "%1", status: "done" },
+          { session_id: "agx-2", tmux_pane: "%42", status: "done" },
         ],
       }));
     }
+    calls.push(String(init?.body ?? ""));
     return new Response(null, { status: 202 });
   }) as unknown as typeof fetch;
 
   const code = await seenCmd(
-    { pane: "%42", hubUrl: "http://h", host: "box" },
+    { pane: "%42", source: "focus", hubUrl: "http://h", host: "box" },
     { fetchImpl, now: () => "t", newId: () => "e" },
   );
   expect(code).toBe(0);
   expect(calls.some((u) => u.includes("/sessions?status=open"))).toBe(true);
   expect(calls.some((u) => u.includes("/ingest"))).toBe(true);
+  const body = JSON.parse(calls[calls.length - 1]!);
+  expect(body[0].session_id).toBe("agx-2");
+  expect(body[0].payload).toEqual({ source: "focus" });
+});
+
+test("seenCmd --pane posts nothing unless the owning session is done", async () => {
+  for (const status of ["idle", "running", "waiting"]) {
+    let ingestCalled = false;
+    const fetchImpl = (async (u: any) => {
+      if (String(u).includes("/sessions?status=open")) {
+        return new Response(JSON.stringify({ sessions: [{ session_id: "a", tmux_pane: "%42", status }] }));
+      }
+      ingestCalled = true;
+      return new Response(null, { status: 202 });
+    }) as unknown as typeof fetch;
+    const code = await seenCmd({ pane: "%42", hubUrl: "http://h", host: "box" }, { fetchImpl, now: () => "t", newId: () => "e" });
+    expect(code).toBe(0);
+    expect(ingestCalled).toBe(false);
+  }
+});
+
+test("seenCmd --socket ignores a same-numbered pane on another tmux server", async () => {
+  const posted: string[] = [];
+  const fetchImpl = (async (u: any, init?: any) => {
+    if (String(u).includes("/sessions?status=open")) {
+      return new Response(JSON.stringify({ sessions: [
+        { session_id: "elsewhere", tmux_pane: "%42", tmux_socket: "/tmp/other", status: "done" },
+        { session_id: "here", tmux_pane: "%42", tmux_socket: "/tmp/mine", status: "done" },
+      ] }));
+    }
+    posted.push(JSON.parse(String(init.body))[0].session_id);
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+  await seenCmd({ pane: "%42", socket: "/tmp/mine", hubUrl: "http://h", host: "box" }, { fetchImpl, now: () => "t", newId: () => "e" });
+  expect(posted).toEqual(["here"]);
 });
 
 test("seenCmd on a pane no session owns exits 0 without posting anything", async () => {

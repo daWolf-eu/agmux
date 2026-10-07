@@ -1,5 +1,6 @@
 import type { AgentKind } from "./session.ts";
 import type { UsageReport, CapabilityMap } from "./telemetry.ts";
+import type { TitleActivity } from "./title.ts";
 
 export const EVENT_KINDS_MVP = [
   "session.started",
@@ -17,7 +18,9 @@ export const EVENT_KINDS_ADAPTER = [
   "input.required",
   "input.received",
   "usage.reported",
+  "tool.started",
   "tool.used",
+  "title.changed",
   "prompt.sent",
   "compaction",
   "session.adapter_attached",
@@ -97,8 +100,16 @@ export interface SessionEndedPayload {
 
 // Marks a session acknowledged by the user. "unseen" is expressed as a later
 // attention event, not as a delete — the log is append-only (foundation §14.3).
+// Explicit acknowledgements only. Interacting with the agent (turn.started,
+// input.received) also counts as seen, but the projection derives that from the
+// event itself, so no session.seen is emitted for it.
+export const SEEN_SOURCES = ["attach", "dismiss", "focus"] as const;
+export type SeenSource = (typeof SEEN_SOURCES)[number];
+
 export interface SessionSeenPayload {
-  source: "attach" | "dismiss";
+  // focus = a tmux client focused the agent's pane (pane-focus-in hook), or the
+  // turn ended while a focused client was already showing it (notifyd).
+  source: SeenSource;
 }
 
 export interface SessionLinkedPayload {
@@ -142,8 +153,13 @@ export interface TurnEndedPayload {
   reason?: string | null;
 }
 
+export const INPUT_KINDS = ["prompt", "permission", "confirm", "question"] as const;
+export type InputKind = (typeof INPUT_KINDS)[number];
+
 export interface InputRequiredPayload {
-  kind: "prompt" | "permission" | "confirm";
+  // question = the agent asked the user a structured question (Claude's
+  // AskUserQuestion), as opposed to asking permission to run a tool.
+  kind: InputKind;
   detail?: string | null;
 }
 
@@ -153,6 +169,24 @@ export interface ToolUsedPayload {
   tool: string;
   ok?: boolean | null;
   detail?: string | null;
+}
+
+// A tool is ABOUT to run (Claude/Codex PreToolUse, pi tool_execution_start).
+// Proof the agent is working again — in particular that a permission prompt was
+// answered — so the projection moves the session to running and records the
+// tool as current before it runs.
+export interface ToolStartedPayload {
+  tool: string;
+  detail?: string | null;
+}
+
+// The agent's terminal title changed (OSC 0/2 seen by the PTY wrapper, or
+// #{pane_title} polled by notifyd for native sessions). `activity` is the
+// emitter's classification (parseAgentTitle); `title` has the glyph stripped.
+// Also re-sent periodically while working (TITLE_KEEPALIVE_MS).
+export interface TitleChangedPayload {
+  title: string;
+  activity: TitleActivity | null;
 }
 
 export interface PromptSentPayload {
@@ -192,6 +226,8 @@ export type InputRequiredEvent = EventEnvelope<InputRequiredPayload> & { kind: "
 export type InputReceivedEvent = EventEnvelope<InputReceivedPayload> & { kind: "input.received" };
 export type UsageReportedEvent = EventEnvelope<UsageReportedPayload> & { kind: "usage.reported" };
 export type ToolUsedEvent = EventEnvelope<ToolUsedPayload> & { kind: "tool.used" };
+export type ToolStartedEvent = EventEnvelope<ToolStartedPayload> & { kind: "tool.started" };
+export type TitleChangedEvent = EventEnvelope<TitleChangedPayload> & { kind: "title.changed" };
 export type PromptSentEvent = EventEnvelope<PromptSentPayload> & { kind: "prompt.sent" };
 export type CompactionEvent = EventEnvelope<CompactionPayload> & { kind: "compaction" };
 export type AdapterAttachedEvent = EventEnvelope<AdapterAttachedPayload> & { kind: "session.adapter_attached" };
@@ -211,6 +247,8 @@ export type KnownEvent =
   | InputReceivedEvent
   | UsageReportedEvent
   | ToolUsedEvent
+  | ToolStartedEvent
+  | TitleChangedEvent
   | PromptSentEvent
   | CompactionEvent
   | AdapterAttachedEvent;

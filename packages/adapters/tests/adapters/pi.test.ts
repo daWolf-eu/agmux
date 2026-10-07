@@ -255,3 +255,11 @@ test("install delivers skills by default when ctx.skills is omitted (not just wh
   piInstall(ctx);
   expect(fs.existsSync(path.join(piSkillsDir(cfg), "agmux-overview", "SKILL.md"))).toBe(true);
 });
+
+test("tool_execution_start → tool.started", () => {
+  expect(normalizePi({ point: "tool.started", source: "hook-command", raw: { session_id: "x", tool_name: "bash" }, target }).events)
+    .toEqual([{ kind: "tool.started", payload: { tool: "bash" } }]);
+  const src = EXTENSION_FILES[0]!.content;
+  expect(src).toContain(`pi.on("tool_execution_start"`);
+  expect(src).toContain(`emitPoint("tool.started"`);
+});

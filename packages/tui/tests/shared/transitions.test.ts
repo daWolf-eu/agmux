@@ -262,7 +262,7 @@ test("priming suppresses every session that was already eligible at startup", ()
   const st = createDetectState();
   const board = [
     waiting({ session_id: "s1" }),
-    mkRow({ session_id: "s2", status: "idle", activity_ts: "t1" }),
+    mkRow({ session_id: "s2", status: "done", activity_ts: "t1" }),
     mkRow({ session_id: "s3", status: "ended", activity_ts: "t1" }),
     mkRow({ session_id: "s4", status: "running", activity_ts: "t1" }),
   ];
@@ -282,7 +282,7 @@ test("priming only silences the episode it saw — a later transition still fire
 test("priming does not silence a session that was running at startup", () => {
   const st = createDetectState();
   primeDetectState(st, [mkRow({ session_id: "s1", status: "running", activity_ts: "t1" })]);
-  const done = [mkRow({ session_id: "s1", status: "idle", activity_ts: "t2" })];
+  const done = [mkRow({ session_id: "s1", status: "done", activity_ts: "t2" })];
   detectNotifications(st, done, CFG, 1000);
   expect(detectNotifications(st, done, CFG, 7000).map((e) => e.trigger)).toEqual(["turn_end"]);
 });
@@ -296,8 +296,8 @@ test("priming does not silence a session that appears after startup", () => {
 
 // --- regression: subagent tool churn must not re-notify -----------------------
 // A subagent's work streams tool.used events into the PARENT session. Those bump
-// activity_ts but not attention_ts, and nothing moves the session out of
-// `waiting` in between: no adapter emits input.received, and Claude's Stop hook
+// activity_ts but not attention_ts, and nothing need move the session out of
+// `waiting` in between: tool.used never changes status, and Claude's Stop hook
 // does not fire while a subagent runs. Keying the attention episode on
 // activity_ts therefore made every tool call look like a fresh attention event,
 // re-arming the debounce; the next lull in tool activity longer than delayMs
@@ -360,8 +360,25 @@ test("a genuinely new attention event still notifies after tool churn", () => {
 test("tool activity after a turn ends does not re-notify turn_end", () => {
   const st = createDetectState();
   const idle = (activity: string) =>
-    mkRow({ session_id: "s1", status: "idle", attention_ts: "a1", activity_ts: activity });
+    mkRow({ session_id: "s1", status: "done", attention_ts: "a1", activity_ts: activity });
   expect(pollUntil(st, () => idle("t1"), 0, 8000)).toEqual(["turn_end"]);
   expect(pollUntil(st, () => idle("t2"), 9000, 17000)).toEqual([]);
   expect(pollUntil(st, () => idle("t3"), 18000, 26000)).toEqual([]);
+});
+
+// --- done vs idle ----------------------------------------------------------------
+
+test("only an unseen finish notifies: idle (seen) never fires turn_end", () => {
+  const st = createDetectState();
+  const idle = [mkRow({ session_id: "s1", status: "idle", attention_ts: "a1" })];
+  detectNotifications(st, idle, CFG, 0);
+  expect(detectNotifications(st, idle, CFG, 60_000)).toEqual([]);
+});
+
+test("a done session seen before the debounce elapses never notifies", () => {
+  const st = createDetectState();
+  const row = (status: "done" | "idle") => [mkRow({ session_id: "s1", status, attention_ts: "a1" })];
+  expect(detectNotifications(st, row("done"), CFG, 0)).toEqual([]);
+  expect(detectNotifications(st, row("idle"), CFG, 2000)).toEqual([]); // focused → seen
+  expect(detectNotifications(st, row("idle"), CFG, 60_000)).toEqual([]);
 });

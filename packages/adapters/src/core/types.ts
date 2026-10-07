@@ -13,6 +13,7 @@ export const MANIFEST_POINTS = [
   "input.required",
   "input.received",
   "usage.reported",
+  "tool.started",
   "tool.used",
   "prompt.sent",
   "compaction",

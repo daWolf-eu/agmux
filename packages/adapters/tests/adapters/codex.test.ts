@@ -400,3 +400,15 @@ test("tool.used reflects exit_code: 0 → ok, non-zero → fail, absent → ok",
   const absent = normalizeCodex({ point: "tool.used", source: "hook-command", raw: { tool_name: "apply_patch" }, target: t });
   expect(absent.events[0]?.payload).toEqual({ tool: "apply_patch", ok: true });
 });
+
+test("PreToolUse → tool.started; hooks.json wires it", () => {
+  expect(normalizeCodex({ point: "tool.started", source: "hook-command", raw: { tool_name: "shell" }, target }).events)
+    .toEqual([{ kind: "tool.started", payload: { tool: "shell" } }]);
+  const hooks = MARKETPLACE_FILES.find((f) => f.path.endsWith("hooks/hooks.json"))!.content;
+  expect(JSON.parse(hooks).hooks.PreToolUse[0].hooks[0].command).toContain("--point=tool.started");
+});
+
+test("a Stop that keeps working is not a turn end", () => {
+  expect(normalizeCodex({ point: "turn.ended", source: "hook-command", raw: { stop_reason: "tool_use" }, target }).events).toEqual([]);
+  expect(normalizeCodex({ point: "turn.ended", source: "hook-command", raw: { background_tasks: true }, target }).events).toEqual([]);
+});

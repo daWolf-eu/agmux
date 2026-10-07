@@ -44,7 +44,7 @@ position = "status-right"
   expect(c.notify.triggers).toEqual(["permission"]);
   expect(c.notify.sound).toBe(false);
   expect(c.notify.sounds.permission).toBe("Sosumi");
-  expect(c.statusline.show).toBe("unread");
+  expect(c.statusline.show).toBe("done"); // legacy "unread" alias
   expect(c.statusline.max).toBe(3);
   expect(c.statusline.position).toBe("status-right");
 });

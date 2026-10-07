@@ -109,3 +109,18 @@ CREATE TABLE IF NOT EXISTS session_seen (
 );
 ALTER TABLE session_activity ADD COLUMN attention_ts TEXT;
 `;
+
+// Attention provenance + the title signal. status_kind/status_ts record which
+// event last set sessions.status (and order live transitions: an event older
+// than status_ts cannot overwrite a newer status — async hooks race). The
+// attention/seen columns say why a session is `done`; the title columns hold
+// the agent's terminal title, its activity reading, and when it was last seen.
+export const SCHEMA_V7 = `
+ALTER TABLE sessions ADD COLUMN status_kind TEXT;
+ALTER TABLE sessions ADD COLUMN status_ts TEXT;
+ALTER TABLE session_activity ADD COLUMN attention_kind TEXT;
+ALTER TABLE session_activity ADD COLUMN title TEXT;
+ALTER TABLE session_activity ADD COLUMN title_activity TEXT;
+ALTER TABLE session_activity ADD COLUMN title_ts TEXT;
+ALTER TABLE session_seen ADD COLUMN seen_source TEXT;
+`;

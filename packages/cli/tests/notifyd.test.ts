@@ -532,3 +532,26 @@ test("without a lockPath the daemon starts unguarded (tests, one-offs)", async (
   ac.abort();
   expect(await p).toBe(0);
 });
+
+test("pane signals: a done session under a focused client is posted as seen to the live hub", async () => {
+  const ac = new AbortController();
+  let onUpdate: ((rows: SessionRow[]) => void) | undefined;
+  const posts: { hub: string; kinds: string[] }[] = [];
+  const p = runNotifyd(
+    { hubUrl: "http://stale:1", resolveHubUrl: () => "http://live:2", stop: ac.signal },
+    baseDeps({
+      fs: memFsDeps().fs,
+      makeFeed: () => ({ subscribe: (u) => { onUpdate = u; return () => {}; } }),
+      paneSignals: {
+        capture: async (_c, args) => (args.includes("list-clients") ? "attached,focused\t%7" : ""),
+        host: "h", newId: () => "e",
+        post: async (hub, events) => { posts.push({ hub, kinds: events.map((e) => e.kind) }); },
+      },
+    }),
+  );
+  onUpdate!([{ ...row, status: "done", origin: "wrapper", attention_ts: "a1" }]);
+  for (let i = 0; i < 20 && posts.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+  expect(posts).toEqual([{ hub: "http://live:2", kinds: ["session.seen"] }]);
+  ac.abort();
+  expect(await p).toBe(0);
+});

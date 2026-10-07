@@ -1,8 +1,8 @@
 import { Database } from "bun:sqlite";
-import type { EventEnvelope, SessionRow } from "@agmux/protocol";
+import type { EventEnvelope, SessionRow, StatusDecision } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
-import { getSessionRaw, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { getSessionRaw, explainSession, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
 import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
@@ -56,6 +56,10 @@ export class Store {
 
   getSession(sid: string, now: Date = new Date()): SessionRow | null {
     return getSessionRaw(this.db, sid, now);
+  }
+
+  explainSession(sid: string, now: Date = new Date()): StatusDecision | null {
+    return explainSession(this.db, sid, now);
   }
 
   listSessions(opts: ListSessionsOpts = {}): SessionRow[] {

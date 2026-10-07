@@ -25,26 +25,32 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
       applyLinked(db, ev);
       return;
     case "turn.started":
-      applyLiveStatus(db, ev, "running");
+      if (applyLiveStatus(db, ev, "running")) clearActivityTool(db, ev);
       bumpTurnCount(db, ev);
-      clearActivityTool(db, ev);
+      // Typing a prompt into the pane is the strongest proof you looked at it.
+      if (activityWritable(db, ev.session_id)) markSeen(db, ev, "prompt");
       return;
     case "turn.ended":
-      applyLiveStatus(db, ev, "idle");
-      clearActivityAll(db, ev);
+      if (applyLiveStatus(db, ev, "idle")) clearActivityAll(db, ev);
       bumpAttention(db, ev);
       return;
     case "input.required":
-      applyLiveStatus(db, ev, "waiting");
-      applyActivityInputRequired(db, ev);
-      bumpAttention(db, ev);
+      applyInputRequired(db, ev);
       return;
     case "input.received":
-      applyLiveStatus(db, ev, "running");
-      clearActivityInputKind(db, ev);
+      if (applyLiveStatus(db, ev, "running")) clearActivityInputKind(db, ev);
+      if (activityWritable(db, ev.session_id)) markSeen(db, ev, "input");
+      return;
+    case "tool.started":
+      // A tool about to run means the agent is working — in particular, a
+      // permission prompt was answered. Records the tool as current up front.
+      if (applyLiveStatus(db, ev, "running")) applyActivityToolStarted(db, ev);
       return;
     case "tool.used":
       applyActivityToolUsed(db, ev);
+      return;
+    case "title.changed":
+      applyTitleChanged(db, ev);
       return;
     case "usage.reported":
       applyUsage(db, ev);
@@ -71,20 +77,20 @@ function applyStarted(db: Database, ev: EventEnvelope): void {
       command, args_json, env_json, cwd, pid,
       tmux_session, tmux_window, tmux_pane, tmux_socket, host,
       project, parent_session_id, start_ts, last_heartbeat_ts,
-      end_ts, exit_code, signal, status
+      end_ts, exit_code, signal, status, status_kind, status_ts
     ) VALUES (
       ?, ?, ?, NULL,
       ?, ?, ?, ?, ?,
       ?, ?, ?, ?, ?,
       ?, NULL, ?, NULL,
-      NULL, NULL, NULL, 'idle'
+      NULL, NULL, NULL, 'idle', ?, ?
     )
     ON CONFLICT(session_id) DO NOTHING
   `).run(
     ev.session_id, p.agent_kind, p.profile ?? null,
     p.command, JSON.stringify(p.args ?? []), JSON.stringify(p.env_overrides ?? {}), p.cwd, p.pid,
     p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host,
-    p.project ?? null, ev.ts,
+    p.project ?? null, ev.ts, ev.kind, ev.ts,
   );
 }
 
@@ -110,7 +116,9 @@ function applyResumed(db: Database, ev: EventEnvelope): void {
            end_ts = NULL,
            exit_code = NULL,
            signal = NULL,
-           status = 'idle'
+           status = 'idle',
+           status_kind = ?,
+           status_ts = ?
      WHERE session_id = ?
   `).run(
     p.new_pid,
@@ -118,6 +126,8 @@ function applyResumed(db: Database, ev: EventEnvelope): void {
     p.new_tmux_window ?? null,
     p.new_tmux_pane ?? null,
     p.new_tmux_socket ?? null,
+    ev.ts,
+    ev.kind,
     ev.ts,
     ev.session_id,
   );
@@ -134,9 +144,11 @@ function applyEnded(db: Database, ev: EventEnvelope): void {
        SET end_ts = ?,
            exit_code = ?,
            signal = ?,
-           status = 'ended'
+           status = 'ended',
+           status_kind = ?,
+           status_ts = ?
      WHERE session_id = ?
-  `).run(ev.ts, p.exit_code ?? null, p.signal ?? null, ev.session_id);
+  `).run(ev.ts, p.exit_code ?? null, p.signal ?? null, ev.kind, ev.ts, ev.session_id);
 }
 
 // Live status transitions are guarded: they apply only to a non-ended row, so
@@ -148,11 +160,73 @@ function applyEnded(db: Database, ev: EventEnvelope): void {
 // liveness), so this is what makes their LAST_SEEN / activity-sort meaningful;
 // for wrapper rows it only adds evidence (the process clearly ran a turn), so
 // staleness-based lost detection gets more accurate, never less.
-function applyLiveStatus(db: Database, ev: EventEnvelope, status: "running" | "idle" | "waiting"): void {
-  db.query(`
-    UPDATE sessions SET status = ?, last_heartbeat_ts = ?
+//
+// Ordering: hooks fire asynchronously, each in its own `agmux emit` process, so
+// events can reach the hub out of order — a PreToolUse (→ running) overtaking
+// the permission Notification (→ waiting) that fired after it would leave the
+// session "running" while it is blocked on you. A transition therefore applies
+// only if its event is not older than the one that set the current status
+// (status_ts). `from`, when given, further restricts which stored statuses the
+// transition may leave. Returns whether the status was written.
+function applyLiveStatus(
+  db: Database, ev: EventEnvelope, status: "running" | "idle" | "waiting",
+  from?: readonly ("running" | "idle" | "waiting")[],
+): boolean {
+  db.query(`UPDATE sessions SET last_heartbeat_ts = ? WHERE session_id = ? AND status NOT IN ('ended')`)
+    .run(ev.ts, ev.session_id);
+  const fromSql = from ? ` AND status IN (${from.map(() => "?").join(", ")})` : "";
+  const res = db.query(`
+    UPDATE sessions SET status = ?, status_kind = ?, status_ts = ?
      WHERE session_id = ? AND status NOT IN ('ended')
-  `).run(status, ev.ts, ev.session_id);
+       AND (status_ts IS NULL OR status_ts <= ?)${fromSql}
+  `).run(status, ev.kind, ev.ts, ev.session_id, ev.ts, ...(from ?? []));
+  return res.changes > 0;
+}
+
+function currentState(db: Database, sid: string): { status: string; last_input_kind: string | null; title_activity: string | null } | null {
+  return db.query<{ status: string; last_input_kind: string | null; title_activity: string | null }, [string]>(`
+    SELECT s.status, a.last_input_kind, a.title_activity
+      FROM sessions s LEFT JOIN session_activity a ON a.session_id = s.session_id
+     WHERE s.session_id = ?`,
+  ).get(sid);
+}
+
+// Claude sends the same permission_prompt Notification for AskUserQuestion as
+// for a real permission. The adapter already turned the AskUserQuestion
+// PreToolUse into input.required{question}; a permission arriving while that
+// question is pending is the same wait, so it neither relabels it nor opens a
+// second attention episode (which would re-arm the notification debounce).
+function applyInputRequired(db: Database, ev: EventEnvelope): void {
+  const p = ev.payload as any;
+  const before = currentState(db, ev.session_id);
+  if (p.kind === "permission" && before?.status === "waiting" && before.last_input_kind === "question") return;
+  if (applyLiveStatus(db, ev, "waiting")) applyActivityInputRequired(db, ev);
+  bumpAttention(db, ev);
+}
+
+// The terminal title is a second, independent "working" signal (fleet's
+// strongest cheap one). It may only correct what hooks are bad at:
+//   working ← idle/waiting: a turn whose UserPromptSubmit/PreToolUse we missed,
+//     or a permission that was answered (the spinner resumes); only on an actual
+//     change to working, never on a keepalive, so a frozen spinner cannot
+//     un-wait a session that is blocked on you.
+//   idle ← running: the turn stopped without a Stop hook (Esc / interrupt). No
+//     attention bump — you interrupted it, so there is nothing new to look at.
+function applyTitleChanged(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  const p = ev.payload as any;
+  const before = currentState(db, ev.session_id);
+  db.query(`
+    INSERT INTO session_activity (session_id, title, title_activity, title_ts) VALUES (?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      title = excluded.title, title_activity = excluded.title_activity, title_ts = excluded.title_ts
+    WHERE COALESCE(session_activity.title_ts, '') <= excluded.title_ts
+  `).run(ev.session_id, p.title ?? "", p.activity ?? null, ev.ts);
+  if (p.activity === "working" && before?.title_activity !== "working") {
+    if (applyLiveStatus(db, ev, "running", ["idle", "waiting"])) clearActivityInputKind(db, ev);
+  } else if (p.activity === "idle") {
+    if (applyLiveStatus(db, ev, "idle", ["running"])) clearActivityAll(db, ev);
+  }
 }
 
 // A WRAPPER session is FROZEN after session.ended: identity/usage refinements are
@@ -191,25 +265,26 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         command, args_json, env_json, cwd, pid,
         tmux_session, tmux_window, tmux_pane, tmux_socket, host,
         project, parent_session_id, start_ts, last_heartbeat_ts,
-        end_ts, exit_code, signal, status, origin
+        end_ts, exit_code, signal, status, origin, status_kind, status_ts
       ) VALUES (
         ?, ?, ?, ?,
         ?, '[]', ?, ?, ?,
         ?, ?, ?, ?, ?,
         NULL, NULL, ?, NULL,
-        NULL, NULL, NULL, 'idle', 'native'
+        NULL, NULL, NULL, 'idle', 'native', ?, ?
       )
       ON CONFLICT(session_id) DO NOTHING
     `).run(
       ev.session_id, p.agent_kind, p.profile ?? null, p.native_session_id,
       p.command ?? p.agent_kind, JSON.stringify(p.env_overrides ?? {}), p.cwd ?? "", p.pid ?? null,
       p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host,
-      ev.ts,
+      ev.ts, ev.kind, ev.ts,
     );
   } else if (existing.status === "ended" || existing.status === "lost") {
     db.query(`
       UPDATE sessions SET
         status = 'idle', end_ts = NULL, exit_code = NULL, signal = NULL,
+        status_kind = 'session.registered', status_ts = ?,
         native_session_id = ?,
         pid = COALESCE(?, pid),
         tmux_session = COALESCE(?, tmux_session),
@@ -217,7 +292,7 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         tmux_pane    = COALESCE(?, tmux_pane),
         tmux_socket  = COALESCE(?, tmux_socket)
       WHERE session_id = ?
-    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
+    `).run(ev.ts, p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
   } else {
     db.query(`
       UPDATE sessions SET
@@ -246,8 +321,8 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
 // Hub-emitted pid-sweep observation (spec §3). A dead native pid → 'lost'. Never
 // overrides 'ended' (a clean exit already happened); 'lost' is itself terminal.
 function applyLost(db: Database, ev: EventEnvelope): void {
-  db.query(`UPDATE sessions SET status = 'lost' WHERE session_id = ? AND status NOT IN ('ended')`)
-    .run(ev.session_id);
+  db.query(`UPDATE sessions SET status = 'lost', status_kind = ?, status_ts = ? WHERE session_id = ? AND status NOT IN ('ended')`)
+    .run(ev.kind, ev.ts, ev.session_id);
 }
 
 function applyAdapterAttached(db: Database, ev: EventEnvelope): void {
@@ -332,6 +407,20 @@ function applyActivityToolUsed(db: Database, ev: EventEnvelope): void {
   `).run(ev.session_id, p.tool, p.detail ?? null, ev.ts);
 }
 
+function applyActivityToolStarted(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  const p = ev.payload as any;
+  db.query(`
+    INSERT INTO session_activity (session_id, last_tool, last_tool_detail, activity_ts)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      last_tool = excluded.last_tool,
+      last_tool_detail = excluded.last_tool_detail,
+      last_input_kind = NULL,
+      activity_ts = excluded.activity_ts
+  `).run(ev.session_id, p.tool, p.detail ?? null, ev.ts);
+}
+
 function applyActivityInputRequired(db: Database, ev: EventEnvelope): void {
   if (!activityWritable(db, ev.session_id)) return;
   const p = ev.payload as any;
@@ -363,23 +452,34 @@ function clearActivityAll(db: Database, ev: EventEnvelope): void {
     .run(ev.ts, ev.session_id);
 }
 
-// --- read/unread projection --------------------------------------------------
-// Only these kinds mean "this session wants you". Deliberately excludes
-// tool.used, which moves activity_ts on every tool call.
+// --- seen/unseen projection ---------------------------------------------------
+// `done` (finished, not yet seen) vs `idle` is derived at read time from these
+// two markers (queries.ts). Only these kinds mean "this session wants you".
+// Deliberately excludes tool.used, which moves activity_ts on every tool call.
 function bumpAttention(db: Database, ev: EventEnvelope): void {
   if (!activityWritable(db, ev.session_id)) return;
   db.query(`
-    INSERT INTO session_activity (session_id, attention_ts) VALUES (?, ?)
+    INSERT INTO session_activity (session_id, attention_ts, attention_kind) VALUES (?, ?, ?)
     ON CONFLICT(session_id) DO UPDATE SET
+      attention_kind = CASE WHEN excluded.attention_ts >= COALESCE(session_activity.attention_ts, '')
+                            THEN excluded.attention_kind ELSE session_activity.attention_kind END,
       attention_ts = MAX(COALESCE(session_activity.attention_ts, ''), excluded.attention_ts)
-  `).run(ev.session_id, ev.ts);
+  `).run(ev.session_id, ev.ts, ev.kind);
 }
 
 // MAX() keeps the marker monotonic: events can arrive out of order (queue drain,
 // clock skew), and a stale seen must never un-see newer acknowledgement.
-function applySessionSeen(db: Database, ev: EventEnvelope): void {
+function markSeen(db: Database, ev: EventEnvelope, source: string): void {
   db.query(`
-    INSERT INTO session_seen (session_id, seen_ts) VALUES (?, ?)
-    ON CONFLICT(session_id) DO UPDATE SET seen_ts = MAX(session_seen.seen_ts, excluded.seen_ts)
-  `).run(ev.session_id, ev.ts);
+    INSERT INTO session_seen (session_id, seen_ts, seen_source) VALUES (?, ?, ?)
+    ON CONFLICT(session_id) DO UPDATE SET
+      seen_source = CASE WHEN excluded.seen_ts >= session_seen.seen_ts
+                         THEN excluded.seen_source ELSE session_seen.seen_source END,
+      seen_ts = MAX(session_seen.seen_ts, excluded.seen_ts)
+  `).run(ev.session_id, ev.ts, source);
+}
+
+function applySessionSeen(db: Database, ev: EventEnvelope): void {
+  const p = ev.payload as any;
+  markSeen(db, ev, typeof p?.source === "string" ? p.source : "dismiss");
 }

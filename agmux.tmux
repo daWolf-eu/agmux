@@ -9,7 +9,11 @@
 #   @agmux-popup-height  popup height (default: 80%)
 #   @agmux-dash-args     extra args appended to `agmux dash --popup`
 #   @agmux-mark-read-key key under the prefix table that marks the session
-#                        owning the current pane read (default: u)
+#                        owning the current pane seen (default: u)
+#   @agmux-seen-on-focus on|off — a pane gaining focus (any route: prefix keys,
+#                        mouse, choose-tree, terminal focus) marks the session
+#                        it hosts seen, turning `done` into `idle` (default: on).
+#                        Turns on the global focus-events option.
 set -euo pipefail
 
 tmux_get() {
@@ -97,6 +101,18 @@ agmux_tmux_install_statusline() {
   fi
 }
 
+# Seen = you reached the pane, by whatever route. pane-focus-in needs
+# focus-events; with it tmux also fires the hook when the terminal window itself
+# regains focus. Index [99] namespaces our hook so a user's own pane-focus-in
+# hooks are left alone, and -b keeps pane switches instant (the agmux process
+# runs in the background; it is a no-op unless that pane's session is `done`).
+agmux_tmux_install_focus_seen() {
+  local bin="$1"
+  tmux set-option -g focus-events on
+  tmux set-hook -g 'pane-focus-in[99]' \
+    "run-shell -b \"'$bin' seen --pane '#{pane_id}' --socket '#{socket_path}' --source focus\""
+}
+
 main() {
   local key bin width height extra mark_key
   key="$(tmux_get "@agmux-key" "g")"
@@ -115,7 +131,11 @@ main() {
   tmux bind-key "$key" display-popup -E -w "$width" -h "$height" "$bin dash --popup${extra:+ $extra}"
 
   mark_key="$(tmux_get "@agmux-mark-read-key" "u")"
-  tmux bind-key "$mark_key" run-shell "'$bin' seen --pane '#{pane_id}'"
+  tmux bind-key "$mark_key" run-shell "'$bin' seen --pane '#{pane_id}' --socket '#{socket_path}'"
+
+  if [ "$(tmux_get "@agmux-seen-on-focus" "on")" = "on" ]; then
+    agmux_tmux_install_focus_seen "$bin"
+  fi
 
   # config.toml's [statusline] enabled/position are the defaults; an explicitly
   # set @agmux-statusline / @agmux-statusline-position tmux option overrides

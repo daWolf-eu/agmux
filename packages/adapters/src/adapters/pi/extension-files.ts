@@ -3,7 +3,7 @@
 // which PI auto-discovers. Embedded as code (not an on-disk data file) so the
 // adapter behaves identically from source and from a `bun build --compile` binary.
 
-export const PLUGIN_VERSION = "1.0.0";
+export const PLUGIN_VERSION = "1.1.0";
 export const EXTENSION_FILENAME = "agmux.ts";
 export const VERSION_MARKER = `agmux-pi-extension v${PLUGIN_VERSION}`;
 
@@ -68,6 +68,10 @@ export default function (pi) {
 
   pi.on("agent_start", function (_event, ctx) {
     emitPoint("turn.started", ctx, {});
+  });
+
+  pi.on("tool_execution_start", function (event, ctx) {
+    emitPoint("tool.started", ctx, { tool_name: (event && event.toolName) || null });
   });
 
   pi.on("tool_result", function (event, ctx) {

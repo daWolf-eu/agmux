@@ -1,8 +1,8 @@
 import { mintEventId } from "./ids.ts";
 import type {
   SessionStartedEvent, SessionHeartbeatEvent,
-  SessionEndedEvent, SessionResumedEvent,
-  AgentKind,
+  SessionEndedEvent, SessionResumedEvent, TitleChangedEvent,
+  AgentKind, TitleActivity,
 } from "@agmux/protocol";
 
 function nowIso(): string { return new Date().toISOString(); }
@@ -96,5 +96,19 @@ export function buildResumedEvent(a: {
       new_tmux_socket: a.tmux.socket,
       reason: "cli_attach_after_death",
     },
+  };
+}
+
+export function buildTitleChangedEvent(a: {
+  sessionId: string; host: string; title: string; activity: TitleActivity | null;
+}): TitleChangedEvent {
+  return {
+    event_id: mintEventId(),
+    ts: nowIso(),
+    session_id: a.sessionId,
+    kind: "title.changed",
+    version: 1,
+    host: a.host,
+    payload: { title: a.title, activity: a.activity },
   };
 }

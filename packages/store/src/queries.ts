@@ -1,15 +1,19 @@
 import type { Database } from "bun:sqlite";
-import type { EventEnvelope, SessionRow, SessionStatus } from "@agmux/protocol";
+import type { EventEnvelope, SessionRow, SessionStatus, StatusDecision } from "@agmux/protocol";
 import { LIVE_STATUSES } from "@agmux/protocol";
-import { computeEffectiveStatus } from "./lost.ts";
+import { deriveStatus } from "./lost.ts";
 
-// The single definition of "unread": an attention-worthy event (input.required,
-// turn.ended, session.ended -> attention_ts) newer than the user's last
-// session.seen acknowledgement. Used BOTH as the derived column and as the
-// ?unread=1 filter predicate — if these ever diverge, the filter would return
-// rows whose own `unread` field is false.
-const UNREAD_EXPR =
-  "(a.attention_ts IS NOT NULL AND (sn.seen_ts IS NULL OR a.attention_ts > sn.seen_ts))";
+// Everything decodeRow and deriveStatus need, joined once. `done` vs `idle` is
+// derived in JS (deriveStatus) from attention_ts / seen_ts, like `lost`, so the
+// status filter below runs after derivation.
+const ROW_SELECT = `SELECT s.*, u.turn_count,
+       a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
+       a.attention_ts, a.attention_kind, a.title, a.title_activity, a.title_ts,
+       sn.seen_ts, sn.seen_source
+  FROM sessions s
+  LEFT JOIN session_usage u ON u.session_id = s.session_id
+  LEFT JOIN session_activity a ON a.session_id = s.session_id
+  LEFT JOIN session_seen sn ON sn.session_id = s.session_id`;
 
 function decodeRow(raw: any): SessionRow {
   return {
@@ -42,23 +46,49 @@ function decodeRow(raw: any): SessionRow {
     last_input_kind: raw.last_input_kind ?? null,
     activity_ts: raw.activity_ts ?? null,
     attention_ts: raw.attention_ts ?? null,
-    unread: raw.unread === 1 || raw.unread === true,
+    status_kind: raw.status_kind ?? null,
+    status_ts: raw.status_ts ?? null,
+    attention_kind: raw.attention_kind ?? null,
+    seen_ts: raw.seen_ts ?? null,
+    seen_source: raw.seen_source ?? null,
+    title: raw.title ?? null,
+    title_activity: raw.title_activity ?? null,
+    title_ts: raw.title_ts ?? null,
   };
 }
 
+function storedRow(db: Database, sid: string): SessionRow | null {
+  const raw = db.query<any, [string]>(`${ROW_SELECT} WHERE s.session_id = ?`).get(sid);
+  return raw ? decodeRow(raw) : null;
+}
+
 export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow | null {
-  const raw = db.query<any, [string]>(
-    `SELECT s.*, a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts, a.attention_ts,
-            ${UNREAD_EXPR} AS unread
-       FROM sessions s
-       LEFT JOIN session_activity a ON a.session_id = s.session_id
-       LEFT JOIN session_seen sn ON sn.session_id = s.session_id
-      WHERE s.session_id = ?`,
-  ).get(sid);
-  if (!raw) return null;
-  const r = decodeRow(raw);
-  r.status = computeEffectiveStatus(r, now);
+  const r = storedRow(db, sid);
+  if (!r) return null;
+  r.status = deriveStatus(r, now).status;
   return r;
+}
+
+// `agmux explain`: the derived status plus every input that produced it.
+export function explainSession(db: Database, sid: string, now: Date): StatusDecision | null {
+  const r = storedRow(db, sid);
+  if (!r) return null;
+  const d = deriveStatus(r, now);
+  return {
+    session_id: r.session_id,
+    status: d.status,
+    stored_status: r.status,
+    rule: d.rule,
+    reason: d.reason,
+    status_event: { kind: r.status_kind ?? null, ts: r.status_ts ?? null },
+    attention: { kind: r.attention_kind ?? null, ts: r.attention_ts ?? null },
+    seen: { source: r.seen_source ?? null, ts: r.seen_ts ?? null },
+    title: { title: r.title ?? null, activity: r.title_activity ?? null, ts: r.title_ts ?? null },
+    last_input_kind: r.last_input_kind ?? null,
+    last_tool: r.last_tool ?? null,
+    last_work_ts: d.last_work_ts,
+    now: now.toISOString(),
+  };
 }
 
 export interface ListSessionsOpts {
@@ -70,7 +100,6 @@ export interface ListSessionsOpts {
   limit?: number;
   sort?: "started" | "activity";
   order?: "asc" | "desc";
-  unread?: boolean;                     // filter to sessions wanting attention
   now?: Date;
 }
 
@@ -80,7 +109,6 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
-  if (opts.unread)     { where.push(UNREAD_EXPR); }
 
   // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
   const sortCol = opts.sort === "activity" ? "COALESCE(s.last_heartbeat_ts, s.start_ts)" : "s.start_ts";
@@ -92,13 +120,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   const statuses = opts.statuses ?? (opts.live ? LIVE_STATUSES : undefined);
   const limit = opts.limit ?? 200;
 
-  const sql = `SELECT s.*, u.turn_count,
-                      a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts, a.attention_ts,
-                      ${UNREAD_EXPR} AS unread
-               FROM sessions s
-               LEFT JOIN session_usage u ON u.session_id = s.session_id
-               LEFT JOIN session_activity a ON a.session_id = s.session_id
-               LEFT JOIN session_seen sn ON sn.session_id = s.session_id
+  const sql = `${ROW_SELECT}
                ${where.length ? "WHERE " + where.join(" AND ") : ""}
                ORDER BY ${sortCol} ${dir}
                ${statuses ? "" : "LIMIT ?"}`;
@@ -106,7 +128,7 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   const raws = db.query<any, any[]>(sql).all(...(params as any[]));
   const now = opts.now ?? new Date();
   let rows = raws.map(decodeRow).map((r) => {
-    r.status = computeEffectiveStatus(r, now);
+    r.status = deriveStatus(r, now).status;
     return r;
   });
   if (statuses) rows = rows.filter((r) => statuses.includes(r.status)).slice(0, limit);

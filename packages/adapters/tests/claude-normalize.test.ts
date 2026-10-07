@@ -56,3 +56,30 @@ test("session.registered with no config dir yields empty env_overrides", () => {
   } as any);
   expect((out.events[0]!.payload as any).env_overrides).toEqual({});
 });
+
+// --- attention signals --------------------------------------------------------
+
+const at = (point: any, raw: Record<string, unknown>) =>
+  normalizeClaude({ ...base, point, raw: { session_id: "s", ...raw }, env: {} }).events;
+
+test("PreToolUse → tool.started carrying the tool", () => {
+  expect(at("tool.started", { tool_name: "Bash" })).toEqual([{ kind: "tool.started", payload: { tool: "Bash" } }]);
+});
+
+test("PreToolUse of AskUserQuestion → input.required{question}", () => {
+  expect(at("tool.started", { tool_name: "AskUserQuestion" }))
+    .toEqual([{ kind: "input.required", payload: { kind: "question" } }]);
+});
+
+test("PostToolUse of AskUserQuestion also reports the answer (input.received)", () => {
+  expect(at("tool.used", { tool_name: "AskUserQuestion" }).map((e) => e.kind)).toEqual(["tool.used", "input.received"]);
+  expect(at("tool.used", { tool_name: "Bash" }).map((e) => e.kind)).toEqual(["tool.used"]);
+});
+
+test("Stop that keeps working (tool_use / background tasks) is not a turn end", () => {
+  expect(at("turn.ended", { stop_reason: "tool_use" })).toEqual([]);
+  expect(at("turn.ended", { background_tasks: true })).toEqual([]);
+  expect(at("turn.ended", { background_tasks: [{ id: "b1" }] })).toEqual([]);
+  expect(at("turn.ended", { stop_reason: "end_turn", background_tasks: false }).map((e) => e.kind)).toEqual(["turn.ended"]);
+  expect(at("turn.ended", { background_tasks: [] }).map((e) => e.kind)).toEqual(["turn.ended"]);
+});

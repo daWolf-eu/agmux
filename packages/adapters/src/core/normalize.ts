@@ -53,3 +53,13 @@ export function stampIngestEvents(events: CanonicalEvent[], opts: StampIngestOpt
     return { ...base, session_id: opts.claimId };
   });
 }
+
+// A Stop that does not end the turn: the model stopped to run tools
+// (stop_reason=tool_use), or background tasks (shells, agents) keep working.
+// Treating it as turn.ended would show a false "done" — and notify — while the
+// agent is still busy. Read by every adapter whose Stop hook carries these fields.
+export function stopKeepsWorking(raw: { stop_reason?: unknown; background_tasks?: unknown }): boolean {
+  if (raw.stop_reason === "tool_use") return true;
+  const bg = raw.background_tasks;
+  return bg === true || (Array.isArray(bg) && bg.length > 0);
+}

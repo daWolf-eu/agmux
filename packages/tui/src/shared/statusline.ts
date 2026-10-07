@@ -1,7 +1,8 @@
 import type { SessionRow } from "@agmux/protocol";
 import { statusGlyph } from "./glyph.ts";
 
-export type ShowMode = "all" | "unread" | "waiting";
+// "attention" = waiting or done: everything that wants you.
+export type ShowMode = "all" | "attention" | "done" | "waiting";
 
 export interface StatusLineOpts {
   show: ShowMode;
@@ -23,7 +24,8 @@ export function abbreviate(s: string, max: number): string {
 
 function visible(rows: SessionRow[], show: ShowMode): SessionRow[] {
   if (show === "waiting") return rows.filter((r) => r.status === "waiting");
-  if (show === "unread") return rows.filter((r) => r.unread === true);
+  if (show === "done") return rows.filter((r) => r.status === "done");
+  if (show === "attention") return rows.filter((r) => r.status === "waiting" || r.status === "done");
   return rows;
 }
 

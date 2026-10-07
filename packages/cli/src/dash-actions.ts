@@ -96,12 +96,12 @@ export function makeActions(
     },
     async markSeen(row: SessionRow): Promise<void> {
       // One-way by design: there is no "mark unread" event in the protocol —
-      // session.seen only carries source "attach" | "dismiss", and seen_ts is
+      // session.seen only carries a source (attach | dismiss | focus), and seen_ts is
       // monotonic (MAX upsert, see packages/store/src/project.ts) so that a
       // queued event landing after a hub restart can't un-see a newer
-      // acknowledgement. A session goes unread again only via a fresh
-      // attention event (input.required / turn.ended / session.ended); this
-      // action can only ever move a row from unread to read. Do not add a
+      // acknowledgement. A session becomes `done` again only via a fresh
+      // attention event (turn.ended / input.required / session.ended); this
+      // action can only ever move a row from done to idle. Do not add a
       // toggle here without a new event kind and projection rule.
       await postSeen(row.session_id, "dismiss", {
         hubUrl, host: row.host,

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import type { NormalizeInput, NormalizeOutput, CanonicalEvent } from "../../core/types.ts";
+import { stopKeepsWorking } from "../../core/normalize.ts";
 
 interface CodexHookStdin {
   session_id?: string;
@@ -11,6 +12,8 @@ interface CodexHookStdin {
   turn_id?: string;
   model?: string;
   reason?: string;
+  stop_reason?: string;
+  background_tasks?: unknown;
 }
 
 export function normalizeCodex(input: NormalizeInput): NormalizeOutput {
@@ -46,7 +49,12 @@ export function normalizeCodex(input: NormalizeInput): NormalizeOutput {
     case "turn.started":
       return { events: [{ kind: "turn.started", payload: {} }] };
     case "turn.ended":
+      // Same Stop semantics as Claude (fleet reads both fields for Codex too).
+      if (stopKeepsWorking(raw)) return { events: [] };
       return { events: [{ kind: "turn.ended", payload: { reason: raw.reason ?? null } }] };
+    case "tool.started":
+      // PreToolUse: running again (e.g. after an approval), tool current up front.
+      return { events: [{ kind: "tool.started", payload: { tool: typeof raw.tool_name === "string" ? raw.tool_name : "unknown" } }] };
     case "input.required":
       // Codex's PermissionRequest hook is always an approval request — no idle/prompt
       // variant exists, so kind is always "permission" (spec §5.1).

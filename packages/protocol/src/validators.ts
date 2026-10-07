@@ -1,4 +1,5 @@
-import { EVENT_KINDS_MVP } from "./events.ts";
+import { EVENT_KINDS_MVP, INPUT_KINDS, SEEN_SOURCES } from "./events.ts";
+import { TITLE_ACTIVITIES } from "./title.ts";
 import { AGENT_KINDS } from "./session.ts";
 
 export type ValidationResult = { ok: true } | { ok: false; error: string };
@@ -96,9 +97,8 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
       return { ok: true };
     }
     case "session.seen": {
-      const p = payload as any;
-      if (p?.source !== "attach" && p?.source !== "dismiss")
-        return { ok: false, error: "session.seen: source must be 'attach' or 'dismiss'" };
+      if (!(SEEN_SOURCES as readonly unknown[]).includes(payload.source))
+        return { ok: false, error: `session.seen: source must be one of ${SEEN_SOURCES.join("|")}` };
       return { ok: true };
     }
     case "turn.started":
@@ -109,8 +109,8 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
       // already checked above; anything else is optional/best-effort.
       return { ok: true };
     case "input.required": {
-      if (payload.kind !== "prompt" && payload.kind !== "permission" && payload.kind !== "confirm")
-        return { ok: false, error: "input.required: kind must be prompt|permission|confirm" };
+      if (!(INPUT_KINDS as readonly unknown[]).includes(payload.kind))
+        return { ok: false, error: `input.required: kind must be ${INPUT_KINDS.join("|")}` };
       return { ok: true };
     }
     case "usage.reported": {
@@ -125,6 +125,18 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "tool.used: tool missing" };
       if ("ok" in payload && payload.ok !== null && typeof payload.ok !== "boolean")
         return { ok: false, error: "tool.used: ok must be boolean|null when present" };
+      return { ok: true };
+    }
+    case "tool.started": {
+      if (!isStringNonEmpty(payload.tool))
+        return { ok: false, error: "tool.started: tool missing" };
+      return { ok: true };
+    }
+    case "title.changed": {
+      if (typeof payload.title !== "string")
+        return { ok: false, error: "title.changed: title not string" };
+      if (payload.activity != null && !(TITLE_ACTIVITIES as readonly unknown[]).includes(payload.activity))
+        return { ok: false, error: `title.changed: activity must be ${TITLE_ACTIVITIES.join("|")}|null` };
       return { ok: true };
     }
     case "session.adapter_attached": {
