@@ -1,9 +1,11 @@
 import { test, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
-// Absolute, never "./agmux.tmux": scripts sourced inside `tmux run-shell` run in
-// whatever directory the tmux server chooses (on CI's tmux that is not the repo
-// root), and a failed `source` there is silent — the test just sees no effect.
+// Absolute, never "./agmux.tmux": run-shell jobs run in the tmux server's
+// directory, not the test's, and a failed `source` there is silent — the test
+// just sees no effect.
 const PLUGIN = path.resolve(import.meta.dir, "../agmux.tmux");
 
 async function callFn(fn: string, args: string[], env: Record<string, string> = {}): Promise<string> {
@@ -20,11 +22,21 @@ async function tmuxCmd(socket: string, args: string[]): Promise<string> {
   return (await new Response(p.stdout).text()).trim();
 }
 
+// run-shell hands its command to /bin/sh, which is dash on Debian/Ubuntu (CI):
+// no `source`, so the scripts below would die on their first line. Run them
+// with bash explicitly, as TPM does via agmux.tmux's shebang.
 async function tmuxRunShell(socket: string, script: string): Promise<string> {
-  const p = Bun.spawn(["tmux", "-L", socket, "run-shell", script], {
-    stdout: "pipe", stderr: "pipe",
-  });
-  return (await new Response(p.stdout).text()).trim();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-tmux-test-"));
+  const file = path.join(dir, "script.bash");
+  fs.writeFileSync(file, script);
+  try {
+    const p = Bun.spawn(["tmux", "-L", socket, "run-shell", `bash '${file}'`], {
+      stdout: "pipe", stderr: "pipe",
+    });
+    return (await new Response(p.stdout).text()).trim();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 test("status2 requires tmux >= 3.3", async () => {
