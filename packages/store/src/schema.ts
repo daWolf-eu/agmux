@@ -124,3 +124,21 @@ ALTER TABLE session_activity ADD COLUMN title_activity TEXT;
 ALTER TABLE session_activity ADD COLUMN title_ts TEXT;
 ALTER TABLE session_seen ADD COLUMN seen_source TEXT;
 `;
+
+// Human-readable metadata (session.metadata): git facts and the session name.
+// Two independently-updated groups, each with its own ts so an older event
+// cannot overwrite a newer observation (async hooks race). The terminal-title
+// fallback for `name` is applied at read time, not stored.
+export const SCHEMA_V8 = `
+CREATE TABLE IF NOT EXISTS session_meta (
+  session_id  TEXT PRIMARY KEY,
+  git_branch  TEXT,
+  git_repo    TEXT,
+  git_remote  TEXT,
+  git_root    TEXT,
+  git_ts      TEXT,
+  name        TEXT,
+  name_source TEXT,
+  name_ts     TEXT
+);
+`;

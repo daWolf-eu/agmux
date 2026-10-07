@@ -25,6 +25,10 @@ function at(ts: string | null, now: string): string {
 export function formatDecision(d: StatusDecision): string {
   const lines = [
     `session   ${d.session_id}`,
+    ...(d.meta?.name ? [`name      ${JSON.stringify(d.meta.name)} (${d.meta.name_source ?? "unknown"})`] : []),
+    ...(d.meta?.git_root
+      ? [`git       ${d.meta.git_repo ?? "?"} @ ${d.meta.git_branch ?? "detached"} (${d.meta.git_root})`]
+      : []),
     `status    ${d.status}${d.status !== d.stored_status ? ` (stored: ${d.stored_status})` : ""}`,
     `because   ${d.reason}`,
     `rule      ${d.rule}`,

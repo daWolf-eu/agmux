@@ -78,6 +78,15 @@ export interface SessionRow {
   title?: string | null;
   title_activity?: string | null;
   title_ts?: string | null;
+  // Joined from the session_meta projection (session.metadata). `name` is the
+  // human-readable session name; when the agent never reported one it falls
+  // back, at read time, to the terminal-title name (name_source "terminal").
+  name?: string | null;
+  name_source?: string | null;
+  git_branch?: string | null;
+  git_repo?: string | null;
+  git_remote?: string | null;
+  git_root?: string | null;
 }
 
 // `agmux ls --status` vocabulary: group aliases over the raw statuses.
@@ -123,6 +132,7 @@ export interface StatusDecision {
   attention: { kind: string | null; ts: string | null };
   seen: { source: string | null; ts: string | null };
   title: { title: string | null; activity: string | null; ts: string | null };
+  meta: { name: string | null; name_source: string | null; git_repo: string | null; git_branch: string | null; git_root: string | null };
   last_input_kind: string | null;
   last_tool: string | null;
   // Newest evidence the agent was working (input to the working timeout).

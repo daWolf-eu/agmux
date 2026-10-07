@@ -9,6 +9,7 @@ const decision: StatusDecision = {
   attention: { kind: "turn.ended", ts: "2026-01-01T00:00:10.000Z" },
   seen: { source: "prompt", ts: "2026-01-01T00:00:00.000Z" },
   title: { title: "fix tests", activity: "idle", ts: "2026-01-01T00:00:11.000Z" },
+  meta: { name: "Fix flaky tests", name_source: "agent", git_repo: "agmux", git_branch: "fix/e2e", git_root: "/src/agmux" },
   last_input_kind: null, last_tool: null, last_work_ts: "2026-01-01T00:00:11.000Z",
   now: "2026-01-01T00:00:20.000Z",
 };
@@ -19,6 +20,8 @@ test("formatDecision leads with the status and why", () => {
   expect(out).toContain("set by    turn.ended at 2026-01-01T00:00:10.000Z (10s ago)");
   expect(out).toContain("seen      prompt at 2026-01-01T00:00:00.000Z (20s ago)");
   expect(out).toContain('title     "fix tests" → idle');
+  expect(out).toContain('name      "Fix flaky tests" (agent)');
+  expect(out).toContain("git       agmux @ fix/e2e (/src/agmux)");
 });
 
 test("explainCmd resolves a prefix and fetches the decision", async () => {

@@ -3,7 +3,7 @@
 // which PI auto-discovers. Embedded as code (not an on-disk data file) so the
 // adapter behaves identically from source and from a `bun build --compile` binary.
 
-export const PLUGIN_VERSION = "1.1.0";
+export const PLUGIN_VERSION = "1.2.0";
 export const EXTENSION_FILENAME = "agmux.ts";
 export const VERSION_MARKER = `agmux-pi-extension v${PLUGIN_VERSION}`;
 
@@ -32,6 +32,18 @@ function sessionId(ctx) {
   return idx >= 0 ? base.slice(idx + 1) : base;
 }
 
+// pi's own session name (/name), for agmux session.metadata; null when unset or
+// on a pi without session names.
+function sessionName(ctx) {
+  try {
+    var sm = ctx && ctx.sessionManager;
+    var n = sm && sm.getSessionName ? sm.getSessionName() : null;
+    return typeof n === "string" && n ? n : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 function emit(args, payload) {
   try {
     const child = spawn(agmuxBin(), ["emit", "--from=pi"].concat(args), {
@@ -53,7 +65,7 @@ function emitPoint(point, ctx, extra) {
 export default function (pi) {
   pi.on("session_start", function (event, ctx) {
     var sid = sessionId(ctx);
-    emit(["--source=hook-command", "--point=session.registered"], { session_id: sid, cwd: (ctx && ctx.cwd) || null, pid: process.pid });
+    emit(["--source=hook-command", "--point=session.registered"], { session_id: sid, cwd: (ctx && ctx.cwd) || null, pid: process.pid, session_name: sessionName(ctx) });
     emit(["--attach"], { session_id: sid });
     if (event && (event.reason === "resume" || event.reason === "fork")) {
       emit(["--source=hook-command", "--point=session.linked"], { session_id: sid });
@@ -85,7 +97,7 @@ export default function (pi) {
   });
 
   pi.on("agent_end", function (_event, ctx) {
-    emitPoint("turn.ended", ctx, {});
+    emitPoint("turn.ended", ctx, { cwd: (ctx && ctx.cwd) || null, session_name: sessionName(ctx) });
   });
 }
 `;

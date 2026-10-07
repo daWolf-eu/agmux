@@ -35,6 +35,16 @@ Wiring lives in each `adapters/<kind>/install.ts`: a `writeSkills(<kind>SkillsDi
 - **Versioning/drift:** skills ride the adapter's existing payload version (`PLUGIN_VERSION` in `plugin-files.ts` / `extension-files.ts`). Per spec §6, bump it when skill content changes **in a released adapter** so `status()` reports drift. Iterating content within an unreleased branch needs no intermediate bump.
 - **New agent kind with no skill surface:** give it a `SKILL_SURFACES` entry with `installTime:false`; install degrades gracefully (skips skills). The `Record<AgentKind, SkillSurface>` type makes a missing entry a compile error.
 
+## Session name (`Adapter.sessionName`)
+
+Optional hook: `sessionName(raw, env) → { name, source: "user" | "agent" } | null`. `agmux emit` calls it at `session.registered` and `turn.ended` (only when normalize produced events) and sends the result with the git probe (`packages/cli/src/git-meta.ts`) as one `session.metadata` event.
+
+- **Read, never generate**: only what the agent already stores. No summarizer, no network.
+- **Precedence inside the adapter**: a user rename (`source: "user"`) beats the agent's own title (`"agent"`). The terminal-title fallback (`"terminal"`) is applied at read time in `store/queries.ts`, never sent.
+- **Cheap + total**: it runs on the hook hot path. Bounded reads, catch everything, return null.
+- Current sources: claude `session-name.ts` (transcript tail: `custom-title` > `ai-title`), codex `session-name.ts` (`$CODEX_HOME/session_index.jsonl` `thread_name`), pi `index.ts` (`session_name` in the extension payload ← `ctx.sessionManager.getSessionName()`).
+- **New agent kind**: implement it next to `normalize.ts` and add cases to `tests/session-name.test.ts`. If the name is only reachable in-process (like pi), put it in the hook payload of the registration and turn-end points, and bump the payload version.
+
 ## Out of scope (here)
 
 Runtime `--skill` injection, per-profile enable/disable filters, orchestration/comms skills → scope B (see backlog 05). Keep the catalog in this package until a second (runtime) consumer justifies a dedicated `@agmux/skills`.

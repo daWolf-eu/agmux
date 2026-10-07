@@ -2,11 +2,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
   stampIngestEvents, buildAttachedEvent, loadRecord,
-  type Registry, type CanonicalEvent, type ManifestPoint,
+  type Registry, type CanonicalEvent, type ManifestPoint, type SessionName,
 } from "@agmux/adapters";
-import type { AgentKind, CapabilitySourceType, IngestEnvelope } from "@agmux/protocol";
+import type { AgentKind, CapabilitySourceType, IngestEnvelope, SessionMetadataPayload } from "@agmux/protocol";
 import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, tmuxSocketFromEnv } from "@agmux/protocol";
 import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
+import { probeGit, type GitExec } from "./git-meta.ts";
 
 export interface ParsedEmit {
   from: string;
@@ -43,6 +44,8 @@ export interface EmitDeps {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   resolveTmux?: TmuxExec;
+  git?: GitExec;
+  cwd?: () => string;
 }
 
 function parseRaw(stdin: string): unknown {
@@ -109,6 +112,26 @@ export async function enrichTmuxCoords(
   for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
 }
 
+// The points at which emit also reports session.metadata: once at registration
+// (incl. resume / clear) and after every turn, where a branch switch or a new
+// title most likely just happened.
+const METADATA_POINTS: readonly ManifestPoint[] = ["session.registered", "turn.ended"];
+
+// Git facts for the hook's cwd (stdin cwd, else the hook process's own — agents
+// run hooks in their working directory) plus the adapter's session name.
+export async function collectMetadata(
+  adapter: { sessionName?: (raw: unknown, env: Record<string, string | undefined>) => SessionName | null },
+  raw: unknown, env: Record<string, string | undefined>, cwd: string, git?: GitExec,
+): Promise<CanonicalEvent> {
+  const stdinCwd = (raw as { cwd?: unknown } | null)?.cwd;
+  const dir = typeof stdinCwd === "string" && stdinCwd !== "" ? stdinCwd : cwd;
+  const payload: SessionMetadataPayload = { git: await probeGit(dir, git) };
+  let name: SessionName | null = null;
+  try { name = adapter.sessionName?.(raw, env) ?? null; } catch { /* no name */ }
+  if (name) payload.name = name;
+  return { kind: "session.metadata", payload };
+}
+
 // Stamp hook events with the moment this process was SPAWNED, not the moment
 // it got around to stamping. Hooks fire async, one `agmux emit` per hook, and
 // cold starts vary by tens of ms — a PreToolUse emit could otherwise be stamped
@@ -155,6 +178,11 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
         env: deps.env,
       });
       events = out.events;
+      // Only alongside a real event: an empty normalize means the hook was
+      // dropped (nesting guard, a Stop that does not end the turn).
+      if (events.length > 0 && METADATA_POINTS.includes(a.point)) {
+        events.push(await collectMetadata(adapter, raw, deps.env, (deps.cwd ?? process.cwd)(), deps.git));
+      }
       if (a.cursorFile && out.cursor != null) {
         try { fs.writeFileSync(a.cursorFile, out.cursor); } catch { /* best-effort */ }
       }

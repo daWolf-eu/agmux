@@ -4,6 +4,7 @@ import { normalizeCodex } from "./normalize.ts";
 import { codexResumePlan } from "./resume.ts";
 import { codexHeadlessPlan } from "./headless.ts";
 import { codexInstall, codexUninstall, codexStatus, ADAPTER_VERSION } from "./install.ts";
+import { codexSessionName } from "./session-name.ts";
 
 // The plugin payload is embedded code (plugin-files.ts) materialized at install
 // time — no on-disk data files, so the adapter behaves identically from source and
@@ -26,4 +27,5 @@ export const codexAdapter: Adapter = {
     const id = (raw as { session_id?: unknown } | null)?.session_id;
     return typeof id === "string" && id !== "" ? id : null;
   },
+  sessionName: codexSessionName,
 };

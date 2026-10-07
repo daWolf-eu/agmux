@@ -11,6 +11,14 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
+- Session metadata: a `session.metadata` event (schema v8, `session_meta`
+  projection) carries the session's human-readable `name` and its git facts
+  (`git_branch`, `git_repo`, `git_remote`, `git_root`). `agmux emit` collects
+  them at registration and on every turn end: git via read-only `git` in the
+  hook's cwd, the name via a new optional adapter hook `sessionName` (Claude
+  transcript `custom-title`/`ai-title`, Codex `session_index.jsonl`, pi
+  `getSessionName()`), falling back to the terminal-title name. `agmux ls` gains
+  NAME, REPO and BRANCH columns; `agmux explain` shows both. pi extension 1.2.0.
 - Always-visible tmux status line of live agent sessions (`agmux notifyd`,
   `agmux statusline`, `@agmux-statusline` plugin options). Falls back to
   `status-right` below tmux 3.3.

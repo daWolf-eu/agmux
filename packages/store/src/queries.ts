@@ -9,11 +9,23 @@ import { deriveStatus } from "./lost.ts";
 const ROW_SELECT = `SELECT s.*, u.turn_count,
        a.last_tool, a.last_tool_detail, a.last_input_kind, a.activity_ts,
        a.attention_ts, a.attention_kind, a.title, a.title_activity, a.title_ts,
-       sn.seen_ts, sn.seen_source
+       sn.seen_ts, sn.seen_source,
+       m.name AS meta_name, m.name_source AS meta_name_source,
+       m.git_branch, m.git_repo, m.git_remote, m.git_root
   FROM sessions s
   LEFT JOIN session_usage u ON u.session_id = s.session_id
   LEFT JOIN session_activity a ON a.session_id = s.session_id
-  LEFT JOIN session_seen sn ON sn.session_id = s.session_id`;
+  LEFT JOIN session_seen sn ON sn.session_id = s.session_id
+  LEFT JOIN session_meta m ON m.session_id = s.session_id`;
+
+// The session's human-readable name: what the agent reported, else the name in
+// its terminal title. The title only counts when it parsed as an agent title
+// (title_activity set) — a bare title is often just the shell or the cwd.
+function displayName(raw: any): { name: string | null; name_source: string | null } {
+  if (raw.meta_name) return { name: raw.meta_name, name_source: raw.meta_name_source ?? null };
+  if (raw.title && raw.title_activity) return { name: raw.title, name_source: "terminal" };
+  return { name: null, name_source: null };
+}
 
 function decodeRow(raw: any): SessionRow {
   return {
@@ -54,6 +66,11 @@ function decodeRow(raw: any): SessionRow {
     title: raw.title ?? null,
     title_activity: raw.title_activity ?? null,
     title_ts: raw.title_ts ?? null,
+    ...displayName(raw),
+    git_branch: raw.git_branch ?? null,
+    git_repo: raw.git_repo ?? null,
+    git_remote: raw.git_remote ?? null,
+    git_root: raw.git_root ?? null,
   };
 }
 
@@ -84,6 +101,10 @@ export function explainSession(db: Database, sid: string, now: Date): StatusDeci
     attention: { kind: r.attention_kind ?? null, ts: r.attention_ts ?? null },
     seen: { source: r.seen_source ?? null, ts: r.seen_ts ?? null },
     title: { title: r.title ?? null, activity: r.title_activity ?? null, ts: r.title_ts ?? null },
+    meta: {
+      name: r.name ?? null, name_source: r.name_source ?? null,
+      git_repo: r.git_repo ?? null, git_branch: r.git_branch ?? null, git_root: r.git_root ?? null,
+    },
     last_input_kind: r.last_input_kind ?? null,
     last_tool: r.last_tool ?? null,
     last_work_ts: d.last_work_ts,

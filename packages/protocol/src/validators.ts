@@ -1,4 +1,4 @@
-import { EVENT_KINDS_MVP, INPUT_KINDS, SEEN_SOURCES } from "./events.ts";
+import { EVENT_KINDS_MVP, INPUT_KINDS, NAME_SOURCES, SEEN_SOURCES } from "./events.ts";
 import { TITLE_ACTIVITIES } from "./title.ts";
 import { AGENT_KINDS } from "./session.ts";
 
@@ -137,6 +137,25 @@ export function validateKnownPayload(kind: string, payload: unknown): Validation
         return { ok: false, error: "title.changed: title not string" };
       if (payload.activity != null && !(TITLE_ACTIVITIES as readonly unknown[]).includes(payload.activity))
         return { ok: false, error: `title.changed: activity must be ${TITLE_ACTIVITIES.join("|")}|null` };
+      return { ok: true };
+    }
+    case "session.metadata": {
+      const g = payload.git;
+      if (g !== undefined && g !== null) {
+        if (!isPlainObject(g) || !isStringNonEmpty(g.root))
+          return { ok: false, error: "session.metadata: git.root missing" };
+        for (const k of ["branch", "repo", "remote"] as const) {
+          if (g[k] != null && typeof g[k] !== "string")
+            return { ok: false, error: `session.metadata: git.${k} must be string|null` };
+        }
+      }
+      const n = payload.name;
+      if (n !== undefined) {
+        if (!isPlainObject(n) || !isStringNonEmpty(n.name))
+          return { ok: false, error: "session.metadata: name.name missing" };
+        if (n.source === "terminal" || !(NAME_SOURCES as readonly unknown[]).includes(n.source))
+          return { ok: false, error: "session.metadata: name.source must be user|agent" };
+      }
       return { ok: true };
     }
     case "session.adapter_attached": {

@@ -52,6 +52,9 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
     case "title.changed":
       applyTitleChanged(db, ev);
       return;
+    case "session.metadata":
+      applyMetadata(db, ev);
+      return;
     case "usage.reported":
       applyUsage(db, ev);
       return;
@@ -450,6 +453,33 @@ function clearActivityAll(db: Database, ev: EventEnvelope): void {
   if (!activityWritable(db, ev.session_id)) return;
   db.query(`UPDATE session_activity SET last_tool = NULL, last_tool_detail = NULL, last_input_kind = NULL, activity_ts = ? WHERE session_id = ?`)
     .run(ev.ts, ev.session_id);
+}
+
+// --- session_meta projection -------------------------------------------------
+// Each group in the payload is optional: absent = not observed, leave as is.
+// `git: null` = the cwd is not a git work tree, so the git fields are cleared.
+function applyMetadata(db: Database, ev: EventEnvelope): void {
+  if (!activityWritable(db, ev.session_id)) return;
+  const p = ev.payload as any;
+  if (p.git !== undefined) {
+    const g = p.git ?? {};
+    db.query(`
+      INSERT INTO session_meta (session_id, git_branch, git_repo, git_remote, git_root, git_ts)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        git_branch = excluded.git_branch, git_repo = excluded.git_repo,
+        git_remote = excluded.git_remote, git_root = excluded.git_root, git_ts = excluded.git_ts
+      WHERE COALESCE(session_meta.git_ts, '') <= excluded.git_ts
+    `).run(ev.session_id, g.branch ?? null, g.repo ?? null, g.remote ?? null, g.root ?? null, ev.ts);
+  }
+  if (p.name && typeof p.name.name === "string") {
+    db.query(`
+      INSERT INTO session_meta (session_id, name, name_source, name_ts) VALUES (?, ?, ?, ?)
+      ON CONFLICT(session_id) DO UPDATE SET
+        name = excluded.name, name_source = excluded.name_source, name_ts = excluded.name_ts
+      WHERE COALESCE(session_meta.name_ts, '') <= excluded.name_ts
+    `).run(ev.session_id, p.name.name, p.name.source ?? null, ev.ts);
+  }
 }
 
 // --- seen/unseen projection ---------------------------------------------------
