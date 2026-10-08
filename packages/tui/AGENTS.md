@@ -5,7 +5,8 @@
 ## Look & feel rules (dash)
 
 - **Hue = meaning only.** Status colours come from `STATUS_COLORS` (`shared/glyph.ts`); everything else (chrome, secondary columns, legend) uses the neutral ramp in `MOCHA` (`shared/palette.ts`). Sole exception: the branch column (`accent` role, pink). Never hard-code hexes in components — pick a `MOCHA` token.
-- **Whitespace over lines.** No pane borders or titles; blank spacer rows around the body; one faint `│` between table and preview. Overlays (help, yank) may keep a border.
+- **Whitespace over lines.** No pane borders or titles; blank spacer rows around the body; one faint `│` between table and preview. Overlays (`Overlays.tsx`: help, yank) are borderless blocks centred on an empty screen.
+- **Keys** render through `KeyHint` (`[key] label`) everywhere — footer, help, yank.
 - **One glyph vocabulary** shared by dash and the tmux status line: `statusTone()` → `toneGlyph(tone, frame)` / `STATUS_COLORS`. Red is reserved for errors; `waiting` is yellow.
 - Height budget in `DashApp`: header + spacer + footer spacer + footer = 4 rows; `PreviewPane.viewportHeight` must stay explicit (flex alone lets the scrollbox push the footer off-screen).
 - Rows are one `<text>` of `<span>`s each (sibling `<text>` flex items trim boundary spaces and break alignment). Use `wrapMode="none"`.

@@ -8,14 +8,15 @@ import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from ".
 import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { yankFields } from "../shared/yank.ts";
-import { COLUMNS, DEFAULT_COLUMNS, pad, type ColumnKey } from "../shared/columns.ts";
-import { STATUS_COLORS, TONES, SPINNER_MS, toneGlyph } from "../shared/glyph.ts";
+import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
+import { SPINNER_MS } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
 import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
+import { HelpOverlay, YankOverlay } from "./Overlays.tsx";
 
 export interface DashAppProps {
   // A feed per activity group — each group has its own hub query, row cap and
@@ -46,9 +47,6 @@ export interface DashAppProps {
 
 // The dash has two preview tabs: mirror / detail.
 const TABS: PreviewMode[] = ["mirror", "detail"];
-
-// Overlay border (help / yank) — muted, softer than the renderer's default white.
-const BORDER = MOCHA.overlay1;
 
 // Panes have no borders; a faint vertical rule with whitespace either side
 // separates the table from the preview.
@@ -232,43 +230,9 @@ export function DashApp(props: DashAppProps) {
   const previewWidth = Math.floor(width * PREVIEW_SHARE);
   const tableWidth = width - TABLE_PAD - (showPreview ? previewWidth + SEP_WIDTH : 0);
 
-  if (showHelp) {
-    return (
-      <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" agmux dash — keys ">
-        <text>j/k move · g/G top/bottom · s sort · f filter · / search</text>
-        <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
-        <text>y yank field · x kill · u mark read · ? help · q quit</text>
-        <text> </text>
-        <text>
-          {TONES.map((tone, i) => (
-            <span key={tone} fg={STATUS_COLORS[tone]}>
-              {`${i > 0 ? "  " : ""}${toneGlyph(tone, frame)} ${tone}`}
-            </span>
-          ))}
-        </text>
-        <text fg={MOCHA.overlay0}>? or esc to close</text>
-      </box>
-    );
-  }
-
+  if (showHelp) return <HelpOverlay frame={frame} />;
   if (yankOpen && selected) {
-    const fields = yankFields(selected);
-    const lw = fields.reduce((m, f) => Math.max(m, f.label.length), 0);
-    const digit = (i: number) => (i === 9 ? "0" : String(i + 1));
-    return (
-      <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" yank field ">
-        {fields.map((f, i) => {
-          const cursor = i === yankCursor;
-          const fg = cursor ? MOCHA.text : f.empty ? MOCHA.surface1 : MOCHA.subtext0;
-          return (
-            <text key={i} fg={fg}>
-              {`${cursor ? "›" : " "} ${digit(i)}  ${pad(f.label, lw, "left")}  ${f.empty ? "—" : f.value}`}
-            </text>
-          );
-        })}
-        <text fg={MOCHA.overlay0}>1-0/⏎ copy · j/k move · esc close</text>
-      </box>
-    );
+    return <YankOverlay row={selected} fields={yankFields(selected)} cursor={yankCursor} screenWidth={width} />;
   }
 
   return (

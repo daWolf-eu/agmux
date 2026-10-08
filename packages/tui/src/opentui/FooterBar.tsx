@@ -1,5 +1,6 @@
 /** @jsxImportSource @opentui/react */
 import { MOCHA } from "../shared/palette.ts";
+import { KeyHint } from "./KeyHint.tsx";
 
 // The everyday keys only; the full list (incl. g/G, x kill, u mark read) is in `?`.
 // `drop`: when the line doesn't fit, hints go lowest first (absent = always shown).
@@ -47,10 +48,7 @@ export function FooterBar(props: {
     <text wrapMode="none">
       {fitHints(props.width, props.sortLabel).map(({ key, label }, i) => (
         <span key={key}>
-          <span fg={MOCHA.surface2}>{`${i > 0 ? "  " : ""}[`}</span>
-          <span fg={MOCHA.subtext0}>{key}</span>
-          <span fg={MOCHA.surface2}>]</span>
-          <span fg={MOCHA.overlay0}>{` ${label}`}</span>
+          <KeyHint k={key} label={label} lead={i > 0 ? "  " : ""} />
           {key === "s" && <span fg={MOCHA.overlay1}>{` ${props.sortLabel}`}</span>}
         </span>
       ))}

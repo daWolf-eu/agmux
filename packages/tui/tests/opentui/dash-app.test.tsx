@@ -247,9 +247,12 @@ test("y opens the yank popup listing digit-prefixed fields", async () => {
   await renderOnce();
   const frame = captureCharFrame();
   expect(frame).toContain("yank field");
-  expect(frame).toContain("1");
-  expect(frame).toContain("Session ID");
+  expect(frame).not.toMatch(/[┌┐└┘─]/);
+  const lines = frame.split("\n");
+  // cursor starts on field 1, marked with the selection bar
+  expect(lines.find((l) => l.includes("▌"))).toMatch(/▌ 1\s+Session ID\s+agx-yank-1/);
   expect(frame).toContain("CWD");
+  expect(frame).toContain("[1-0/⏎] copy");
   renderer.destroy();
 });
 
@@ -459,7 +462,7 @@ test("the row glyph is ● when done and ○ when idle", async () => {
   renderer.destroy();
 });
 
-test("the help overlay documents both glyph axes", async () => {
+test("the help overlay lists every key and the status legend, centred and borderless", async () => {
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
       feedFor={fakeFeed([mkRow({ session_id: "agx-help-001" })])} source={noSource} actions={noActions}
@@ -474,10 +477,20 @@ test("the help overlay documents both glyph axes", async () => {
 
   const frame = captureCharFrame();
   for (const legend of ["? waiting", "● done", "⠋ running", "○ idle", "· closed", "· error"]) expect(frame).toContain(legend);
-  // the full key list lives here, incl. the keys the footer leaves out
-  expect(frame).toContain("g/G top/bottom");
-  expect(frame).toContain("x kill");
-  expect(frame).toContain("u mark read");
+  expect(frame).toContain("needs you");
+  // the full key list lives here in the [key] label style, incl. the keys the footer leaves out
+  expect(frame).toContain("[g/G] top/bottom");
+  expect(frame).toContain("[x]   kill");
+  expect(frame).toContain("[u]   mark read");
+  expect(frame).toContain("[?/esc] close");
+  // borderless and centred on an otherwise empty screen
+  expect(frame).not.toMatch(/[┌┐└┘─]/);
+  const lines = frame.split("\n");
+  const top = lines.findIndex((l) => l.trim() === "keys");
+  const bottom = lines.findIndex((l) => l.includes("[?/esc] close"));
+  expect(Math.abs(top - (lines.length - 1 - bottom))).toBeLessThanOrEqual(2);
+  const indent = lines[top]!.search(/\S/);
+  expect(indent).toBeGreaterThan(20);
   renderer.destroy();
 });
 
