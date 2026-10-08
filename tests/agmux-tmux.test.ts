@@ -15,8 +15,10 @@ async function callFn(fn: string, args: string[], env: Record<string, string> = 
   return (await new Response(p.stdout).text()).trim();
 }
 
+// -f /dev/null: each test's server starts from tmux defaults, never from the
+// developer's own tmux.conf (only the first command of a server reads it).
 async function tmuxCmd(socket: string, args: string[]): Promise<string> {
-  const p = Bun.spawn(["tmux", "-L", socket, ...args], {
+  const p = Bun.spawn(["tmux", "-L", socket, "-f", "/dev/null", ...args], {
     stdout: "pipe", stderr: "pipe",
   });
   return (await new Response(p.stdout).text()).trim();
@@ -30,7 +32,7 @@ async function tmuxRunShell(socket: string, script: string): Promise<string> {
   const file = path.join(dir, "script.bash");
   fs.writeFileSync(file, script);
   try {
-    const p = Bun.spawn(["tmux", "-L", socket, "run-shell", `bash '${file}'`], {
+    const p = Bun.spawn(["tmux", "-L", socket, "-f", "/dev/null", "run-shell", `bash '${file}'`], {
       stdout: "pipe", stderr: "pipe",
     });
     return (await new Response(p.stdout).text()).trim();
@@ -51,6 +53,7 @@ test("requested status2 downgrades to status-right below 3.3", async () => {
   expect(await callFn("agmux_tmux_statusline_target", ["status2", "3.2"])).toBe("status-right");
   expect(await callFn("agmux_tmux_statusline_target", ["status-right", "3.6a"])).toBe("status-right");
   expect(await callFn("agmux_tmux_statusline_target", ["off", "3.6a"])).toBe("off");
+  expect(await callFn("agmux_tmux_statusline_target", ["inline", "3.2"])).toBe("inline");
 });
 
 test("with @agmux-statusline off/unset, nothing is set", async () => {
@@ -97,10 +100,12 @@ test("with @agmux-statusline on and tmux >= 3.3, status becomes 2", async () => 
     const status = await tmuxCmd(socket, ["show-option", "-gv", "status"]);
     expect(status).toBe("2");
 
-    // Verify status-format[1] is set with the cache path
+    // status-format[1] shows @agmux-chips, which reads the cache file
     const format1 = await tmuxCmd(socket, ["show-option", "-gv", "status-format[1]"]);
-    expect(format1).toContain("cat");
-    expect(format1).toContain("statusline");
+    expect(format1).toBe("#{E:@agmux-chips}");
+    const chips = await tmuxCmd(socket, ["show-option", "-gv", "@agmux-chips"]);
+    expect(chips).toContain("cat");
+    expect(chips).toContain("statusline");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
   }
@@ -126,8 +131,7 @@ test("with @agmux-statusline on and tmux < 3.3, uses status-right instead", asyn
 
     // Verify status-right is set with the cache path
     const statusRight = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
-    expect(statusRight).toContain("cat");
-    expect(statusRight).toContain("statusline");
+    expect(statusRight).toBe("#{E:@agmux-chips}");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
   }
@@ -168,8 +172,7 @@ test("config.toml position is used as the default when @agmux-statusline-positio
     await tmuxRunShell(socket, script);
 
     const status = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
-    expect(status).toContain("cat");
-    expect(status).toContain("statusline");
+    expect(status).toBe("#{E:@agmux-chips}");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
     await Bun.spawn(["rm", "-f", fakeBin]).exited;
@@ -200,9 +203,9 @@ test("an explicit @agmux-statusline-position tmux option overrides config.toml's
     const status = await tmuxCmd(socket, ["show-option", "-gv", "status"]);
     expect(status).toBe("on");
     const format1 = await tmuxCmd(socket, ["show-option", "-gv", "status-format[1]"]);
-    expect(format1).not.toContain("statusline");
+    expect(format1).not.toContain("agmux");
     const statusRight = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
-    expect(statusRight).not.toContain("statusline");
+    expect(statusRight).not.toContain("agmux");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
     await Bun.spawn(["rm", "-f", fakeBin]).exited;
@@ -227,8 +230,7 @@ test("config.toml enabled=true turns the status line on even though @agmux-statu
     await tmuxRunShell(socket, script);
 
     const statusRight = await tmuxCmd(socket, ["show-option", "-gv", "status-right"]);
-    expect(statusRight).toContain("cat");
-    expect(statusRight).toContain("statusline");
+    expect(statusRight).toBe("#{E:@agmux-chips}");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
     await Bun.spawn(["rm", "-f", fakeBin]).exited;
@@ -297,6 +299,84 @@ test("focus-seen installs focus-events and a namespaced pane-focus-in hook", asy
     expect(line).toContain("/opt/agmux");
     expect(line).toContain("seen --pane");
     expect(line).toContain("--source focus");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("status-line clicks on @ chips go to `statusline --click`; other clicks keep tmux's binding", async () => {
+  const socket = `agmux-test-click-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    const install = `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline "/opt/my bin/agmux" "status2" "2" "on" "3.6a"
+    `;
+    await tmuxRunShell(socket, install);
+    // Sourcing twice must not wrap our own binding as the "original".
+    await tmuxRunShell(socket, install);
+
+    const left = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"]);
+    expect(left).toContain("if-shell -F \"#{m:@*,#{mouse_status_range}}\"");
+    expect(left).toContain("run-shell -b \\\"'/opt/my bin/agmux' statusline --click left '#{mouse_status_range}';");
+    expect(left).toContain("tmux refresh-client -S -t '#{client_name}'");
+    expect(left).toMatch(/"switch-client -t ="$/);
+    expect(left.match(/statusline --click/g)?.length).toBe(1);
+
+    const right = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown3Status"]);
+    expect(right).toContain("statusline --click right");
+    expect(right).toContain("display-menu"); // tmux's window menu, still there outside our chips
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("@agmux-statusline-mouse off leaves the status-line mouse bindings alone", async () => {
+  const socket = `agmux-test-click-off-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline "agmux" "status2" "2" "off" "3.6a"
+    `);
+    expect(await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"])).not.toContain("agmux");
+    expect(await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown3Status"])).not.toContain("agmux");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("an old agmux MouseDown1Status binding falls back to tmux's default, not to nothing", async () => {
+  const socket = `agmux-test-click-upgrade-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["bind-key", "-T", "root", "MouseDown1Status", "run-shell",
+      "if [ -n '#{mouse_status_range}' ]; then 'agmux' attach '#{mouse_status_range}'; fi"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline "agmux" "status2" "2" "on" "3.6a"
+    `);
+    const left = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"]);
+    expect(left).toMatch(/"switch-client -t ="$/);
+    expect(left).not.toContain("attach");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("inline sets @agmux-chips and the click bindings but leaves the status bar alone", async () => {
+  const socket = `agmux-test-inline-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["set-option", "-g", "status-right", "mine"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline "agmux" "inline" "2" "on" "3.6a"
+    `);
+    expect(await tmuxCmd(socket, ["show-option", "-gv", "@agmux-chips"])).toContain("cat");
+    expect(await tmuxCmd(socket, ["show-option", "-gv", "status"])).toBe("on");
+    expect(await tmuxCmd(socket, ["show-option", "-gv", "status-right"])).toBe("mine");
+    expect(await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"])).toContain("statusline --click left");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
   }

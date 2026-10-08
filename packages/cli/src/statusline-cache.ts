@@ -1,4 +1,6 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
+import { SHOW_TONES, type ShowMode } from "@agmux/tui";
 
 // Shared primitives for the statusline cache file: written atomically by
 // `agmux notifyd` and read by `agmux statusline`/`agmux statusline --check`.
@@ -35,4 +37,40 @@ export function isStale(heartbeat: string | null, now: number, intervalMs: numbe
   const t = Date.parse(heartbeat);
   if (Number.isNaN(t)) return true;
   return now - t > Math.max(intervalMs * 10, 10000);
+}
+
+export interface AtomicFsDeps {
+  mkdir: (dir: string) => void;
+  write: (file: string, text: string) => void;
+  rename: (from: string, to: string) => void;
+}
+
+const realFs: AtomicFsDeps = {
+  mkdir: (d) => fs.mkdirSync(d, { recursive: true }),
+  write: (f, t) => fs.writeFileSync(f, t),
+  rename: (a, b) => fs.renameSync(a, b),
+};
+
+// Write temp-then-rename so a tmux client expanding #(cat ...) concurrently
+// never reads a half-written line. Never throws: a cache-file problem must not
+// take the daemon down.
+export function writeLineAtomic(file: string, text: string, deps: AtomicFsDeps = realFs): void {
+  try {
+    deps.mkdir(path.dirname(file));
+    const tmp = `${file}.${process.pid}.tmp`;
+    deps.write(tmp, text);
+    deps.rename(tmp, file);
+  } catch { /* best-effort */ }
+}
+
+// The filter chip's choice, next to the cache it filters: it overrides
+// `[statusline] show` until changed again (or the runtime dir is cleared).
+export function showPath(file: string): string {
+  return `${file}.show`;
+}
+
+// An absent, unreadable or unknown value means "use the config".
+export function readShow(text: string | null): ShowMode | null {
+  const v = text?.trim();
+  return v && v in SHOW_TONES ? (v as ShowMode) : null;
 }

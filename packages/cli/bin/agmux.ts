@@ -20,7 +20,9 @@ import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
 import { runHubCmd } from "../src/hub-cmd.ts";
-import { statuslineCmd } from "../src/statusline-cmd.ts";
+import { statuslineCmd, cycleShowCmd } from "../src/statusline-cmd.ts";
+import { statuslineClick } from "../src/statusline-click.ts";
+import { readTmuxStyle } from "../src/statusline-style.ts";
 import { staleMarker } from "../src/statusline-cache.ts";
 import { runNotifyd, postIngest } from "../src/notifyd.ts";
 import { execFile } from "node:child_process";
@@ -37,6 +39,13 @@ import { parseLsArgs } from "../src/parse-ls.ts";
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
 const hubBin = process.env.AGMUX_HUB_BIN ?? "agmux-hub";
 const wrapBin = process.env.AGMUX_WRAP_BIN ?? "agmux-wrap";
+
+// stdout of a command run without a shell.
+function capture(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(cmd, args, (err, stdout) => { if (err) reject(err); else resolve(stdout); });
+  });
+}
 
 const argv = process.argv.slice(2);
 const verb = argv[0];
@@ -103,7 +112,24 @@ async function main(): Promise<number> {
       fetchImpl: fetch, out: (s: string) => console.log(s), config,
       env: process.env,
       readFile: (p: string) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } },
+      tmuxStyle: () => readTmuxStyle(capture),
     };
+    // --click <left|right> <token>: agmux.tmux's status-line mouse bindings.
+    // Like `seen`, a click with no hub is a quiet no-op, never a hub spawn.
+    const clickAt = argv.indexOf("--click");
+    if (clickAt >= 0) {
+      const button = argv[clickAt + 1];
+      const token = argv[clickAt + 2];
+      if ((button !== "left" && button !== "right") || !token) usage();
+      const clickHub = discoverHubUrl(process.env, stateDir);
+      if (!clickHub) return 0;
+      const seenDeps = { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() };
+      return statuslineClick(button, token, {
+        attach: (idOrPrefix) => attachCmd({ idOrPrefix, hubUrl: clickHub, wrapBin }),
+        seen: (o) => seenCmd({ ...o, hubUrl: clickHub, host: os.hostname() }, seenDeps),
+        cycleShow: (step) => cycleShowCmd(step, { hubUrl: clickHub }, deps),
+      });
+    }
     // --print-config is for agmux.tmux at plugin load: resolved config-file
     // defaults only, no hub involved, must never fail (see statusline-cmd.ts).
     if (printConfig) return statuslineCmd({ hubUrl: "", printConfig: true }, deps);
@@ -121,13 +147,14 @@ async function main(): Promise<number> {
     const pane = flag("--pane");
     const socket = flag("--socket") || undefined;
     const source = flag("--source");
-    const id = pane ? undefined : argv[1];
-    if (!pane && !id) usage();
+    const all = argv.includes("--all");
+    const id = pane || all ? undefined : argv[1];
+    if (!pane && !id && !all) usage();
     if (source !== undefined && source !== "dismiss" && source !== "focus") usage();
     const seenHub = discoverHubUrl(process.env, stateDir);
     if (!seenHub) return pane ? 0 : 1;
     return seenCmd(
-      { idOrPrefix: id, pane, socket, source: source as "dismiss" | "focus" | undefined, hubUrl: seenHub, host: os.hostname() },
+      { idOrPrefix: id, pane, all, socket, source: source as "dismiss" | "focus" | undefined, hubUrl: seenHub, host: os.hostname() },
       { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
     );
   }
@@ -152,10 +179,9 @@ async function main(): Promise<number> {
         },
         {
           env: process.env, config,
+          tmuxStyle: () => readTmuxStyle(capture),
           paneSignals: {
-            capture: (cmd, args) => new Promise((resolve, reject) => {
-              execFile(cmd, args, (err, stdout) => { if (err) reject(err); else resolve(stdout); });
-            }),
+            capture,
             host: os.hostname(),
             newId: () => crypto.randomUUID(),
             post: postIngest,

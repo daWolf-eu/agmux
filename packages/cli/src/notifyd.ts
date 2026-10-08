@@ -4,11 +4,17 @@ import { execFile } from "node:child_process";
 import type { SessionRow } from "@agmux/protocol";
 import { PollingSessionFeed, formatStatusLine, createDetectState, primeDetectState, detectNotifications } from "@agmux/tui";
 import type { AttentionConfig } from "./attention-config.ts";
-import { cachePath, staleMarker, heartbeatPath, DEFAULT_POLL_INTERVAL_MS } from "./statusline-cache.ts";
+import {
+  cachePath, staleMarker, heartbeatPath, showPath, readShow, writeLineAtomic, DEFAULT_POLL_INTERVAL_MS,
+  type AtomicFsDeps,
+} from "./statusline-cache.ts";
+
+export { writeLineAtomic, type AtomicFsDeps };
 import { dispatchNotification, type SinkDeps } from "./sinks.ts";
 import { acquireSingletonLock } from "@agmux/hub";
 import type { IngestEnvelope } from "@agmux/protocol";
 import { collectPaneSignals, createPaneSignalState, type PaneSignalDeps } from "./pane-signals.ts";
+import { resolveLineStyle, type TmuxStyle } from "./statusline-style.ts";
 
 // No shell involved (execFile, not exec), and `which` is a plain PATH scan —
 // no subprocess at all — so there is nothing here that can execute untrusted
@@ -37,30 +43,6 @@ function realCapture(cmd: string, args: string[]): Promise<string> {
   });
 }
 
-export interface AtomicFsDeps {
-  mkdir: (dir: string) => void;
-  write: (file: string, text: string) => void;
-  rename: (from: string, to: string) => void;
-}
-
-const realFs: AtomicFsDeps = {
-  mkdir: (d) => fs.mkdirSync(d, { recursive: true }),
-  write: (f, t) => fs.writeFileSync(f, t),
-  rename: (a, b) => fs.renameSync(a, b),
-};
-
-// Write temp-then-rename so a tmux client expanding #(cat ...) concurrently
-// never reads a half-written line. Never throws: a cache-file problem must not
-// take the daemon down.
-export function writeLineAtomic(file: string, text: string, deps: AtomicFsDeps = realFs): void {
-  try {
-    deps.mkdir(path.dirname(file));
-    const tmp = `${file}.${process.pid}.tmp`;
-    deps.write(tmp, text);
-    deps.rename(tmp, file);
-  } catch { /* best-effort */ }
-}
-
 /**
  * Single-instance guard. Two daemons are not a harmless duplicate: each keeps
  * its own in-memory notified-set, so N daemons mean N notifications for one
@@ -83,6 +65,8 @@ export interface NotifydDeps {
   env: Record<string, string | undefined>;
   config: AttentionConfig;
   fs?: AtomicFsDeps;
+  // Reads the filter chip's show override (statusline-cache showPath).
+  readFile?: (p: string) => string | null;
   makeFeed?: (hubUrl: string, query: URLSearchParams) => { subscribe: (
     onUpdate: (rows: SessionRow[]) => void, onError: (e: Error) => void) => () => void };
   onRows?: (rows: SessionRow[]) => void;   // sink hook; Task 12 attaches notifications here
@@ -98,6 +82,9 @@ export interface NotifydDeps {
   paneSignals?: Omit<PaneSignalDeps, "now"> & {
     post: (hubUrl: string, events: IngestEnvelope[]) => Promise<void>;
   };
+  // The @agmux-statusline-* tmux options (readTmuxStyle), re-read every tick so
+  // a tmux.conf reload restyles the line within a second. Off unless provided.
+  tmuxStyle?: () => Promise<TmuxStyle>;
 }
 
 export async function postIngest(hubUrl: string, events: IngestEnvelope[]): Promise<void> {
@@ -118,7 +105,19 @@ export async function runNotifyd(
   deps: NotifydDeps,
 ): Promise<number> {
   const file = cachePath(deps.env);
-  const { show, max, format, sort } = deps.config.statusline;
+  const { max, sort } = deps.config.statusline;
+  const readFile = deps.readFile ?? ((p: string) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } });
+  // Re-read per render: the filter chip changes it while the daemon runs.
+  const show = () => readShow(readFile(showPath(file))) ?? deps.config.statusline.show;
+  let tmuxStyle: TmuxStyle = {};
+  // What the last line was rendered with; the tick re-renders when it moves.
+  let renderedWith = "";
+  const render = (rows: SessionRow[]): void => {
+    const mode = show();
+    renderedWith = JSON.stringify([mode, tmuxStyle]);
+    const { format, style } = resolveLineStyle(deps.config.statusline, tmuxStyle);
+    writeLineAtomic(file, formatStatusLine(rows, { show: mode, max, format, style }), deps.fs);
+  };
   const query = new URLSearchParams({ status: "open", sort, order: "desc" });
   const intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
 
@@ -223,14 +222,29 @@ export async function runNotifyd(
 
   const setIntervalImpl = deps.setIntervalImpl ?? setInterval;
   const clearIntervalImpl = deps.clearIntervalImpl ?? clearInterval;
+  let styleBusy = false;
+  const refreshStyle = (): void => {
+    if (!deps.tmuxStyle || styleBusy) return;
+    styleBusy = true;
+    deps.tmuxStyle()
+      .then((next) => { tmuxStyle = next; })
+      .catch(() => { /* keep the last style */ })
+      .finally(() => {
+        styleBusy = false;
+        if (lastRows && JSON.stringify([show(), tmuxStyle]) !== renderedWith) render(lastRows);
+      });
+  };
+  refreshStyle();
+
   const tickTimer = setIntervalImpl(() => {
     beat();
+    refreshStyle();
     if (lastRows) { evaluate(lastRows); runPaneSignals(lastRows); }
   }, intervalMs);
 
   const unsubscribe = feed.subscribe(
     (rows) => {
-      writeLineAtomic(file, formatStatusLine(rows, { show, max, format }), deps.fs);
+      render(rows);
       beat();
       // The first observation is a baseline, not a wave of transitions: an
       // empty DetectState would otherwise read every already-waiting session

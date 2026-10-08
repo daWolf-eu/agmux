@@ -1,13 +1,14 @@
 import * as fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
+import { LINE_TONES, type LineTone, type StatusLineStyle } from "@agmux/tui";
 
 export const NOTIFY_TRIGGERS = ["permission", "prompt", "turn_end", "session_end"] as const;
 export type NotifyTrigger = (typeof NOTIFY_TRIGGERS)[number];
 
-export const SHOW_MODES = ["all", "attention", "done", "waiting"] as const;
+export const SHOW_MODES = ["working", "all", "attention", "done", "waiting"] as const;
 export type ShowMode = (typeof SHOW_MODES)[number];
 
-export const POSITIONS = ["status2", "status-right", "off"] as const;
+export const POSITIONS = ["status2", "inline", "status-right", "off"] as const;
 export type Position = (typeof POSITIONS)[number];
 
 export interface NotifyConfig {
@@ -29,6 +30,9 @@ export interface StatuslineConfig {
   max: number;
   format: string;
   sort: "started" | "activity";
+  // Templates and colours from config.toml; tmux @agmux-statusline-* options
+  // override them per key (statusline-style.ts).
+  style: Partial<StatusLineStyle>;
 }
 
 export interface AttentionConfig { notify: NotifyConfig; statusline: StatuslineConfig; }
@@ -67,6 +71,27 @@ function bool(value: unknown, field: string, fallback: boolean): boolean {
   throw new Error(`invalid ${field}: ${String(value)} (expected a boolean)`);
 }
 
+// Status-line templates: only the keys that are set, so tmux options and
+// DEFAULT_STYLE fill the rest. `separator` may be empty.
+function lineStyle(s: any): Partial<StatusLineStyle> {
+  const style: Partial<StatusLineStyle> = {};
+  for (const key of ["chip", "overflow", "filter"] as const) {
+    if (s[key] !== undefined) style[key] = str(s[key], `statusline.${key}`, "");
+  }
+  if (s.separator !== undefined) {
+    if (typeof s.separator !== "string") throw new Error(`invalid statusline.separator: ${String(s.separator)} (expected a string)`);
+    style.separator = s.separator;
+  }
+  if (s.colors !== undefined) {
+    const colors: Partial<Record<LineTone, string>> = {};
+    for (const [k, v] of Object.entries(s.colors as Record<string, unknown>)) {
+      colors[oneOf(k, LINE_TONES, "statusline.colors key", "waiting")] = str(v, `statusline.colors.${k}`, "");
+    }
+    style.colors = colors;
+  }
+  return style;
+}
+
 function str(value: unknown, field: string, fallback: string): string {
   if (value === undefined) return fallback;
   if (typeof value === "string" && value.length > 0) return value;
@@ -103,10 +128,11 @@ export function loadAttentionConfig(toml: string): AttentionConfig {
       enabled: bool(s.enabled, "statusline.enabled", false),
       position: oneOf(s.position, POSITIONS, "statusline.position", "status2"),
       // "unread" predates `done` being a status; it meant exactly that.
-      show: oneOf(s.show === "unread" ? "done" : s.show, SHOW_MODES, "statusline.show", "all"),
+      show: oneOf(s.show === "unread" ? "done" : s.show, SHOW_MODES, "statusline.show", "working"),
       max: positiveInt(s.max, "statusline.max", 6),
-      format: str(s.format, "statusline.format", "{glyph} {tmux_session}:{tmux_pane}"),
+      format: str(s.format, "statusline.format", "{glyph} {name}"),
       sort: oneOf(s.sort, ["started", "activity"] as const, "statusline.sort", "activity"),
+      style: lineStyle(s),
     },
   };
 }

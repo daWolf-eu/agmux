@@ -25,19 +25,22 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      each activity group (f) polls on its own: open 50 rows/1s, closed+all 1000/10s
      ([dash], [dash.open], [dash.closed], [dash.all] in config; -n/-i override all)
   attach <id|prefix>
-  seen <id|prefix>|--pane <pane_id> [--socket <tmux socket>] [--source focus]
+  seen <id|prefix>|--pane <pane_id>|--all [--socket <tmux socket>] [--source focus]
      marks a session seen (session.seen): a done session becomes idle.
      --pane resolves the tmux pane owning it and is silently a no-op unless an
      open session owns that pane and is done (agmux.tmux runs this from the
-     pane-focus-in hook with --source focus)
+     pane-focus-in hook with --source focus); --all marks every done session
   explain <id|prefix>|--pane <pane_id> [--json]
      why a session shows its status: the rule that decided it, the event that
      set it, attention vs seen timestamps, the title signal
-  statusline [--check|--print-config]
+  statusline [--check|--print-config|--click <left|right> <token>]
      render the tmux status line once and exit, reading from the hub;
      --check instead reads notifyd's cache file and reports staleness;
      --print-config prints the resolved [statusline] config.toml defaults
-     (enabled=, position=) for agmux.tmux to use as fallbacks; never fails
+     (enabled=, position=) for agmux.tmux to use as fallbacks; never fails;
+     --click handles a click on a chip (agmux.tmux's mouse bindings): left
+     switches to the session's pane, right marks it seen; on ▽ it cycles
+     the show filter (left forward, right back)
   notifyd
      long-running daemon: writes the status-line cache file and fires
      debounced, focus-aware notifications; must be running for the tmux

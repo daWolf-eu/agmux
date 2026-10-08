@@ -24,17 +24,51 @@ test("a hub failure returns false instead of throwing — attach must still proc
   expect(ok).toBe(false);
 });
 
+// A hub serving `sessions` on /sessions and recording /ingest bodies.
+function fakeHub(sessions: object[]) {
+  const ingested: any[][] = [];
+  const fetchImpl = (async (u: any, init?: any) => {
+    if (String(u).includes("/sessions?status=open")) return new Response(JSON.stringify({ sessions }));
+    ingested.push(JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+  return { ingested, deps: { fetchImpl, now: () => "t", newId: () => "e" } };
+}
+
 test("seenCmd posts a dismiss-sourced event for an explicit id", async () => {
-  let body: any = null;
-  const code = await seenCmd(
-    { idOrPrefix: "agx-1", hubUrl: "http://h", host: "box" },
-    {
-      fetchImpl: (async (_u: any, init: any) => { body = JSON.parse(init.body); return new Response(null, { status: 202 }); }) as unknown as typeof fetch,
-      now: () => "t", newId: () => "e",
-    },
-  );
+  const hub = fakeHub([{ session_id: "agx-1", status: "done" }]);
+  const code = await seenCmd({ idOrPrefix: "agx-1", hubUrl: "http://h", host: "box" }, hub.deps);
   expect(code).toBe(0);
-  expect(body[0].payload).toEqual({ source: "dismiss" });
+  expect(hub.ingested[0]![0].session_id).toBe("agx-1");
+  expect(hub.ingested[0]![0].payload).toEqual({ source: "dismiss" });
+});
+
+test("seenCmd resolves an id prefix against the open sessions", async () => {
+  const hub = fakeHub([{ session_id: "0198abcd-1234-7aaa", status: "done" }, { session_id: "0198ffff-0000-7bbb", status: "idle" }]);
+  expect(await seenCmd({ idOrPrefix: "0198abcd-1234-", hubUrl: "http://h", host: "box" }, hub.deps)).toBe(0);
+  expect(hub.ingested[0]![0].session_id).toBe("0198abcd-1234-7aaa");
+});
+
+test("seenCmd posts nothing for an unknown or ambiguous prefix", async () => {
+  const hub = fakeHub([{ session_id: "ab-1", status: "done" }, { session_id: "ab-2", status: "done" }]);
+  expect(await seenCmd({ idOrPrefix: "zz", hubUrl: "http://h", host: "box" }, hub.deps)).toBe(2);
+  expect(await seenCmd({ idOrPrefix: "ab", hubUrl: "http://h", host: "box" }, hub.deps)).toBe(2);
+  expect(hub.ingested).toEqual([]);
+});
+
+test("seenCmd --all marks every done session seen in one batch", async () => {
+  const hub = fakeHub([
+    { session_id: "a", status: "done" }, { session_id: "b", status: "waiting" }, { session_id: "c", status: "done" },
+  ]);
+  expect(await seenCmd({ all: true, hubUrl: "http://h", host: "box" }, hub.deps)).toBe(0);
+  expect(hub.ingested.length).toBe(1);
+  expect(hub.ingested[0]!.map((e) => e.session_id)).toEqual(["a", "c"]);
+});
+
+test("seenCmd --all with nothing done posts nothing", async () => {
+  const hub = fakeHub([{ session_id: "a", status: "idle" }]);
+  expect(await seenCmd({ all: true, hubUrl: "http://h", host: "box" }, hub.deps)).toBe(0);
+  expect(hub.ingested).toEqual([]);
 });
 
 test("seenCmd resolves --pane to the session owning that tmux pane", async () => {

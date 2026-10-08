@@ -81,7 +81,7 @@ test("a feed update writes the rendered line and the heartbeat", async () => {
   capturedOnUpdate!([row]);
 
   const cache = "/run/u/agmux/statusline";
-  expect(files[cache]).toContain("work:%7");
+  expect(files[cache]).toContain("range=user|@agx-1");
   expect(files[heartbeatPath(cache)]).toBeTruthy();
 
   ac.abort();
@@ -554,4 +554,56 @@ test("pane signals: a done session under a focused client is posted as seen to t
   expect(posts).toEqual([{ hub: "http://live:2", kinds: ["session.seen"] }]);
   ac.abort();
   expect(await p).toBe(0);
+});
+
+test("each render uses the filter chip's saved mode, re-read every time", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  let onUpdate: ((rows: SessionRow[]) => void) | undefined;
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      readFile: (f) => files[f] ?? null,
+      makeFeed: () => ({ subscribe: (cb) => { onUpdate = cb; return () => {}; } }),
+    }),
+  );
+  const cache = "/run/u/agmux/statusline";
+  onUpdate!([row]); // running, default show = working
+  expect(files[cache]).toContain("range=user|@agx-1");
+  files[`${cache}.show`] = "waiting";
+  onUpdate!([{ ...row }]);
+  expect(files[cache]).not.toContain("range=user|@agx-1");
+  ac.abort();
+  await p;
+});
+
+test("a tmux style change re-renders the last rows on the next tick", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  let onUpdate: ((rows: SessionRow[]) => void) | undefined;
+  let tick: (() => void) | undefined;
+  let tmux: Record<string, string> = {};
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      readFile: (f) => files[f] ?? null,
+      tmuxStyle: async () => tmux,
+      setIntervalImpl: ((fn: () => void) => { tick = fn; return 0; }) as unknown as typeof setInterval,
+      clearIntervalImpl: (() => {}) as unknown as typeof clearInterval,
+      makeFeed: () => ({ subscribe: (cb) => { onUpdate = cb; return () => {}; } }),
+    }),
+  );
+  const cache = "/run/u/agmux/statusline";
+  await Bun.sleep(0);
+  onUpdate!([row]);
+  expect(files[cache]).toContain("▌");
+  tmux = { chip: "<{name}>" };
+  tick!();
+  await Bun.sleep(0);
+  expect(files[cache]).toContain("<agx-1>");
+  expect(files[cache]).not.toContain("▌");
+  ac.abort();
+  await p;
 });
