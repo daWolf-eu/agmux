@@ -178,7 +178,8 @@ when you answer it. A `done` session becomes `idle` when you reach its pane by a
 route (prefix keys, mouse, choose-tree, or the terminal regaining focus — via the
 `pane-focus-in` hook `agmux.tmux` installs), when the turn ends while a focused
 client is already showing that pane, when you type the next prompt, when you
-attach, press `u` on its row in `dash`, or run `agmux seen`. It becomes `done`
+attach, press `u` on its row in `dash`, click its status-line chip, or run
+`agmux seen`. It becomes `done`
 again on the next `turn.ended`. See [Attention signals](#attention-signals).
 
 The glyphs are fixed for now — themes and per-status customisation are not yet
@@ -265,11 +266,13 @@ suppress_when_visible = true
 
 [statusline]
 enabled  = false
-position = "status2"       # status2 | status-right | off
-show     = "all"           # all | attention (waiting + done) | done | waiting
-                            # ("unread" is still accepted as an alias of "done")
+position = "status2"       # status2 | inline | status-right | off
+show     = "working"       # working (waiting + done + running) | all (+ idle) |
+                            # attention (waiting + done) | done | waiting
+                            # ("unread" is still accepted as an alias of "done");
+                            # the ▽ chip overrides it at runtime
 max      = 6               # max sessions rendered
-format   = "{glyph} {tmux_session}:{tmux_pane}"
+format   = "{glyph} {name}" # chip body; placeholders below
 sort     = "activity"      # started | activity
 ```
 
@@ -316,15 +319,85 @@ Notes:
   `[statusline] enabled = true` in `config.toml`, or `set -g @agmux-statusline on`
   in tmux.
 
+### Status line chips
+
+Each session is a chip in the dash's selected-row look: a `▌` bar in the status
+colour on a dark highlight, then the `format` body.
+
+```
+▌? fix-auth-flow  ▌● port-statusline  ▌⠋ bump-deps  +2   ▽ ?●⠋
+```
+
+- **Left-click** a chip: switch to its pane and mark it seen (`agmux attach`).
+- **Right-click** a chip: mark it seen, stay where you are.
+- **`▽` filter chip** (always last; its glyphs show what is shown): left-click
+  cycles `working` (`?●⠋`) › `all` (`?●⠋○`) › `attention` (`?●`) › `waiting` (`?`)
+  and wraps; right-click steps back. The choice is saved next to the cache file
+  (`statusline.show`) and overrides `[statusline] show` until changed again.
+- Clicks anywhere else (the window list, empty space) keep tmux's own bindings.
+
+`format` placeholders, coloured like the dash columns: `{glyph}`, `{name}` (the
+short id when unnamed) and `{status}` in the status colour, `{branch}` pink,
+`{agent_kind}` and `{last_tool}` secondary, `{repo}`, `{project}`,
+`{tmux_session}`, `{tmux_window}`, `{tmux_pane}` and `{session_id}` faint. A `:`
+or `/` in front of an empty field is dropped with it.
+
+### Placement
+
+| `position` | Where the chips go |
+| --- | --- |
+| `status2` (default) | A second status line (`status 2`, `status-format[1]`), on the same side as your main bar — tmux has one `status-position` for all lines. |
+| `inline` | Nowhere by itself: place `#{E:@agmux-chips}` in your own `status-left` / `status-right`. Click bindings and `status-interval` are still installed. |
+| `status-right` | Replaces `status-right` (also the automatic fallback for `status2` below tmux 3.3). |
+| `off` | Nothing installed, no click bindings. |
+
+`inline` next to a theme that builds `status-right` at TPM load (catppuccin and
+co.): prepend the chips after the `run '~/.tmux/plugins/tpm/tpm'` line. `##{` keeps
+the chips reference unexpanded, `#{status-right}` copies what the theme built:
+
+```tmux
+set -g @agmux-statusline-position inline
+set -g status-right-length 200      # tmux's default (40) cuts the chips off
+run '~/.tmux/plugins/tpm/tpm'
+set -gF status-right "##{E:@agmux-chips} #{status-right}"
+# or replace the theme's right side: set -g status-right "#{E:@agmux-chips}"
+```
+
+### Styling
+
+The look is a set of tmux style templates. Set them in `tmux.conf`, next to the
+theme they have to match (tmux options win), or under `[statusline]` in
+`config.toml`. `notifyd` re-reads the tmux options every second, so a
+`source-file` restyles the line without a restart. Click ranges are added around
+each chip by agmux; templates never deal with them.
+
+| tmux option | `config.toml` | Default | Placeholders |
+| --- | --- | --- | --- |
+| `@agmux-statusline-chip` | `chip` | `#[bg=#313244,fg={color}]▌{body} #[default]` | `{color}` status colour, `{body}` the `format` (role-coloured), any `format` field as plain text (`{glyph}`, `{name}`, …) |
+| `@agmux-statusline-overflow` | `overflow` | `#[bg=#313244,fg=#6c7086] +{count} #[default]` | `{count}` |
+| `@agmux-statusline-filter` | `filter` | `#[bg=#313244,fg=#7f849c] ▽ {glyphs} #[default]` | `{glyphs}` shown statuses' glyphs in their colours, `{mode}` |
+| `@agmux-statusline-separator` | `separator` | one space | — |
+| `@agmux-statusline-format` | `format` | `{glyph} {name}` | the fields above |
+| `@agmux-statusline-color-{waiting,done,running,idle}` | `[statusline.colors]` `waiting` … | yellow, green, lavender, grey | — |
+
+`#{…}` in a template is left alone, but tmux does not expand formats in the
+cache file's output, so only `#[…]` styles take effect. Example — rounded pills
+(needs a Nerd Font) with the colour on the glyph only:
+
+```tmux
+set -g @agmux-statusline-chip '#[fg=#313244]#[bg=#313244,fg={color}]{glyph} #[fg=#cdd6f4]{name}#[bg=default,fg=#313244]#[default]'
+set -g @agmux-statusline-color-waiting '#fab387'
+```
+
 `agmux.tmux` options for the status line and mark-read key (set before the `run` line,
 alongside the options in [tmux plugin (TPM)](#tmux-plugin-tpm) below):
 
 | Option                       | Default   | Meaning                                                      |
 | ---------------------------- | --------- | -------------------------------------------------------------|
 | `@agmux-statusline`          | `[statusline].enabled` from `config.toml` (default `false`) | `on`/`off` overrides config.toml; opt-in, changes your status bar |
-| `@agmux-statusline-position` | `[statusline].position` from `config.toml` (default `status2`) | `status2` or `status-right`; overrides config.toml |
+| `@agmux-statusline-position` | `[statusline].position` from `config.toml` (default `status2`) | `status2`, `inline`, `status-right` or `off` (see [Placement](#placement)); overrides config.toml |
 | `@agmux-statusline-interval` | `2`       | sets tmux's `status-interval`                                |
-| `@agmux-statusline-mouse`    | `on`      | click a status-line entry to attach; opt-out because it installs a root-table `MouseDown1Status` binding |
+| `@agmux-statusline-mouse`    | `on`      | clickable chips (see above); wraps the root-table `MouseDown1Status` / `MouseDown3Status` bindings, remembering the originals in `@agmux-orig-*` for clicks outside the chips |
 | `@agmux-mark-read-key`       | `u`       | prefix key that marks the session owning the current pane seen (`agmux seen --pane`) |
 | `@agmux-seen-on-focus`       | `on`      | a pane gaining focus marks its `done` session seen (installs a `pane-focus-in[99]` hook and turns on `focus-events`) |
 

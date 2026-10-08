@@ -11,6 +11,16 @@
 - Height budget in `DashApp`: header + spacer + footer spacer + footer = 4 rows; `PreviewPane.viewportHeight` must stay explicit (flex alone lets the scrollbox push the footer off-screen).
 - Rows are one `<text>` of `<span>`s each (sibling `<text>` flex items trim boundary spaces and break alignment). Use `wrapMode="none"`.
 
+## tmux status line (`shared/statusline.ts`)
+
+- One chip per session: `#[range=user|<token>]` + `#[bg=surface0]` + `▌` in the status colour + the `format` body + one padding cell. Same look as the dash's selected row; field colours reuse the column roles (`FIELD_STYLE`), but the name is not bold (nothing competes with it).
+- **Click tokens.** `chipToken(id)` = `CHIP_MARK` (`@`) + 14-char id prefix (tmux caps `range=user|X` at 15 bytes); `FILTER_TOKEN` (`@filter`) is the `▽` chip. `parseChipToken` is the inverse.
+- **Filter.** `SHOW_TONES` defines each `ShowMode`; `SHOW_CYCLE` / `nextShow` is what the `▽` chip steps through. The chosen mode lives in `<cache>.show` (`cli/src/statusline-cache.ts`), read on every render by `notifyd` and `agmux statusline`; `cycleShowCmd` writes it and repaints the cache itself because notifyd only renders on row changes.
+- **Click path.** `agmux.tmux` wraps `MouseDown1Status` / `MouseDown3Status` in `if-shell -F '#{m:@*,#{mouse_status_range}}'`: ours → `agmux statusline --click <left|right> <token>` (`cli/src/statusline-click.ts`); anything else → the original binding, saved once in `@agmux-orig-<key>`. Changing `CHIP_MARK` means changing that pattern too.
+- **Style.** Everything visual is a template in `StatusLineStyle` (`DEFAULT_STYLE` = the look above); `fill()` substitutes `{key}` and skips tmux `#{…}`. Ranges are added outside the template. Sources and precedence (tmux `@agmux-statusline-*` > `config.toml` > default) live in `cli/src/statusline-style.ts`; a new template key needs an entry in `TMUX_STYLE_OPTIONS`, `lineStyle()` (config parsing) and the README styling table.
+- **Placement** is `agmux.tmux`'s job: it sets `@agmux-chips` (`#(cat <cache>)`) and points `status-format[1]` / `status-right` at `#{E:@agmux-chips}`, or (`inline`) leaves that to the user.
+- Agent-reported text goes through `escapeStyles` (`#[` → `##[`) — names must never open a tmux style.
+
 ## Table columns (`shared/columns.ts`)
 
 `COLUMNS` is the registry; `[dash] columns` (validated in `cli/src/parse-dash.ts` against `COLUMN_KEYS`) picks and orders them, default `DEFAULT_COLUMNS`. Sorting (`shared/sort.ts`) cycles through the visible columns; last-seen newest-first is always the tie-break.

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { statuslineCmd, type StatuslineCmdDeps } from "../src/statusline-cmd.ts";
+import { statuslineCmd, cycleShowCmd, type StatuslineCmdDeps } from "../src/statusline-cmd.ts";
 import { loadAttentionConfig } from "../src/attention-config.ts";
 
 function deps(over: Partial<StatuslineCmdDeps> = {}): StatuslineCmdDeps {
@@ -26,7 +26,8 @@ test("prints the rendered line to stdout", async () => {
   let printed = "";
   const code = await statuslineCmd({ hubUrl: "http://127.0.0.1:1" }, deps({ out: (s) => { printed = s; } }));
   expect(code).toBe(0);
-  expect(printed).toContain("⠋ work:%7");
+  expect(printed).toContain("⠋");
+  expect(printed).toContain("range=user|@agx-1");
 });
 
 test("a hub error prints a dim marker and still exits 0", async () => {
@@ -102,4 +103,54 @@ test("--check prints a stale marker when the heartbeat is missing or old", async
   );
   expect(code).toBe(0);
   expect(printed).toContain("stale");
+});
+
+// In-memory cache dir: the show override and the rendered line.
+function memFiles(init: Record<string, string> = {}) {
+  const files: Record<string, string> = { ...init };
+  return {
+    files,
+    readFile: (p: string) => files[p] ?? null,
+    fs: { mkdir: () => {}, write: (f: string, t: string) => { files[f] = t; }, rename: (a: string, b: string) => { files[b] = files[a]!; delete files[a]; } },
+  };
+}
+const CACHE = "/run/u/agmux/statusline";
+
+test("the saved filter mode overrides [statusline] show", async () => {
+  const mem = memFiles({ [`${CACHE}.show`]: "waiting\n" });
+  let printed = "";
+  await statuslineCmd({ hubUrl: "http://h" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, out: (s) => { printed = s; } }));
+  expect(printed).not.toContain("range=user|@agx-1"); // the running session is filtered out
+  expect(printed).toContain("▽");
+});
+
+test("an unknown saved mode falls back to the config", async () => {
+  const mem = memFiles({ [`${CACHE}.show`]: "bogus" });
+  let printed = "";
+  await statuslineCmd({ hubUrl: "http://h" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, out: (s) => { printed = s; } }));
+  expect(printed).toContain("range=user|@agx-1");
+});
+
+test("cycleShowCmd saves the next mode and repaints the cache with it", async () => {
+  const mem = memFiles();
+  const d = deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, fs: mem.fs });
+  expect(await cycleShowCmd(1, { hubUrl: "http://h" }, d)).toBe(0); // working → all
+  expect(mem.files[`${CACHE}.show`]).toBe("all");
+  expect(mem.files[CACHE]).toContain("range=user|@agx-1");
+  await cycleShowCmd(1, { hubUrl: "http://h" }, d); // all → attention: the running session goes
+  expect(mem.files[`${CACHE}.show`]).toBe("attention");
+  expect(mem.files[CACHE]).not.toContain("range=user|@agx-1");
+  await cycleShowCmd(-1, { hubUrl: "http://h" }, d);
+  expect(mem.files[`${CACHE}.show`]).toBe("all");
+});
+
+test("cycleShowCmd still saves the mode when the hub is down", async () => {
+  const mem = memFiles();
+  const d = deps({
+    env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, fs: mem.fs,
+    fetchImpl: (async () => { throw new Error("refused"); }) as unknown as typeof fetch,
+  });
+  expect(await cycleShowCmd(1, { hubUrl: "http://h" }, d)).toBe(0);
+  expect(mem.files[`${CACHE}.show`]).toBe("all");
+  expect(mem.files[CACHE]).toBeUndefined();
 });

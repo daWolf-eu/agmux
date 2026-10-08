@@ -60,6 +60,24 @@ The single source of truth for the running version is
 - dash: default sort is by status (`waiting` › `done` › `running` › idle/closed),
   newest first within each; `s` cycles through the visible columns, with last seen
   as the tie-break.
+- tmux status line: sessions render as chips (status-coloured `▌` bar on the
+  surface0 highlight, fields in the dash's colour roles). Left-click switches to
+  the pane and marks it seen, right-click only marks it seen. A trailing `▽`
+  filter chip cycles `show` (`working` › `all` › `attention` › `waiting`;
+  right-click backwards), saved across renders. Clicks outside the chips keep
+  the original tmux bindings (window list, right-click menu). New placeholders
+  `{name}`, `{repo}`, `{branch}`; default `format` is now `"{glyph} {name}"`.
+- tmux status line `position = "inline"`: installs clicks and `@agmux-chips`
+  (`#{E:@agmux-chips}`), leaves placement in your own `status-left/right`.
+  `status2` and `status-right` now reference `@agmux-chips` too.
+- tmux status line styling: chip, overflow and filter templates, separator,
+  `format` and per-status colours, from `@agmux-statusline-*` tmux options
+  (re-read by notifyd every tick) or `[statusline]` / `[statusline.colors]` in
+  `config.toml`.
+- `[statusline] show` gains `working` (waiting + done + running), the new
+  default (was `all`).
+- `agmux seen` resolves id prefixes against open sessions; `--all` marks every
+  `done` session seen.
 
 ### Fixed
 - `agmux dash`, `agmux watch` and `agmux notifyd` did not survive a hub restart.

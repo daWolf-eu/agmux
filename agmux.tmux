@@ -10,6 +10,9 @@
 #   @agmux-dash-args     extra args appended to `agmux dash --popup`
 #   @agmux-mark-read-key key under the prefix table that marks the session
 #                        owning the current pane seen (default: u)
+#   @agmux-statusline-position status2|inline|status-right|off — inline sets
+#                        @agmux-chips only; place #{E:@agmux-chips} yourself.
+#                        Styling: @agmux-statusline-* (see README "Styling").
 #   @agmux-seen-on-focus on|off — a pane gaining focus (any route: prefix keys,
 #                        mouse, choose-tree, terminal focus) marks the session
 #                        it hosts seen, turning `done` into `idle` (default: on).
@@ -66,6 +69,7 @@ agmux_tmux_statusline_target() {
   local requested="${1:-status2}" version="${2:-}"
   case "$requested" in
     off) printf 'off'; return ;;
+    inline) printf 'inline'; return ;;
     status-right) printf 'status-right'; return ;;
   esac
   if [ "$(agmux_tmux_supports_status2 "$version")" = "yes" ]; then printf 'status2'; else printf 'status-right'; fi
@@ -87,17 +91,53 @@ agmux_tmux_install_statusline() {
     tmux display-message "agmux: tmux $(tmux -V) has no multi-line status; using status-right"
   fi
   tmux set-option -g status-interval "$interval"
+  # The line, for any status format: `#{E:@agmux-chips}`. `inline` stops here
+  # and leaves placing it to the user's own status-left/right.
+  tmux set-option -g @agmux-chips "#(cat '$cache' 2>/dev/null)"
   if [ "$target" = "status2" ]; then
     tmux set-option -g status 2
-    tmux set-option -g 'status-format[1]' "#(cat '$cache' 2>/dev/null)"
-  else
-    tmux set-option -g status-right "#(cat '$cache' 2>/dev/null)"
+    tmux set-option -g 'status-format[1]' "#{E:@agmux-chips}"
+  elif [ "$target" = "status-right" ]; then
+    tmux set-option -g status-right "#{E:@agmux-chips}"
   fi
   if [ "$mouse" = "on" ]; then
-    # An empty mouse_status_range means the click landed outside every range —
-    # no-op rather than attaching to something arbitrary.
-    tmux bind-key -T root MouseDown1Status run-shell \
-      "if [ -n '#{mouse_status_range}' ]; then '$bin' attach '#{mouse_status_range}'; fi"
+    agmux_tmux_bind_click "$bin" MouseDown1Status left
+    agmux_tmux_bind_click "$bin" MouseDown3Status right
+  fi
+}
+
+# The command a root-table mouse key ran before we took it over, so a click
+# outside our chips (the window list, tmux's right-click menu) keeps doing what
+# it did. Remembered in @agmux-orig-<key> the first time, so re-sourcing the
+# plugin never wraps our own binding. A binding from an older agmux (it read
+# #{mouse_status_range} unconditionally, on MouseDown1Status only) is replaced
+# by tmux's built-in default for that key.
+agmux_tmux_orig_binding() {
+  local key="$1" opt="@agmux-orig-$1" orig
+  orig="$(tmux show-option -gqv "$opt")"
+  if [ -z "$orig" ]; then
+    orig="$(tmux list-keys -T root "$key" 2>/dev/null | head -n 1 \
+      | sed -E "s/^bind-key +(-r +)?-T +root +$key +//" || true)"
+    case "$orig" in *mouse_status_range*)
+      if [ "$key" = "MouseDown1Status" ]; then orig="switch-client -t ="; else orig=""; fi ;;
+    esac
+    if [ -n "$orig" ]; then tmux set-option -g "$opt" "$orig"; fi
+  fi
+  printf '%s' "$orig"
+}
+
+# Chips are `range=user|@…` (see tui/src/shared/statusline.ts): a click on one
+# goes to `agmux statusline --click`, in the background so tmux never waits on
+# Bun, then repaints the clicking client's status line (the filter chip changes
+# it at once); any other click runs the original binding.
+agmux_tmux_bind_click() {
+  local bin="$1" key="$2" button="$3" orig ours
+  orig="$(agmux_tmux_orig_binding "$key")"
+  ours="run-shell -b \"'$bin' statusline --click $button '#{mouse_status_range}'; tmux refresh-client -S -t '#{client_name}'\""
+  if [ -n "$orig" ]; then
+    tmux bind-key -T root "$key" if-shell -F '#{m:@*,#{mouse_status_range}}' "$ours" "$orig"
+  else
+    tmux bind-key -T root "$key" if-shell -F '#{m:@*,#{mouse_status_range}}' "$ours"
   fi
 }
 
