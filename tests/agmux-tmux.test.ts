@@ -320,7 +320,10 @@ test("status-line clicks on @ chips go to `statusline --click`; other clicks kee
     expect(left).toContain("if-shell -F \"#{m:@*,#{mouse_status_range}}\"");
     expect(left).toContain("run-shell -b \\\"'/opt/my bin/agmux' statusline --click left '#{mouse_status_range}';");
     expect(left).toContain("tmux refresh-client -S -t '#{client_name}'");
-    expect(left).toMatch(/"switch-client -t ="$/);
+    // The else branch is whatever this tmux version binds by default.
+    const dflt = (await callFn("agmux_tmux_default_binding", ["MouseDown1Status"])).replace(/"/g, '\\"');
+    expect(dflt).toMatch(/^(switch-client|select-window) -t =$/);
+    expect(left.endsWith(`"${dflt}"`)).toBe(true);
     expect(left.match(/statusline --click/g)?.length).toBe(1);
 
     const right = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown3Status"]);
@@ -357,7 +360,8 @@ test("an old agmux MouseDown1Status binding falls back to tmux's default, not to
       agmux_tmux_install_statusline "agmux" "status2" "2" "on" "3.6a"
     `);
     const left = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"]);
-    expect(left).toMatch(/"switch-client -t ="$/);
+    const dflt = await callFn("agmux_tmux_default_binding", ["MouseDown1Status"]);
+    expect(left.endsWith(`"${dflt}"`)).toBe(true);
     expect(left).not.toContain("attach");
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
@@ -377,6 +381,27 @@ test("inline sets @agmux-chips and the click bindings but leaves the status bar 
     expect(await tmuxCmd(socket, ["show-option", "-gv", "status"])).toBe("on");
     expect(await tmuxCmd(socket, ["show-option", "-gv", "status-right"])).toBe("mine");
     expect(await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"])).toContain("statusline --click left");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+  }
+});
+
+test("unbound status mouse keys don't abort the plugin under set -e", async () => {
+  const socket = `agmux-test-click-unbound-${Date.now()}-${Math.random()}`;
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxCmd(socket, ["unbind-key", "-T", "root", "MouseDown1Status"]);
+    await tmuxCmd(socket, ["unbind-key", "-T", "root", "MouseDown3Status"]);
+    await tmuxRunShell(socket, `
+      set -euo pipefail
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline "agmux" "inline" "2" "on" "3.6a"
+      tmux set-option -g @agmux-test-done yes
+    `);
+    expect(await tmuxCmd(socket, ["show-option", "-gv", "@agmux-test-done"])).toBe("yes");
+    const left = await tmuxCmd(socket, ["list-keys", "-T", "root", "MouseDown1Status"]);
+    expect(left).toContain("statusline --click left");
+    expect(left.endsWith("'#{client_name}'\\\"\"")).toBe(true); // no else branch
   } finally {
     await tmuxCmd(socket, ["kill-server"]);
   }
