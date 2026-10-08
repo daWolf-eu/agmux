@@ -116,14 +116,25 @@ agmux_tmux_orig_binding() {
   local key="$1" opt="@agmux-orig-$1" orig
   orig="$(tmux show-option -gqv "$opt")"
   if [ -z "$orig" ]; then
-    orig="$(tmux list-keys -T root "$key" 2>/dev/null | head -n 1 \
-      | sed -E "s/^bind-key +(-r +)?-T +root +$key +//" || true)"
-    case "$orig" in *mouse_status_range*)
-      if [ "$key" = "MouseDown1Status" ]; then orig="switch-client -t ="; else orig=""; fi ;;
-    esac
+    orig="$(tmux list-keys -T root "$key" 2>/dev/null | agmux_tmux_binding_cmd "$key" || true)"
+    case "$orig" in *mouse_status_range*) orig="$(agmux_tmux_default_binding "$key" || true)" ;; esac
     if [ -n "$orig" ]; then tmux set-option -g "$opt" "$orig"; fi
   fi
   printf '%s' "$orig"
+}
+
+# `bind-key -T root <key> <command>` lines on stdin → the command. Callers
+# guard with `|| true`: under pipefail an unbound key fails the pipeline.
+agmux_tmux_binding_cmd() {
+  head -n 1 | sed -E "s/^bind-key +(-r +)?-T +root +$1 +//"
+}
+
+# tmux's own default for a root-table key, which differs between versions
+# (`select-window -t =` vs `switch-client -t =`): asked of a throwaway server
+# started without any config, which exits again right away.
+agmux_tmux_default_binding() {
+  tmux -L "agmux-defaults-$$" -f /dev/null start-server \; list-keys -T root "$1" 2>/dev/null \
+    | agmux_tmux_binding_cmd "$1"
 }
 
 # Chips are `range=user|@…` (see tui/src/shared/statusline.ts): a click on one
