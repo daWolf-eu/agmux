@@ -11,3 +11,11 @@ test("yesterday at exactly 1 day", () => { expect(relTime("2026-06-19T12:00:00.0
 test("days under a week", () => { expect(relTime("2026-06-17T12:00:00.000Z", NOW)).toBe("3d"); });
 test("falls back to YYYY-MM-DD beyond a week", () => { expect(relTime("2026-06-02T12:00:00.000Z", NOW)).toBe("2026-06-02"); });
 test("invalid input → dash", () => { expect(relTime("not-a-date", NOW)).toBe("-"); });
+
+test("ageColor fades at 1m / 1h / 1d / 1w", async () => {
+  const { ageColor } = await import("../../src/shared/reltime.ts");
+  const { MOCHA } = await import("../../src/shared/palette.ts");
+  const at = (ms: number) => new Date(NOW - ms).toISOString();
+  const colors = [at(59_000), at(60_000), at(3_600_000), at(86_400_000), at(7 * 86_400_000)].map((t) => ageColor(t, NOW));
+  expect(colors).toEqual([MOCHA.lavender, MOCHA.text, MOCHA.overlay1, MOCHA.surface2, MOCHA.surface1]);
+});

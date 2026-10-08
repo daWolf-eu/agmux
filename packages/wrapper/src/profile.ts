@@ -129,6 +129,10 @@ export interface DashConfig {
   status?: string;   // group alias or comma-separated statuses (pre-validated)
   sort?: "started" | "activity";
   groups?: Partial<Record<DashGroupKey, DashGroupConfig>>;
+  // Visible table columns, in order. Only the shape is checked here; the
+  // column names belong to @agmux/tui and are validated by `agmux dash`.
+  columns?: string[];
+  header?: boolean; // show the column-title row
 }
 
 function parseDashGroup(label: string, raw: unknown): DashGroupConfig {
@@ -184,6 +188,15 @@ export function parseDashSection(raw: unknown): DashConfig {
     if (r.sort !== "started" && r.sort !== "activity")
       throw new Error(`[dash] sort must be 'started' or 'activity', got ${JSON.stringify(r.sort)}`);
     out.sort = r.sort;
+  }
+  if (r.columns !== undefined) {
+    if (!Array.isArray(r.columns) || r.columns.length === 0 || !r.columns.every((c) => typeof c === "string" && c.length > 0))
+      throw new Error(`[dash] columns must be a non-empty array of column names, got ${JSON.stringify(r.columns)}`);
+    out.columns = r.columns as string[];
+  }
+  if (r.header !== undefined) {
+    if (typeof r.header !== "boolean") throw new Error(`[dash] header must be a boolean, got ${JSON.stringify(r.header)}`);
+    out.header = r.header;
   }
   return out;
 }

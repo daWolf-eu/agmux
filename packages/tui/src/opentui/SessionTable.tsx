@@ -1,58 +1,86 @@
 /** @jsxImportSource @opentui/react */
 import { useEffect, useMemo, useRef } from "react";
+import { TextAttributes } from "@opentui/core";
 import type { SessionRow } from "@agmux/protocol";
-import { COLS, columnWidths, pad, rowCells, type RowCells } from "../shared/columns.ts";
+import {
+  COLUMNS, columnWidths, gapAfter, fitCell, fitWidths, rowCells,
+  type ColumnKey, type ColumnStyle, type RowCells,
+} from "../shared/columns.ts";
 import { statusGlyph } from "../shared/glyph.ts";
-import type { SortKey } from "../shared/sort.ts";
+import { ageColor } from "../shared/reltime.ts";
+import { MOCHA, FAINT_SCROLLBAR } from "../shared/palette.ts";
+import { sortDirection, type SortKey } from "../shared/sort.ts";
 
 // Each row is ONE <text> built from colored <span> segments. A single text buffer
 // preserves all whitespace exactly (OpenTUI trims lone spaces at the boundary
 // *between* sibling <text> flex items, which would misalign columns) — so the
-// gutter, glyph, and every column line up under the header, which is also a
-// single string. Inter-segment gaps live inside each segment's trailing spaces.
-const GAP = "  "; // 2-space column separator, matches the header join
+// gutter and every column line up under the header, which is also a single
+// string. Inter-column gaps ride inside each segment's trailing spaces.
 
-// Prefix = gutter(1)+1 space + glyph(1)+2 spaces = 5 cols. The header's leading
-// pad must equal this so column titles sit above their values.
-const PREFIX = 5;
+// Gutter: `▌` (state-coloured selection bar) or `•` (attached pane), then a space.
+const GUTTER = 2;
+// The scrollbar is drawn over the rightmost cell, so rows never use it.
+const SCROLLBAR = 1;
 
-// Direction marker per sort key (down = newest/priority first, up = a→z). The
-// marker rides inside the existing column gap (or the glyph prefix for "status"),
-// so it never changes a column width — alignment is preserved.
-const ARROW: Record<SortKey, string> = { status: "▾", last: "▾", id: "▴" };
-const H_DIM = "#6c7086";   // inactive header
-const H_HI = "#cdd6f4";    // active sort column header
-const H_MARK = "#f9e2af";  // sort-direction marker
+const SEL_BG = MOCHA.surface0;
+const H_DIM = MOCHA.overlay0;   // inactive header
+const H_HI = MOCHA.text;        // active sort column header
+const H_MARK = MOCHA.yellow;    // sort-direction marker
+
+// On the selection background the two faintest greys vanish; lift them to the
+// faintest one that still reads.
+function onSelection(c: string): string {
+  return c === MOCHA.surface1 || c === MOCHA.surface2 ? MOCHA.overlay0 : c;
+}
+
+function cellColor(style: ColumnStyle, state: string, r: SessionRow, now: number): string {
+  switch (style) {
+    case "state": return state;
+    case "faint": return MOCHA.overlay0;
+    case "accent": return MOCHA.pink;
+    case "sub": return MOCHA.subtext0;
+    case "age": return ageColor(r.last_heartbeat_ts ?? r.start_ts, now);
+  }
+}
+
+interface Seg { t: string; c: string; bold?: boolean }
 
 export function SessionTable(props: {
-  rows: SessionRow[]; selectedId: string | null; attachedId: string | null; now: number; height: number;
+  rows: SessionRow[]; selectedId: string | null; attachedId: string | null; now: number;
+  columns: ColumnKey[]; showHeader: boolean;
+  // Cells available to a row (pane width minus padding); columns shrink to fit.
+  width: number;
+  // Rows available to the table (incl. the header row when shown).
+  height: number;
+  // Spinner frame for running rows.
+  frame: number;
   sortKey: SortKey; onSelect: (id: string) => void;
 }) {
-  const { rows, selectedId, attachedId, now, sortKey } = props;
+  const { rows, selectedId, attachedId, now, columns, showHeader, sortKey, frame } = props;
 
-  const cells = useMemo<RowCells[]>(() => rows.map((r) => rowCells(r, now)), [rows, now]);
-  const widths = useMemo(() => columnWidths(cells), [cells]);
+  const cells = useMemo<RowCells[]>(() => rows.map((r) => rowCells(r, columns, now)), [rows, columns, now]);
+  const widths = useMemo(
+    () => fitWidths(columns, columnWidths(columns, cells, showHeader), props.width - GUTTER - SCROLLBAR),
+    [columns, cells, showHeader, props.width],
+  );
 
   // Header is one <text> of colored spans: the sorted column is highlighted and
-  // carries a direction marker tucked into its gap (no width change).
-  const headerSegs = useMemo<{ t: string; c: string }[]>(() => {
-    const activeCol = sortKey === "status" ? null : sortKey; // "id" | "last" | null
-    const segs: { t: string; c: string }[] = [];
-    if (sortKey === "status") segs.push({ t: "  ", c: H_DIM }, { t: ARROW.status, c: H_MARK }, { t: "  ", c: H_DIM });
-    else segs.push({ t: " ".repeat(PREFIX), c: H_DIM });
-    COLS.forEach((c, idx) => {
-      const isActive = c.key === activeCol;
-      segs.push({ t: pad(c.header, widths[c.key], "left"), c: isActive ? H_HI : H_DIM });
-      const isLast = idx === COLS.length - 1;
-      if (!isLast) {
-        if (isActive) segs.push({ t: ARROW[sortKey], c: H_MARK }, { t: " ", c: H_DIM });
-        else segs.push({ t: GAP, c: H_DIM });
-      } else if (isActive) {
-        segs.push({ t: " " + ARROW[sortKey], c: H_MARK });
-      }
+  // carries a direction marker tucked into its trailing gap (no width change).
+  const headerSegs = useMemo<Seg[]>(() => {
+    const segs: Seg[] = [{ t: " ".repeat(GUTTER), c: H_DIM }];
+    const arrow = sortDirection(sortKey) === "desc" ? "▾" : "▴";
+    columns.forEach((k, idx) => {
+      const def = COLUMNS[k];
+      const active = k === sortKey;
+      const gap = gapAfter(columns, idx);
+      // The glyph column is 1 wide with no title: its marker takes the cell itself.
+      if (k === "glyph") segs.push(active ? { t: arrow, c: H_MARK } : { t: " ", c: H_DIM });
+      else segs.push({ t: fitCell(def.header, widths[k] ?? 0, def.align), c: active ? H_HI : H_DIM });
+      if (active && k !== "glyph") segs.push({ t: arrow, c: H_MARK }, { t: gap.slice(1), c: H_DIM });
+      else segs.push({ t: gap, c: H_DIM });
     });
     return segs;
-  }, [widths, sortKey]);
+  }, [columns, widths, sortKey]);
 
   // Keep the selected row visible without moving the viewport more than needed.
   const boxRef = useRef<any>(null);
@@ -64,31 +92,40 @@ export function SessionTable(props: {
 
   return (
     <box style={{ flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
-      <text>{headerSegs.map((s, j) => <span key={j} fg={s.c}>{s.t}</span>)}</text>
-      <scrollbox ref={boxRef} style={{ flexGrow: 1, minHeight: 0 }} scrollY stickyScroll={false}>
+      {showHeader && (
+        <text wrapMode="none">{headerSegs.map((s, j) => <span key={j} fg={s.c}>{s.t}</span>)}</text>
+      )}
+      <scrollbox
+        ref={boxRef} style={{ flexGrow: 1, minHeight: 0 }} scrollY stickyScroll={false}
+        verticalScrollbarOptions={{ ...FAINT_SCROLLBAR, visible: rows.length > props.height - (showHeader ? 1 : 0) }}
+      >
         {rows.map((r, i) => {
-          const g = statusGlyph(r);
+          const g = statusGlyph(r, frame);
           const c = cells[i]!;
           const isSel = r.session_id === selectedId;
           const isAtt = r.session_id === attachedId;
-          const gutter = isSel ? "›" : isAtt ? "•" : " ";
-          const gutterColor = isSel ? "#ffffff" : isAtt ? "#94e2d5" : "#6c7086";
-          // Selected row: columns go bright white over the highlight; the status
-          // glyph keeps its own color (the one bit of color on a selected row).
-          const col = (normal: string) => (isSel ? "#ffffff" : normal);
-          const segs: { t: string; c: string }[] = [
-            { t: `${gutter} `, c: gutterColor },
-            { t: `${g.glyph}${GAP}`, c: g.color },
-            { t: pad(c.id, widths.id, "left") + GAP, c: col("#9399b2") },
-            { t: pad(c.tmux, widths.tmux, "left") + GAP, c: col("#89b4fa") },
-            { t: pad(c.agent, widths.agent, "left") + GAP, c: col("#cdd6f4") },
-            { t: pad(c.profile, widths.profile, "left") + GAP, c: col("#cdd6f4") },
-            { t: pad(c.turns, widths.turns, "right") + GAP, c: col("#cdd6f4") },
-            { t: pad(c.last, widths.last, "right"), c: col("#cdd6f4") },
-          ];
+          const gutter: Seg = isSel
+            ? { t: "▌ ", c: g.color }
+            : { t: isAtt ? "• " : "  ", c: MOCHA.teal };
+          const segs: Seg[] = [gutter];
+          columns.forEach((k, idx) => {
+            const def = COLUMNS[k];
+            const gap = gapAfter(columns, idx);
+            const raw = k === "glyph" ? g.glyph : (c[k] ?? "");
+            const color = cellColor(def.style, g.color, r, now);
+            segs.push({
+              t: fitCell(raw, widths[k] ?? 0, def.align, def.shorten) + gap,
+              c: isSel ? onSelection(color) : color,
+              bold: k === "name",
+            });
+          });
           return (
-            <box key={r.session_id} id={`row-${r.session_id}`} onMouseDown={() => props.onSelect(r.session_id)} style={{ backgroundColor: isSel ? "#313244" : undefined }}>
-              <text>{segs.map((s, j) => <span key={j} fg={s.c}>{s.t}</span>)}</text>
+            <box key={r.session_id} id={`row-${r.session_id}`} onMouseDown={() => props.onSelect(r.session_id)} style={{ backgroundColor: isSel ? SEL_BG : undefined }}>
+              <text wrapMode="none">
+                {segs.map((s, j) => (
+                  <span key={j} fg={s.c} attributes={s.bold ? TextAttributes.BOLD : undefined}>{s.t}</span>
+                ))}
+              </text>
             </box>
           );
         })}

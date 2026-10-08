@@ -96,3 +96,22 @@ test("a defaulted limit does not count as explicit", () => {
   const p = parseDashArgs([], {});
   expect(p.kind === "ok" && p.opts.groups.closed.limit).toBe(1000);
 });
+
+test("columns default to glyph,name,repo,branch,last_seen with the header row off", () => {
+  const p = parseDashArgs([], {});
+  expect(p.kind === "ok" && p.opts.columns).toEqual(["glyph", "name", "repo", "branch", "last_seen"]);
+  expect(p.kind === "ok" && p.opts.header).toBe(false);
+});
+
+test("[dash] columns and header are taken from config", () => {
+  const p = parseDashArgs([], { columns: ["name", "agent", "turns"], header: true });
+  expect(p.kind === "ok" && p.opts.columns).toEqual(["name", "agent", "turns"]);
+  expect(p.kind === "ok" && p.opts.header).toBe(true);
+});
+
+test("unknown or duplicate [dash] columns are rejected with the known list", () => {
+  const bad = parseDashArgs([], { columns: ["name", "nope"] });
+  expect(bad.kind === "error" && bad.message).toMatch(/unknown \[dash\] columns "nope" \(known: glyph, name/);
+  const dup = parseDashArgs([], { columns: ["name", "name"] });
+  expect(dup.kind === "error" && dup.message).toMatch(/duplicate \[dash\] column "name"/);
+});

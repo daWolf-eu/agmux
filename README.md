@@ -115,10 +115,25 @@ reverse = true      # newest at the bottom
 status = "open"     # active | open | closed | comma-separated statuses
 ```
 
-`dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `/` filter · `tab` preview tab ·
+`dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `f` filter · `/` search · `tab` preview tab ·
 `p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field ·
-`u` mark read · `?` help · `q` quit.
-Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `limit`, `status`, `sort`.
+`u` mark read · `?` help · `q` quit. The footer lists the everyday ones; `?` has all.
+
+Rows sort by status by default — `waiting` › `done` › `running` › `idle`/closed, newest
+first within each — and `s` cycles the sort through the visible columns (text columns
+a→z); last-seen, newest first, always breaks ties.
+
+Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `limit`,
+`status`, `sort`, `columns`, `header`.
+
+`columns` picks the table columns and their order (default
+`["glyph", "name", "repo", "branch", "last_seen"]`); available: `glyph`, `name`, `repo`,
+`branch`, `last_seen`, `id`, `agent`, `profile`, `tmux`, `turns`, `activity`, `project`.
+`header = true` shows the column-title row (default off). Columns are content-sized and
+squeezed to fit the pane (activity/tmux/project/profile first, then branch, repo, name).
+A squeezed branch keeps its name over its prefix: `feature/`, `feat/`, `bugfix/`, `bug/`,
+`chore/` and `hotfix/` collapse to their initial (`feature/long_branch_name` → `f…/long_bra…`),
+and at least 8 characters of the name stay visible.
 
 Each activity group (`f` cycles `open` → `closed` → `all`) runs its own hub query, so
 `open` can stay cheap and fast while the terminal-heavy groups reach far back. Defaults:
@@ -130,6 +145,8 @@ line override every group:
 [dash]
 interval = 1
 limit = 50
+columns = ["glyph", "name", "repo", "branch", "last_seen"]
+header = false
 
 [dash.closed]
 limit = 2000
@@ -142,20 +159,19 @@ Run it inside tmux so `⏎` switches you to the agent's window while dash stays 
 
 `agmux dash` and the tmux status line share one glyph. Whether you have seen a
 session is part of its status: a finished turn you haven't looked at is `done`;
-once seen it is `idle`.
+once seen it is `idle`. Colour says what you have to do; red is kept for errors.
 
-| Colour | Status |
-| --- | --- |
-| green | `running` |
-| amber | `waiting` (blocked on you: a permission, a question, an input prompt) |
-| grey | `done` (finished, not yet seen) and `idle` (seen, or nothing happened yet) |
-| red | `ended` non-zero or on a signal |
-| dim grey | `ended` cleanly, or `lost` |
+| Glyph | Colour | Status |
+| --- | --- | --- |
+| `?` | yellow | `waiting` (blocked on you: a permission, a question, an input prompt) |
+| `●` | green | `done` (finished, not yet seen) |
+| `⠋` | lavender | `running` — a braille spinner, animated in `dash` |
+| `○` | grey | `idle` (seen, or nothing happened yet) |
+| `·` | dim grey | `ended` cleanly, or `lost` |
+| `·` | red | `ended` non-zero or on a signal |
 
-| Shape | Meaning |
-| --- | --- |
-| `●` solid | `done` — finished and you haven't seen it yet |
-| `○` outlined | everything else |
+In `dash` the session name and the selection bar (`▌`) take the status colour too, and
+the last-seen age fades as it gets older (under a minute, hour, day, week, older).
 
 `waiting` has no seen/unseen split: it needs an answer, not a look, and clears
 when you answer it. A `done` session becomes `idle` when you reach its pane by any
