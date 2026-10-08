@@ -12,6 +12,7 @@ const groups = {
 const opts: DashOpts & { hubUrl: string; wrapBin: string } = {
   limit: 50, sort: "started", asc: false, reverse: false, status: "open", groups,
   intervalMs: 1000, preview: "detail", popup: false, hubUrl: "http://h", wrapBin: "agmux-wrap",
+  columns: ["glyph", "name", "last_seen"], header: true,
 };
 
 test("non-TTY returns 2 and prints a hint", async () => {
@@ -94,4 +95,17 @@ test("dash maps --status closed to the closed initial group", async () => {
   );
   expect(captured.initialGroup).toBe("closed");
   expect(initialGroup("closed")).toBe("closed"); // sanity: re-export reachable from cli
+});
+
+test("TTY path forwards the column layout to runManage", async () => {
+  let seen: { columns?: string[]; showHeader?: boolean } = {};
+  const deps: DashCmdDeps = {
+    isTTY: () => true,
+    runManageImpl: async (o) => { seen = { columns: o.columns, showHeader: o.showHeader }; return 0; },
+    makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
+    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return { argv: [] }; }, async copy() {}, async markSeen() {} }),
+    errOut: () => {},
+  };
+  await dashCmd(opts, deps);
+  expect(seen).toEqual({ columns: ["glyph", "name", "last_seen"], showHeader: true });
 });

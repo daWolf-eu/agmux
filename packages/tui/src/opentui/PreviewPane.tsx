@@ -3,6 +3,9 @@ import type { SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
 import { tmuxTarget } from "../shared/yank.ts";
+import { MOCHA, FAINT_SCROLLBAR } from "../shared/palette.ts";
+
+const TABS: PreviewMode[] = ["mirror", "detail"];
 
 function shortHeader(row: SessionRow): string {
   return `${row.session_id.slice(0, 13)} · ${row.agent_kind}${row.profile ? ` · ${row.profile}` : ""}`;
@@ -48,8 +51,8 @@ function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
     <box style={{ flexDirection: "column" }}>
       {fields.map(([k, v], i) => (
         <text key={i}>
-          <span fg="#6c7086">{pad(k, lw, "left")}</span>
-          <span fg="#cdd6f4">{"  " + v}</span>
+          <span fg={MOCHA.overlay0}>{pad(k, lw, "left")}</span>
+          <span fg={MOCHA.text}>{"  " + v}</span>
         </text>
       ))}
     </box>
@@ -57,7 +60,7 @@ function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
 }
 
 function MirrorBody(props: { text: string }) {
-  if (!props.text) return <text fg="#6c7086">no mirror output</text>;
+  if (!props.text) return <text fg={MOCHA.overlay0}>no mirror output</text>;
   // Render the tail; the scrollbox clips to the pane and sticks to newest output.
   const lines = props.text.split("\n").slice(-1000);
   return <text>{lines.join("\n")}</text>;
@@ -66,16 +69,23 @@ function MirrorBody(props: { text: string }) {
 export function PreviewPane(props: {
   row: SessionRow | null; mode: PreviewMode; mirrorText: string; usage: UsageSummary | null;
   // Exact rows available to the scrollable body (terminal height minus the header
-  // bar, footer, panel border, and this pane's header+divider). An EXPLICIT height
+  // bar and its spacer, footer and its spacer, and this pane's tab line + spacer). An EXPLICIT height
   // is required: flex alone (even with minHeight:0) lets the scrollbox grow past
   // its slot when content overflows, which pushed the footer off-screen.
   viewportHeight: number;
 }) {
-  if (!props.row) return <text fg="#6c7086">no selection</text>;
+  if (!props.row) return <text fg={MOCHA.overlay0}>no selection</text>;
+  // No pane title: the tab line names the view (active tab bright, `tab` cycles),
+  // then a blank line instead of a rule.
   return (
     <box style={{ flexDirection: "column", flexGrow: 1, minHeight: 0 }}>
-      <text fg="#6c7086">{shortHeader(props.row)}</text>
-      <text fg="#45475a">{"─".repeat(20)}</text>
+      <text wrapMode="none">
+        {TABS.map((t) => (
+          <span key={t} fg={t === props.mode ? MOCHA.text : MOCHA.surface2}>{`${t}  `}</span>
+        ))}
+        <span fg={MOCHA.overlay0}>{` ${shortHeader(props.row)}`}</span>
+      </text>
+      <text> </text>
       {/* scrollbox is clamped to viewportHeight → it can never overflow and push
           the footer; mirror sticks to the newest output, detail starts at top. */}
       <scrollbox
@@ -83,6 +93,7 @@ export function PreviewPane(props: {
         scrollY
         stickyScroll={props.mode === "mirror"}
         stickyStart="bottom"
+        verticalScrollbarOptions={FAINT_SCROLLBAR}
       >
         {props.mode === "mirror"
           ? <MirrorBody text={props.mirrorText} />

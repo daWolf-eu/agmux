@@ -1,5 +1,5 @@
 import { DASH_GROUP_KEYS, type DashConfig, type DashGroupKey, type LsConfig } from "@agmux/wrapper";
-import type { PreviewMode } from "@agmux/tui";
+import { COLUMN_KEYS, DEFAULT_COLUMNS, isColumnKey, type ColumnKey, type PreviewMode } from "@agmux/tui";
 import { parseLsArgs, type LsQueryOpts } from "./parse-ls.ts";
 
 // Resolved poll settings for one activity group.
@@ -22,6 +22,8 @@ export interface DashOpts extends LsQueryOpts {
   preview: PreviewMode;
   popup: boolean;
   groups: Record<DashGroupKey, DashGroupOpts>;
+  columns: ColumnKey[];
+  header: boolean;
 }
 
 export type ParsedDash =
@@ -49,6 +51,16 @@ function resolveGroups(
     };
   }
   return out;
+}
+
+function resolveColumns(cfg: DashConfig): { ok: true; columns: ColumnKey[] } | { ok: false; message: string } {
+  if (!cfg.columns) return { ok: true, columns: [...DEFAULT_COLUMNS] };
+  const unknown = cfg.columns.filter((c) => !isColumnKey(c));
+  if (unknown.length > 0)
+    return { ok: false, message: `dash: unknown [dash] columns ${unknown.map((c) => JSON.stringify(c)).join(", ")} (known: ${COLUMN_KEYS.join(", ")})` };
+  const dup = cfg.columns.find((c, i) => cfg.columns!.indexOf(c) !== i);
+  if (dup) return { ok: false, message: `dash: duplicate [dash] column ${JSON.stringify(dup)}` };
+  return { ok: true, columns: cfg.columns as ColumnKey[] };
 }
 
 export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
@@ -85,6 +97,9 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
   if (parsed.kind === "error")
     return { kind: "error", message: parsed.message.replace(/^ls:/, "dash:") };
 
+  const cols = resolveColumns(cfg);
+  if (!cols.ok) return { kind: "error", message: cols.message };
+
   const groups = resolveGroups(cfg, parsed.explicit.limit ? parsed.opts.limit : undefined, intervalSec);
 
   return {
@@ -98,6 +113,8 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
       intervalMs: Math.round((intervalSec ?? cfg.interval ?? 1) * 1000),
       preview: preview ?? cfg.preview ?? "mirror",
       popup,
+      columns: cols.columns,
+      header: cfg.header ?? false,
     },
   };
 }

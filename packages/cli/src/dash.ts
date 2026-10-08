@@ -61,5 +61,7 @@ export async function dashCmd(
     initialGroup: initialGroup(opts.status),
     source: deps.makeSourceImpl(opts.hubUrl),
     actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup),
+    columns: opts.columns,
+    showHeader: opts.header,
   });
 }

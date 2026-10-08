@@ -11,6 +11,11 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
+- dash: `[dash] columns` picks the table columns and their order, `[dash] header`
+  shows the column-title row. New default columns: glyph, name, repo, branch,
+  last seen; header off. Columns are content-sized and squeezed to fit the pane;
+  a squeezed branch collapses a `feature|feat|bugfix|bug|chore|hotfix/` prefix to
+  its initial (`f…/improve-…`) and keeps at least 8 characters of the name.
 - Session metadata: a `session.metadata` event (schema v8, `session_meta`
   projection) carries the session's human-readable `name` and its git facts
   (`git_branch`, `git_repo`, `git_remote`, `git_root`). `agmux emit` collects
@@ -43,14 +48,18 @@ The single source of truth for the running version is
   digit-prefixed popup (autodetects pbcopy/wl-copy/xclip/xsel, OSC 52 fallback).
 
 ### Changed
-- Session glyphs now encode two independent axes: colour is status (green running,
-  amber waiting, grey idle, red errored, dim grey closed/lost) and shape is
-  read-ness (`●` unread, `○` read). This replaces the per-status shapes — `◉`
-  waiting, `✕` errored, and `·` closed are gone, and `closed` was darkened to
-  `#45475a` so it stays distinguishable from `idle` now that only colour
-  separates them. Applies to both surfaces that draw glyphs, `agmux dash` and the
-  tmux status line, and makes the `u` dismiss key visibly do something. Glyphs
-  remain hard-coded; themes and customisation are not yet implemented.
+- dash restyle: no pane borders or titles — whitespace plus a faint vertical rule
+  between table and preview; a `▌` selection bar in the row's status colour; names
+  bold in the status colour, repo faint, branch pink, last-seen fading with age;
+  header summary with per-status glyph counts; `[key] label` footer of everyday keys.
+- Status palette and glyphs (dash and tmux status line): colour says what you have
+  to do, shape repeats the state — `waiting` `?` yellow, `done` (finished, unseen)
+  `●` green, `running` braille spinner lavender (was green), `idle` `○` grey,
+  closed/lost `·` dim, errored `·` red. Replaces the per-status shapes `◉`/`✕`.
+  Glyphs remain hard-coded; themes are not yet implemented.
+- dash: default sort is by status (`waiting` › `done` › `running` › idle/closed),
+  newest first within each; `s` cycles through the visible columns, with last seen
+  as the tie-break.
 
 ### Fixed
 - `agmux dash`, `agmux watch` and `agmux notifyd` did not survive a hub restart.

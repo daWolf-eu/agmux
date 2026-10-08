@@ -9,6 +9,7 @@ import { activePaneId } from "./attached.ts";
 import { tmuxSocketFromEnv } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
+import type { ColumnKey } from "../shared/columns.ts";
 
 // One hub query per activity group: `open` polls a small window fast, the
 // terminal-heavy groups poll a wide window slowly.
@@ -27,6 +28,8 @@ export interface RunManageOpts {
   initialGroup?: ActivityGroup;
   source: PreviewSource;
   actions: Actions;
+  columns?: ColumnKey[];
+  showHeader?: boolean;
 }
 
 // An empty-argv Handoff means "exit, spawn nothing" (popup attach/resume after
@@ -61,6 +64,8 @@ export async function runManage(o: RunManageOpts): Promise<number> {
       defaultPreview={o.defaultPreview}
       initialGroup={o.initialGroup ?? "open"}
       intervalMs={o.intervalMs}
+      columns={o.columns}
+      showHeader={o.showHeader}
       activePane={activePane}
       activeSocket={activeSocket}
       onHandoff={(h) => { pending = h; }}

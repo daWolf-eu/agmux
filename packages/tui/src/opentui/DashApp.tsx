@@ -4,12 +4,13 @@ import { useKeyboard, useTerminalDimensions } from "@opentui/react";
 import { LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
 import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
-import { sortRows, nextSort, type SortKey } from "../shared/sort.ts";
+import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from "../shared/sort.ts";
 import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { yankFields } from "../shared/yank.ts";
-import { pad } from "../shared/columns.ts";
-import { STATUS_COLORS, READ_SHAPE, UNREAD_SHAPE, type StatusTone } from "../shared/glyph.ts";
+import { COLUMNS, DEFAULT_COLUMNS, pad, type ColumnKey } from "../shared/columns.ts";
+import { STATUS_COLORS, TONES, SPINNER_MS, toneGlyph } from "../shared/glyph.ts";
+import { MOCHA } from "../shared/palette.ts";
 import { matchAttachedPane } from "./attached.ts";
 import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
@@ -35,22 +36,39 @@ export interface DashAppProps {
   // tmux socket of the parent client; pane ids aren't unique across servers, so the
   // attached-pane match compares socket + pane. null = ambient/default server.
   activeSocket?: string | null;
+  // Visible table columns, in order (`[dash] columns`). Default: DEFAULT_COLUMNS.
+  columns?: ColumnKey[];
+  // Show the column-title row (`[dash] header`). Default: off.
+  showHeader?: boolean;
+  // Spinner tick for running rows; 0 keeps it on its first frame. Default SPINNER_MS.
+  spinnerMs?: number;
 }
 
 // The dash has two preview tabs: mirror / detail.
 const TABS: PreviewMode[] = ["mirror", "detail"];
 
-// Muted panel border — softer than the renderer's default white. Easy to tune.
-const BORDER = "#7f849c";
+// Overlay border (help / yank) — muted, softer than the renderer's default white.
+const BORDER = MOCHA.overlay1;
 
-// Help-overlay legend for the status colours. The tone names double as the
-// user-facing labels; STATUS_COLORS stays the single source of the palette.
-const TONE_LEGEND = Object.keys(STATUS_COLORS) as StatusTone[];
+// Panes have no borders; a faint vertical rule with whitespace either side
+// separates the table from the preview.
+const SEP_COLOR = MOCHA.surface1;
+const SEP_PAD = 2;
+const SEP_WIDTH = SEP_PAD * 2 + 1;
+const PREVIEW_SHARE = 0.45;
+// Horizontal padding of the table pane (left + right).
+const TABLE_PAD = 2;
+
+function sortLabel(k: SortKey): string {
+  const name = k === "glyph" ? "status" : COLUMNS[k].header.toLowerCase();
+  return `${name}${sortDirection(k) === "desc" ? "▾" : "▴"}`;
+}
 
 export function DashApp(props: DashAppProps) {
   const { feedFor, hubUrl } = props;
 
-  const { height } = useTerminalDimensions();
+  const { width, height } = useTerminalDimensions();
+  const columns = props.columns ?? DEFAULT_COLUMNS;
 
   const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
 
@@ -73,7 +91,7 @@ export function DashApp(props: DashAppProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [mode, setMode] = useState<PreviewMode>(props.defaultPreview);
   const [showPreview, setShowPreview] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("last");
+  const [sortKey, setSortKey] = useState<SortKey>(DEFAULT_SORT);
   const [search, setSearch] = useState("");
   const [searching, setSearching] = useState(false);
   const [confirmKill, setConfirmKill] = useState<SessionRow | null>(null);
@@ -86,6 +104,16 @@ export function DashApp(props: DashAppProps) {
     () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
     [rows, search, group, sortKey],
   );
+  // Spinner frame for running rows — the timer only runs while something is running.
+  const anyRunning = useMemo(() => (rows ?? []).some((r) => r.status === "running"), [rows]);
+  const [frame, setFrame] = useState(0);
+  const spinnerMs = props.spinnerMs ?? SPINNER_MS;
+  useEffect(() => {
+    if (!anyRunning || spinnerMs <= 0) return;
+    const t = setInterval(() => setFrame((f) => f + 1), spinnerMs);
+    return () => clearInterval(t);
+  }, [anyRunning, spinnerMs]);
+
   const attachedId = useMemo(
     () => matchAttachedPane(visible, props.activePane ?? null, props.activeSocket ?? null),
     [visible, props.activePane, props.activeSocket],
@@ -178,7 +206,7 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "k" || key.name === "up") { move(-1); return; }
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
     if (key.name === "G") { setSelectedId(visible[visible.length - 1]?.session_id ?? null); return; }
-    if (key.name === "s") { setSortKey((k) => nextSort(k)); return; }
+    if (key.name === "s") { setSortKey((k) => nextSort(k, columns)); return; }
     if (key.name === "f") { setGroup((g) => nextGroup(g)); return; }
     if (key.name === "p") { setShowPreview((v) => !v); return; }
     if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
@@ -199,8 +227,10 @@ export function DashApp(props: DashAppProps) {
   });
 
   const now = Date.now();
-  // Body height budget: total minus header(1) + table/preview borders + footer(1).
+  // Body height budget: total minus header(1) + its spacer(1) + footer spacer(1) + footer(1).
   const bodyHeight = Math.max(3, height - 4);
+  const previewWidth = Math.floor(width * PREVIEW_SHARE);
+  const tableWidth = width - TABLE_PAD - (showPreview ? previewWidth + SEP_WIDTH : 0);
 
   if (showHelp) {
     return (
@@ -209,16 +239,14 @@ export function DashApp(props: DashAppProps) {
         <text>tab preview tab · p show/hide preview · ⏎ attach/resume</text>
         <text>y yank field · x kill · u mark read · ? help · q quit</text>
         <text> </text>
-        <text fg="#6c7086">glyph: colour = status, shape = read</text>
         <text>
-          {TONE_LEGEND.map((tone, i) => (
+          {TONES.map((tone, i) => (
             <span key={tone} fg={STATUS_COLORS[tone]}>
-              {`${i > 0 ? "  " : ""}${UNREAD_SHAPE} ${tone}`}
+              {`${i > 0 ? "  " : ""}${toneGlyph(tone, frame)} ${tone}`}
             </span>
           ))}
         </text>
-        <text fg="#6c7086">{`${UNREAD_SHAPE} unread \u00b7 ${READ_SHAPE} read`}</text>
-        <text fg="#6c7086">? or esc to close</text>
+        <text fg={MOCHA.overlay0}>? or esc to close</text>
       </box>
     );
   }
@@ -231,29 +259,39 @@ export function DashApp(props: DashAppProps) {
       <box style={{ flexDirection: "column", border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" yank field ">
         {fields.map((f, i) => {
           const cursor = i === yankCursor;
-          const fg = cursor ? "#cdd6f4" : f.empty ? "#45475a" : "#a6adc8";
+          const fg = cursor ? MOCHA.text : f.empty ? MOCHA.surface1 : MOCHA.subtext0;
           return (
             <text key={i} fg={fg}>
               {`${cursor ? "›" : " "} ${digit(i)}  ${pad(f.label, lw, "left")}  ${f.empty ? "—" : f.value}`}
             </text>
           );
         })}
-        <text fg="#6c7086">1-0/⏎ copy · j/k move · esc close</text>
+        <text fg={MOCHA.overlay0}>1-0/⏎ copy · j/k move · esc close</text>
       </box>
     );
   }
 
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%" }}>
-      <HeaderBar rows={rows ?? []} connected={!error} hubUrl={hubUrl} group={group} />
+      <HeaderBar rows={rows ?? []} connected={!error} hubUrl={hubUrl} group={group} frame={frame} />
+      <text> </text>
       <box style={{ flexDirection: "row", flexGrow: 1, minHeight: 0 }}>
-        <box style={{ flexGrow: 1, minHeight: 0, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title=" Sessions ">
+        <box style={{ flexGrow: 1, minHeight: 0, paddingLeft: 1, paddingRight: 1 }}>
           {rows === null
-            ? <text fg="#6c7086">connecting to {hubUrl}…</text>
-            : <SessionTable rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now} height={bodyHeight} sortKey={sortKey} onSelect={setSelectedId} />}
+            ? <text fg={MOCHA.overlay0}>connecting to {hubUrl}…</text>
+            : <SessionTable
+                rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now}
+                columns={columns} showHeader={props.showHeader ?? false} width={tableWidth} height={bodyHeight} frame={frame}
+                sortKey={sortKey} onSelect={setSelectedId}
+              />}
         </box>
         {showPreview && (
-          <box style={{ width: "45%", minHeight: 0, border: true, borderColor: BORDER, paddingLeft: 1, paddingRight: 1 }} title={effectiveMode === "mirror" ? " Mirror " : " Details "}>
+          <box style={{ width: SEP_WIDTH, minHeight: 0, paddingLeft: SEP_PAD, paddingRight: SEP_PAD }}>
+            <box style={{ flexGrow: 1, border: ["left"], borderColor: SEP_COLOR }} />
+          </box>
+        )}
+        {showPreview && (
+          <box style={{ width: previewWidth, minHeight: 0, paddingRight: 1 }}>
             <PreviewPane
               row={selected} mode={effectiveMode}
               mirrorText={mirror.id === effectiveSelectedId ? mirror.text : ""}
@@ -263,7 +301,15 @@ export function DashApp(props: DashAppProps) {
           </box>
         )}
       </box>
-      <FooterBar error={error} searching={searching} search={search} confirmKill={confirmKill?.session_id.slice(0, 13) ?? null} notice={notice} />
+      <text> </text>
+      <box style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>
+        <FooterBar
+          error={error} searching={searching} search={search}
+          confirmKill={confirmKill?.session_id.slice(0, 13) ?? null} notice={notice}
+          sortLabel={sortLabel(sortKey)}
+          width={width - 2}
+        />
+      </box>
     </box>
   );
 }

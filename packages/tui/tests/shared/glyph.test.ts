@@ -1,48 +1,53 @@
 import { test, expect } from "bun:test";
-import { statusGlyph, statusTone, isUnread, READ_SHAPE, UNREAD_SHAPE } from "../../src/shared/glyph.ts";
+import { statusGlyph, statusTone, isUnread, toneGlyph, SPINNER, STATUS_COLORS } from "../../src/shared/glyph.ts";
+import { MOCHA } from "../../src/shared/palette.ts";
 import { mkRow } from "../helpers/mk-row.ts";
 
-// --- colour axis: status ------------------------------------------------------
-// Colour alone carries status, so every tone is asserted independently of shape.
-test("running → green", () => {
-  expect(statusGlyph(mkRow({ status: "running" })).color).toBe("#a6e3a1");
+// --- colour: what do I have to do -------------------------------------------
+test("waiting → yellow (needs you; red stays for errors)", () => {
+  expect(statusGlyph(mkRow({ status: "waiting" })).color).toBe(MOCHA.yellow);
 });
-test("waiting → amber", () => {
-  expect(statusGlyph(mkRow({ status: "waiting" })).color).toBe("#f9e2af");
+test("done (finished, unseen) → green", () => {
+  expect(statusGlyph(mkRow({ status: "done" })).color).toBe(MOCHA.green);
 });
-test("idle → grey", () => {
-  expect(statusGlyph(mkRow({ status: "idle" })).color).toBe("#6c7086");
+test("running → neutral lavender, not green", () => {
+  expect(statusGlyph(mkRow({ status: "running" })).color).toBe(MOCHA.lavender);
 });
-test("ended clean → muted (closed)", () => {
-  expect(statusGlyph(mkRow({ status: "ended", exit_code: 0 })).color).toBe("#45475a");
+test("idle → faint text; closed → fainter still", () => {
+  expect(statusGlyph(mkRow({ status: "idle" })).color).toBe(MOCHA.overlay2);
+  expect(statusGlyph(mkRow({ status: "ended", exit_code: 0 })).color).toBe(MOCHA.surface2);
+  expect(statusGlyph(mkRow({ status: "lost" })).color).toBe(MOCHA.surface2);
 });
-test("ended non-zero → red", () => {
-  expect(statusGlyph(mkRow({ status: "ended", exit_code: 1 })).color).toBe("#f38ba8");
+test("ended non-zero or on a signal → red", () => {
+  expect(statusGlyph(mkRow({ status: "ended", exit_code: 1 })).color).toBe(MOCHA.red);
+  expect(statusGlyph(mkRow({ status: "ended", exit_code: null, signal: "SIGTERM" })).color).toBe(MOCHA.red);
 });
-test("ended on signal → red", () => {
-  expect(statusGlyph(mkRow({ status: "ended", exit_code: null, signal: "SIGTERM" })).color).toBe("#f38ba8");
-});
-test("lost → muted (closed, not error)", () => {
+test("lost → closed, not error", () => {
   expect(statusTone(mkRow({ status: "lost" }))).toBe("closed");
 });
-test("closed is dimmer than idle, the two now differing only by colour", () => {
-  const idle = statusGlyph(mkRow({ status: "idle" }));
-  const closed = statusGlyph(mkRow({ status: "ended", exit_code: 0 }));
-  expect(idle.glyph).toBe(closed.glyph);
-  expect(idle.color).not.toBe(closed.color);
+test("every tone has a distinct colour", () => {
+  expect(new Set(Object.values(STATUS_COLORS)).size).toBe(Object.keys(STATUS_COLORS).length);
 });
 
-// --- shape axis: seen-ness ---------------------------------------------------
-test("done (finished, unseen) → solid circle", () => {
-  expect(statusGlyph(mkRow({ status: "done" })).glyph).toBe(UNREAD_SHAPE);
-  expect(isUnread(mkRow({ status: "done" }))).toBe(true);
+// --- shape: repeats the state --------------------------------------------------
+test("glyph shapes: ? waiting, ● done, ○ idle, · closed/lost/error", () => {
+  expect(statusGlyph(mkRow({ status: "waiting" })).glyph).toBe("?");
+  expect(statusGlyph(mkRow({ status: "done" })).glyph).toBe("●");
+  expect(statusGlyph(mkRow({ status: "idle" })).glyph).toBe("○");
+  expect(statusGlyph(mkRow({ status: "ended", exit_code: 0 })).glyph).toBe("·");
+  expect(statusGlyph(mkRow({ status: "ended", exit_code: 2 })).glyph).toBe("·");
+  expect(statusGlyph(mkRow({ status: "lost" })).glyph).toBe("·");
 });
-test("every other status → outlined circle", () => {
+test("running is a braille spinner advanced by frame (wrapping)", () => {
+  const r = mkRow({ status: "running" });
+  expect(statusGlyph(r).glyph).toBe("⠋");
+  expect(statusGlyph(r, 3).glyph).toBe("⠸");
+  expect(statusGlyph(r, SPINNER.length).glyph).toBe("⠋");
+  expect(toneGlyph("running", 9)).toBe("⠏");
+});
+test("only done is unread", () => {
+  expect(isUnread(mkRow({ status: "done" }))).toBe(true);
   for (const status of ["idle", "running", "waiting", "ended", "lost"] as const) {
-    expect(statusGlyph(mkRow({ status })).glyph).toBe(READ_SHAPE);
     expect(isUnread(mkRow({ status }))).toBe(false);
   }
-});
-test("done keeps the idle colour (palette rework is separate)", () => {
-  expect(statusGlyph(mkRow({ status: "done" })).color).toBe(statusGlyph(mkRow({ status: "idle" })).color);
 });

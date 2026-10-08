@@ -56,3 +56,14 @@ test("rejects bad group tables", () => {
   expect(() => parseDashSection({ all: { preview: "mirror" } })).toThrow(/\[dash\.all\] unknown key/);
   expect(() => parseDashSection({ open: 5 })).toThrow(/\[dash\.open\] must be a table/);
 });
+
+test("parses columns and header", () => {
+  expect(parseDashSection({ columns: ["glyph", "name"], header: true })).toEqual({ columns: ["glyph", "name"], header: true });
+});
+
+test("rejects malformed columns and header", () => {
+  expect(() => parseDashSection({ columns: "name" })).toThrow(/\[dash\] columns must be/);
+  expect(() => parseDashSection({ columns: [] })).toThrow(/\[dash\] columns must be/);
+  expect(() => parseDashSection({ columns: ["name", 3] })).toThrow(/\[dash\] columns must be/);
+  expect(() => parseDashSection({ header: "yes" })).toThrow(/\[dash\] header must be a boolean/);
+});
