@@ -31,6 +31,19 @@ function eFlags(env: Record<string, string>): string[] {
   return out;
 }
 
+// A placed command owns its pane, so when it fails fast (a cwd that's gone, a
+// binary not on the tmux server's PATH) tmux closes the pane before its error
+// can be read. Run it under sh and, on a non-zero exit, keep the pane until a
+// key. No argument may end in ";": tmux would take it as a command separator.
+const HOLD_SCRIPT =
+  `"$@"; s=$?; [ "$s" -eq 0 ] && exit 0; ` +
+  `printf '\\n[agmux] %s exited with status %s. Press any key to close.' "$1" "$s"; ` +
+  `stty -icanon -echo 2>/dev/null; dd bs=1 count=1 >/dev/null 2>&1; exit "$s"`;
+
+export function holdOnFailure(cmd: string[]): string[] {
+  return ["/bin/sh", "-c", HOLD_SCRIPT, "agmux-hold", ...cmd];
+}
+
 export async function readCurrentPane(): Promise<PaneCoords | null> {
   if (!process.env.TMUX) return null;
   const socket = tmuxSocketFromEnv(process.env.TMUX);
@@ -60,7 +73,7 @@ export async function splitPane(args: {
   const detachFlag = args.detach ? ["-d"] : [];
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
 }
@@ -83,7 +96,7 @@ export async function newWindow(args: {
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const target = `${args.sessionName}:`;
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
 }
@@ -102,7 +115,7 @@ export async function newSession(args: {
   // `tmux new-session -d` returns coords via -P -F just like new-window.
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${args.cmd}`.text()
+    await $`tmux ${tmuxSocketArgs(args.socket)} new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
 }

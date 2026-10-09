@@ -5,7 +5,7 @@ import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileEnv } from "./profile-env.ts";
-import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
+import { readCurrentPane, hasSession, splitPane, holdOnFailure, type PaneCoords } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen } from "./seen.ts";
@@ -168,7 +168,7 @@ export function makeActions(
         const alreadyHere = !!here && sameServer(here.socket, row.tmux_socket)
           && await windowInSession(here.session, row.tmux_window!, here.socket);
         if (here && !alreadyHere) {
-          const view = nestedTmuxArgv(buildViewClientArgv(coords, viewSessionName(row.session_id, now()), settings.viewDetachKey));
+          const view = nestedTmuxArgv(holdOnFailure(buildViewClientArgv(coords, viewSessionName(row.session_id, now()), settings.viewDetachKey)));
           const hs = tmuxSocketArgs(here.socket);
           await deps.runTmux(where === "new-pane"
             ? [...hs, "split-window", "-t", here.pane, "--", ...view]

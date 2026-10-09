@@ -84,6 +84,9 @@ The single source of truth for the running version is
   `done` session seen.
 
 ### Fixed
+- An agent resumed or run into a new pane, window or session that failed to start
+  (e.g. its working directory was gone) closed the pane at once, hiding the error.
+  The pane now stays open on a non-zero exit until a key is pressed.
 - `agmux dash`, `agmux watch` and `agmux notifyd` did not survive a hub restart.
   The polling feed resolved its URL once per subscription, but the hub binds an
   ephemeral port, so `agmux hub restart` moved it and every long-lived subscriber
