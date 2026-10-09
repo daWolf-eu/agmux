@@ -7,10 +7,10 @@ test("missing sections yield an empty config", () => {
 
 test("valid [attach] and [terminal] parse", () => {
   expect(parseAttachSection(
-    { live: "new-window", closed: "new-session", view_detach_key: "M-q" },
+    { live: "new-tab", closed: "new-session" },
     { new_window: ["open", "-na", "Ghostty.app", "--args", "-e", "{cmd}"], new_tab: [] },
   )).toEqual({
-    live: "new-window", closed: "new-session", viewDetachKey: "M-q",
+    live: "new-tab", closed: "new-session",
     terminal: { newWindow: ["open", "-na", "Ghostty.app", "--args", "-e", "{cmd}"] },
   });
 });
@@ -38,6 +38,6 @@ test("a template with a non-string element throws", () => {
     .toThrow(/\[terminal\] new_window must be an array of non-empty strings/);
 });
 
-test("view_detach_key must be a non-empty string", () => {
-  expect(() => parseAttachSection({ view_detach_key: "" }, undefined)).toThrow(/view_detach_key/);
+test("view_detach_key is gone with the live view", () => {
+  expect(() => parseAttachSection({ view_detach_key: "M-d" }, undefined)).toThrow(/\[attach\] unknown key "view_detach_key"/);
 });

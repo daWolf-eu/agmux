@@ -36,7 +36,7 @@
 
 ## Attach targets (`shared/attach-targets.ts`)
 
-`ATTACH_PLACEMENTS` (`@agmux/protocol`) is the slot order of the `A` popup; `attachTargets(kind, ctx)` says which are available and why not; `defaultPlacement` / `resolvePlacement` are what ⏎ and `agmux attach --placement` use, so popup and cli always agree. The cli side (tmux/terminal argv) is `cli/src/attach-place.ts`, executed in `cli/src/dash-actions.ts`. A command embedded in another tmux command (`new-window -- …`) must go through `nestedTmuxArgv`, or the outer tmux splits it at `;`. A command placed in a pane of its own goes through `holdOnFailure` (`cli/src/tmux-place.ts`; `splitPane` / `newWindow` / `newSession` apply it) so a fast failure stays readable until a key instead of closing the pane.
+`ATTACH_PLACEMENTS` (`@agmux/protocol`) is the slot order of the `A` popup; `attachTargets(kind, ctx)` says which are available and why not; `defaultPlacement` / `resolvePlacement` are what ⏎ and `agmux attach --placement` use, so popup and cli always agree. The cli side (tmux/terminal argv) is `cli/src/attach-place.ts`, executed in `cli/src/dash-actions.ts`. Live agents are only switched to (inline / terminal): never open a second view of a live agent's window through a *grouped* session — tmux 3.6a segfaults when a group's session loses its last window; use `link-window` into a plain session. An argument that ends in `;` inside a tmux command (`new-window -- …`) is taken as a separator by that tmux; escape it as `\;`. A command placed in a pane of its own goes through `holdOnFailure` (`cli/src/tmux-place.ts`; `splitPane` / `newWindow` / `newSession` apply it) so a fast failure stays readable until a key instead of closing the pane.
 
 ### Adding a placement
 

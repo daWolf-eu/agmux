@@ -213,7 +213,6 @@ export function loadDashConfig(configPath: string): DashConfig {
 export interface AttachConfig {
   live?: AttachPlacement;    // ⏎ default for a live session
   closed?: AttachPlacement;  // ⏎ default for a closed session (resume)
-  viewDetachKey?: string;    // the one key bound in a view client's key table
   terminal: { newWindow?: string[]; newTab?: string[] };
 }
 
@@ -241,16 +240,11 @@ function tableOf(label: string, raw: unknown, keys: string[]): Record<string, un
 }
 
 export function parseAttachSection(attach: unknown, terminal: unknown): AttachConfig {
-  const a = tableOf("[attach]", attach, ["live", "closed", "view_detach_key"]);
+  const a = tableOf("[attach]", attach, ["live", "closed"]);
   const t = tableOf("[terminal]", terminal, ["new_window", "new_tab"]);
   const out: AttachConfig = { terminal: {} };
   if (a.live !== undefined) out.live = placementOpt("[attach] live", a.live);
   if (a.closed !== undefined) out.closed = placementOpt("[attach] closed", a.closed);
-  if (a.view_detach_key !== undefined) {
-    if (typeof a.view_detach_key !== "string" || a.view_detach_key.length === 0)
-      throw new Error(`[attach] view_detach_key must be a non-empty string, got ${JSON.stringify(a.view_detach_key)}`);
-    out.viewDetachKey = a.view_detach_key;
-  }
   if (t.new_window !== undefined) {
     const w = templateOpt("[terminal] new_window", t.new_window);
     if (w) out.terminal.newWindow = w;

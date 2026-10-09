@@ -12,7 +12,8 @@ The single source of truth for the running version is
 
 ### Added
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
-  session, new terminal tab/window. ⏎ defaults via `[attach] live` / `closed`;
+  session, new terminal tab/window. A live session is switched to (or opened from a new
+  terminal); new pane/window/session resume a closed one. ⏎ defaults via `[attach] live` / `closed`;
   terminal launch templates via `[terminal] new_window` / `new_tab`.
   `agmux attach --placement <p>` exposes the same targets.
 - dash: `[dash] columns` picks the table columns and their order, `[dash] header`

@@ -165,52 +165,10 @@ function recorder(over: Partial<ActionDeps> = {}) {
     sessionExists: async () => true,
     currentPane: async () => CALLER,
     spawnDetached: (argv) => { spawned.push(argv); },
-    windowInSession: async (session) => session === "work",
-    now: () => 0,
     ...over,
   };
   return { tmux, spawned, deps };
 }
-
-test("live new-window: a view client in a new window of the caller's session", async () => {
-  const r = recorder();
-  const h = await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-window" }));
-  expect(h).toBeNull();
-  expect(r.tmux).toHaveLength(1);
-  const cmd = r.tmux[0]!;
-  // held on failure, so a view that can't start shows why instead of flickering
-  expect(cmd.slice(0, 9)).toEqual(["-S", SOCK, "new-window", "-t", "caller:", "-n", "view:019f1898", "--", "/bin/sh"]);
-  expect(cmd.slice(12, 13)).toEqual(["env"]);
-  expect(cmd).toContain("agmux-view-019f1898-0");
-  // the outer tmux must not split the view command at its separators
-  expect(cmd).not.toContain(";");
-  expect(cmd).toContain("\\;");
-});
-
-test("live new-pane: splits the caller's pane with a view client", async () => {
-  const r = recorder();
-  await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-pane" }));
-  expect(r.tmux[0]!.slice(0, 7)).toEqual(["-S", SOCK, "split-window", "-t", "%9", "--", "/bin/sh"]);
-});
-
-test("live new-window when the agent is in the caller's own session falls back to inline", async () => {
-  const r = recorder({ currentPane: async () => ({ ...CALLER, session: "work" }) });
-  await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-window" }));
-  expect(r.tmux).toEqual([
-    ["-S", SOCK, "switch-client", "-t", "work:@3"],
-    ["-S", SOCK, "select-pane", "-t", "%5"],
-  ]);
-});
-
-test("live new-session: grouped session, switched to", async () => {
-  const r = recorder({ sessionExists: async (name) => name === "work" });
-  await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-session" }));
-  expect(r.tmux.map((c) => c[2])).toEqual(["new-session", "switch-client", "set-option", "select-window", "select-pane"]);
-});
 
 test("new-terminal spawns the template with `agmux attach <id>`; popup closes", async () => {
   const r = recorder();
@@ -220,11 +178,23 @@ test("new-terminal spawns the template with `agmux attach <id>`; popup closes", 
   expect(h).toEqual({ argv: [] });
 });
 
+test("a live agent is only switched to: new pane/window/session are refused, tmux untouched", async () => {
+  const r = recorder();
+  const a = makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS);
+  for (const [placement, label] of [["new-pane", "new pane"], ["new-window", "new window"], ["new-session", "new session"]] as const) {
+    await expect(withTmux(TMUX_ENV, () => a.attach(liveRow(), { placement }))).rejects.toThrow(`${label}: already open`);
+  }
+  expect(r.tmux).toEqual([]);
+});
+
 test("an unavailable placement is rejected with its reason", async () => {
   const r = recorder();
   await expect(withTmux(undefined, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-pane" })))
-    .rejects.toThrow("new pane: not in tmux");
+    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-terminal" })))
+    .resolves.toBeNull();
+  await expect(withTmux(undefined, () =>
+    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-tab" })))
+    .rejects.toThrow("new tab: not configured");
 });
 
 test("closed inline in tmux hands the dash's pane to the resumed agent", async () => {
@@ -276,36 +246,6 @@ test("closed row in a popup without a request still resumes into a new window", 
     makeActions("http://hub", "agmux-wrap", true, r.deps, SETTINGS).resume(row)));
   expect(placed).toEqual(["newWindow"]);
   expect(h).toEqual({ argv: [] });
-});
-
-test("live new-window for a socket-less row in the caller's session falls back to inline", async () => {
-  // agmux run from a plain shell records tmux_socket null (the default server)
-  const r = recorder({ currentPane: async () => ({ ...CALLER, session: "work" }) });
-  await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow({ tmux_socket: null }), { placement: "new-window" }));
-  expect(r.tmux).toEqual([
-    ["switch-client", "-t", "work:@3"],
-    ["select-pane", "-t", "%5"],
-  ]);
-});
-
-test("live new-pane from a session grouped with the agent's falls back to inline", async () => {
-  // e.g. the dash runs inside the agmux-<id8> session created by "new session"
-  const r = recorder({
-    currentPane: async () => ({ ...CALLER, session: "agmux-019f1898" }),
-    windowInSession: async (session, window) => session === "agmux-019f1898" && window === "@3",
-  });
-  await withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-pane" }));
-  expect(r.tmux.map((c) => c[2])).toEqual(["switch-client", "select-pane"]);
-});
-
-test("live new-session for an agent on another tmux server is refused before touching tmux", async () => {
-  const r = recorder();
-  await expect(withTmux(TMUX_ENV, () =>
-    makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow({ tmux_socket: "/tmp/other-server" }), { placement: "new-session" })))
-    .rejects.toThrow("new session: agent is on another tmux server");
-  expect(r.tmux).toEqual([]);
 });
 
 test("terminal templates are launched without the dash's tmux env", async () => {
