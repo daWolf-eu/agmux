@@ -5,7 +5,7 @@ import { testRender } from "@opentui/react/test-utils";
 import type { SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../../src/feed.ts";
 import type { ActivityGroup } from "../../src/shared/group.ts";
-import type { Actions, PreviewSource, UsageSummary } from "../../src/types.ts";
+import type { Actions, AttachRequest, PreviewSource, UsageSummary } from "../../src/types.ts";
 import { DashApp } from "../../src/opentui/DashApp.tsx";
 import { mkRow } from "../helpers/mk-row.ts";
 
@@ -482,6 +482,7 @@ test("the help overlay lists every key and the status legend, centred and border
   expect(frame).toContain("[g/G] top/bottom");
   expect(frame).toContain("[x]   kill");
   expect(frame).toContain("[u]   mark read");
+  expect(frame).toContain("[A]   attach to…");
   expect(frame).toContain("[?/esc] close");
   // borderless and centred on an otherwise empty screen
   expect(frame).not.toMatch(/[┌┐└┘─]/);
@@ -508,7 +509,7 @@ test("the footer legend shows the everyday keys only, one blank line above it", 
   const i = lines.findIndex((l) => l.includes("[⏎] attach"));
   expect(i).toBeGreaterThan(0);
   const footer = lines[i]!;
-  for (const hint of ["[j/k] move", "[s] sort", "[f] filter", "[/] search", "[y] yank", "[tab] preview", "[p] panel", "[?] help", "[q] quit"])
+  for (const hint of ["[A] attach…", "[j/k] move", "[s] sort", "[f] filter", "[/] search", "[y] yank", "[tab] preview", "[p] panel", "[?] help", "[q] quit"])
     expect(footer).toContain(hint);
   for (const hidden of ["top/bottom", "kill", "mark read"]) expect(footer).not.toContain(hidden);
   expect(lines[i - 1]!.trim()).toBe("");
@@ -574,5 +575,125 @@ test("running rows animate the braille spinner", async () => {
   await act(async () => { await new Promise((r) => setTimeout(r, 35)); });
   await renderOnce();
   expect(glyphOf()).not.toBe(first);
+  renderer.destroy();
+});
+
+const TMUX_CTX = { inTmux: true, popup: false, terminalWindow: false, terminalTab: false };
+
+test("A opens the attach popup listing the seven targets, unavailable ones dimmed with a reason", async () => {
+  const rows = [mkRow({ session_id: "agx-att-1", status: "running", tmux_session: "m", tmux_window: "@1" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions} attachCtx={TMUX_CTX}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("attach to");
+  expect(frame).not.toMatch(/[┌┐└┘─]/);
+  const lines = frame.split("\n");
+  expect(lines.find((l) => l.includes("▌"))).toMatch(/▌ 1\s+inline/);
+  expect(frame).toMatch(/3\s+new window/);
+  expect(frame).toMatch(/5\s+peek\s+planned/);
+  expect(frame).toMatch(/7\s+new terminal window\s+not configured/);
+  expect(frame).toContain("[1-7/⏎] open");
+  renderer.destroy();
+});
+
+test("a digit in the attach popup attaches with that placement", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async attach(_r, req) { reqs.push(req); return null; } };
+  const rows = [mkRow({ session_id: "agx-att-2", status: "running", tmux_session: "m", tmux_window: "@1" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions} attachCtx={TMUX_CTX}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("3"); });
+  await renderOnce();
+  expect(reqs).toEqual([{ placement: "new-window" }]);
+  expect(captureCharFrame()).not.toContain("attach to");
+  renderer.destroy();
+});
+
+test("a closed row resumes through the popup; j + ⏎ picks the next slot", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async resume(_r, req) { reqs.push(req); return null; } };
+  const rows = [mkRow({ session_id: "agx-att-3", status: "lost" })];
+  const { renderer, renderOnce, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions} attachCtx={TMUX_CTX} initialGroup="all"
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("j"); });
+  await renderOnce();
+  await act(async () => { (mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await renderOnce();
+  expect(reqs).toEqual([{ placement: "new-pane" }]);
+  renderer.destroy();
+});
+
+test("picking a disabled target shows its reason and calls nothing", async () => {
+  const calls: string[] = [];
+  const actions: Actions = { ...noActions, async attach() { calls.push("attach"); return null; } };
+  const rows = [mkRow({ session_id: "agx-att-4", status: "running", tmux_session: "m", tmux_window: "@1" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("2"); }); // new pane, no attachCtx → not in tmux
+  await renderOnce();
+  expect(calls).toEqual([]);
+  expect(captureCharFrame()).toContain("new pane: not in tmux");
+  renderer.destroy();
+});
+
+test("escape closes the attach popup; Enter still uses the default (no request)", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async attach(_r, req) { reqs.push(req); return null; } };
+  const rows = [mkRow({ session_id: "agx-att-5", status: "running", tmux_session: "m", tmux_window: "@1" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions} attachCtx={TMUX_CTX}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  await act(async () => { (mockInput as unknown as { pressEscape: () => void }).pressEscape(); });
+  // A lone ESC is held ~20ms by the stdin parser before it flushes as "escape".
+  await act(async () => { await new Promise((r) => setTimeout(r, 30)); });
+  await renderOnce();
+  expect(captureCharFrame()).not.toContain("attach to");
+  await act(async () => { (mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await renderOnce();
+  expect(reqs).toEqual([undefined]);
   renderer.destroy();
 });

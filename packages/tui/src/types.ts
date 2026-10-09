@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import type { AttachPlacement, SessionRow } from "@agmux/protocol";
 
 // The dash preview has two tabs: a live tmux mirror and a technical detail card.
 export type PreviewMode = "mirror" | "detail";
@@ -31,10 +31,13 @@ export interface PreviewSource {
 // Mutating actions; concrete impls live in cli (reuse attach/kill/relaunch).
 // attach/resume return a Handoff when the terminal must be handed off, or null
 // when handled inline (e.g. in-tmux switch-client — the TUI stays alive).
+// Where to open a session; omitted = the configured default (⏎).
+export interface AttachRequest { placement: AttachPlacement }
+
 export interface Actions {
-  attach(row: SessionRow): Promise<Handoff | null>;
+  attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null>;
   kill(row: SessionRow): Promise<void>;
-  resume(row: SessionRow): Promise<Handoff | null>;
+  resume(row: SessionRow, req?: AttachRequest): Promise<Handoff | null>;
   // Copy arbitrary text to the system clipboard (yank). Concrete impl in cli.
   copy(text: string): Promise<void>;
   // Mark a session read — the dash dismiss key. Takes the row (matching the
