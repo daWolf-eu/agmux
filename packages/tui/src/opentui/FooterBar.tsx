@@ -5,12 +5,13 @@ import { KeyHint } from "./KeyHint.tsx";
 // The everyday keys only; the full list (incl. g/G, x kill, u mark read) is in `?`.
 // `drop`: when the line doesn't fit, hints go lowest first (absent = always shown).
 const HINTS: { key: string; label: string; drop?: number }[] = [
-  { key: "j/k", label: "move", drop: 6 },
+  { key: "j/k", label: "move", drop: 7 },
   { key: "s", label: "sort" },
   { key: "f", label: "filter", drop: 3 },
-  { key: "/", label: "search", drop: 5 },
+  { key: "/", label: "search", drop: 6 },
   { key: "⏎", label: "attach" },
-  { key: "y", label: "yank", drop: 4 },
+  { key: "A", label: "attach…", drop: 4 },
+  { key: "y", label: "yank", drop: 5 },
   { key: "tab", label: "preview", drop: 2 },
   { key: "p", label: "panel", drop: 1 },
   { key: "?", label: "help" },

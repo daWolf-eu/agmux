@@ -1,13 +1,14 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow } from "@agmux/protocol";
+import { ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
-import type { Actions, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
+import type { Actions, AttachRequest, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from "../shared/sort.ts";
 import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { yankFields } from "../shared/yank.ts";
+import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
 import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
 import { SPINNER_MS } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
@@ -16,7 +17,7 @@ import { HeaderBar } from "./HeaderBar.tsx";
 import { SessionTable } from "./SessionTable.tsx";
 import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
-import { HelpOverlay, YankOverlay } from "./Overlays.tsx";
+import { AttachOverlay, HelpOverlay, YankOverlay } from "./Overlays.tsx";
 
 export interface DashAppProps {
   // A feed per activity group — each group has its own hub query, row cap and
@@ -43,6 +44,9 @@ export interface DashAppProps {
   showHeader?: boolean;
   // Spinner tick for running rows; 0 keeps it on its first frame. Default SPINNER_MS.
   spinnerMs?: number;
+  // The caller's tmux/popup/terminal situation (cli attachCtxFor). Drives which
+  // attach-popup targets are enabled. Default: outside tmux, no terminals.
+  attachCtx?: AttachCtx;
 }
 
 // The dash has two preview tabs: mirror / detail.
@@ -97,6 +101,9 @@ export function DashApp(props: DashAppProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [yankOpen, setYankOpen] = useState(false);
   const [yankCursor, setYankCursor] = useState(0);
+  const [attachOpen, setAttachOpen] = useState(false);
+  const [attachCursor, setAttachCursor] = useState(0);
+  const attachCtx = props.attachCtx ?? NO_ATTACH_CTX;
 
   const visible = useMemo(
     () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
@@ -171,6 +178,25 @@ export function DashApp(props: DashAppProps) {
       .catch((e) => setNotice(`copy failed: ${e?.message ?? String(e)}`));
   };
 
+  // Open a row: resume a closed session, attach a live one. No request = the
+  // configured default (⏎); the attach popup passes an explicit placement.
+  const openRow = (row: SessionRow, req?: AttachRequest) => {
+    const closed = TERMINAL_STATUSES.includes(row.status);
+    const run = closed ? props.actions.resume(row, req) : props.actions.attach(row, req);
+    void run
+      .then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } })
+      .catch((e) => setNotice(`${closed ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`));
+  };
+
+  const doAttach = (i: number) => {
+    if (!selected) return;
+    const t = attachTargets(attachKind(selected), attachCtx)[i];
+    setAttachOpen(false);
+    if (!t) return;
+    if (!t.enabled) { setNotice(`${t.label}: ${t.reason}`); return; }
+    openRow(selected, { placement: t.placement });
+  };
+
   useKeyboard((key) => {
     if (searching) {
       if (key.name === "return" || key.name === "escape") { setSearching(false); return; }
@@ -194,12 +220,24 @@ export function DashApp(props: DashAppProps) {
       return;
     }
 
+    if (attachOpen) {
+      const last = ATTACH_PLACEMENTS.length - 1;
+      if (key.name === "escape" || key.name === "q" || (key.name === "a" && key.shift)) { setAttachOpen(false); return; }
+      if (key.name === "j" || key.name === "down") { setAttachCursor((c) => Math.min(last, c + 1)); return; }
+      if (key.name === "k" || key.name === "up") { setAttachCursor((c) => Math.max(0, c - 1)); return; }
+      if (key.name === "return") { doAttach(attachCursor); return; }
+      if (key.name && /^[1-9]$/.test(key.name) && Number(key.name) <= last + 1) { doAttach(Number(key.name) - 1); return; }
+      return;
+    }
+
     // Any key dismisses a lingering notice (a failed attach/resume message).
     if (notice) setNotice(null);
 
     if (key.name === "q") { props.onQuit(); return; }
     if (key.name === "?") { setShowHelp(true); return; }
     if (key.name === "y" && selected) { setYankCursor(0); setYankOpen(true); return; }
+    // OpenTUI reports a shifted letter as its lowercase name + shift.
+    if (key.name === "a" && key.shift && selected) { setAttachCursor(0); setAttachOpen(true); return; }
     if (key.name === "j" || key.name === "down") { move(1); return; }
     if (key.name === "k" || key.name === "up") { move(-1); return; }
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
@@ -209,14 +247,7 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "p") { setShowPreview((v) => !v); return; }
     if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
     if (key.name === "/") { setSearch(""); setSearching(true); return; }
-    if (key.name === "return" && selected) {
-      const isTerminal = TERMINAL_STATUSES.includes(selected.status);
-      const act = isTerminal ? props.actions.resume : props.actions.attach;
-      void act(selected)
-        .then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } })
-        .catch((e) => setNotice(`${isTerminal ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`));
-      return;
-    }
+    if (key.name === "return" && selected) { openRow(selected); return; }
     if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) { setConfirmKill(selected); return; }
     // Mark the highlighted row seen (dismiss). One-way: there is no backing
     // "mark unread" event, so this only ever moves a row from unread → read
@@ -233,6 +264,9 @@ export function DashApp(props: DashAppProps) {
   if (showHelp) return <HelpOverlay frame={frame} />;
   if (yankOpen && selected) {
     return <YankOverlay row={selected} fields={yankFields(selected)} cursor={yankCursor} screenWidth={width} />;
+  }
+  if (attachOpen && selected) {
+    return <AttachOverlay row={selected} targets={attachTargets(attachKind(selected), attachCtx)} cursor={attachCursor} screenWidth={width} />;
   }
 
   return (

@@ -3,7 +3,7 @@ export { PollingSessionFeed, type SessionFeed, type PollingFeedOpts } from "./fe
 export { runWatch, type RunWatchOpts } from "./run-watch.tsx";
 export { runManage, type RunManageOpts, type GroupQuery } from "./opentui/run-manage.tsx";
 export {
-  type PreviewMode, type UsageSummary, type Handoff, type PreviewSource, type Actions,
+  type PreviewMode, type UsageSummary, type Handoff, type PreviewSource, type Actions, type AttachRequest,
 } from "./types.ts";
 export { type ActivityGroup, GROUPS, inGroup, groupRows, nextGroup, initialGroup } from "./shared/group.ts";
 export {
