@@ -179,7 +179,9 @@ test("live new-window: a view client in a new window of the caller's session", a
   expect(h).toBeNull();
   expect(r.tmux).toHaveLength(1);
   const cmd = r.tmux[0]!;
-  expect(cmd.slice(0, 9)).toEqual(["-S", SOCK, "new-window", "-t", "caller:", "-n", "view:019f1898", "--", "env"]);
+  // held on failure, so a view that can't start shows why instead of flickering
+  expect(cmd.slice(0, 9)).toEqual(["-S", SOCK, "new-window", "-t", "caller:", "-n", "view:019f1898", "--", "/bin/sh"]);
+  expect(cmd.slice(12, 13)).toEqual(["env"]);
   expect(cmd).toContain("agmux-view-019f1898-0");
   // the outer tmux must not split the view command at its separators
   expect(cmd).not.toContain(";");
@@ -190,7 +192,7 @@ test("live new-pane: splits the caller's pane with a view client", async () => {
   const r = recorder();
   await withTmux(TMUX_ENV, () =>
     makeActions("http://hub", "agmux-wrap", false, r.deps, SETTINGS).attach(liveRow(), { placement: "new-pane" }));
-  expect(r.tmux[0]!.slice(0, 6)).toEqual(["-S", SOCK, "split-window", "-t", "%9", "--"]);
+  expect(r.tmux[0]!.slice(0, 7)).toEqual(["-S", SOCK, "split-window", "-t", "%9", "--", "/bin/sh"]);
 });
 
 test("live new-window when the agent is in the caller's own session falls back to inline", async () => {
