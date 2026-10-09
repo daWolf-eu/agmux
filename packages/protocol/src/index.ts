@@ -7,3 +7,4 @@ export * from "./validators.ts";
 export * from "./telemetry.ts";
 export * from "./ids.ts";
 export * from "./version.ts";
+export * from "./attach.ts";
