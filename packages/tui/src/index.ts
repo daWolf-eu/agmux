@@ -13,3 +13,7 @@ export {
 } from "./shared/statusline.ts";
 export { createDetectState, primeDetectState, detectNotifications, type DetectState, type DetectConfig, type NotifyEvent, type NotifyTrigger } from "./shared/transitions.ts";
 export { COLUMN_KEYS, DEFAULT_COLUMNS, isColumnKey, type ColumnKey } from "./shared/columns.ts";
+export {
+  attachKind, attachTargets, defaultPlacement, resolvePlacement, NO_ATTACH_CTX,
+  type AttachKind, type AttachCtx, type AttachTarget, type AttachDefaults,
+} from "./shared/attach-targets.ts";
