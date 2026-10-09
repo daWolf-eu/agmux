@@ -24,7 +24,9 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      interactive TUI: grouped sessions + preview; ⏎ attach, x kill, r resume, q quit
      each activity group (f) polls on its own: open 50 rows/1s, closed+all 1000/10s
      ([dash], [dash.open], [dash.closed], [dash.all] in config; -n/-i override all)
-  attach <id|prefix>
+  attach <id|prefix> [--placement <inline|new-pane|new-window|new-session|new-tab|new-terminal>]
+     open a session; without --placement: switch to it (live) or resume it.
+     placement defaults and terminal templates: [attach] / [terminal] in config.toml
   seen <id|prefix>|--pane <pane_id>|--all [--socket <tmux socket>] [--source focus]
      marks a session seen (session.seen): a done session becomes idle.
      --pane resolves the tmux pane owning it and is silently a no-op unless an
