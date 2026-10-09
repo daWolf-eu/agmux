@@ -1,15 +1,18 @@
 import { $ } from "bun";
-import type { SessionRow } from "@agmux/protocol";
-import type { Actions, Handoff } from "@agmux/tui";
+import { tmuxSocketArgs, type SessionRow } from "@agmux/protocol";
+import { attachKind, resolvePlacement, type Actions, type AttachRequest, type Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
-import { LIVE_STATUSES } from "@agmux/protocol";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileEnv } from "./profile-env.ts";
-import { readCurrentPane, hasSession } from "./tmux-place.ts";
-import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
+import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
+import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen } from "./seen.ts";
+import {
+  DEFAULT_ATTACH_SETTINGS, attachCtxFor, buildViewClientArgv, buildGroupedSessionCommands,
+  expandTemplate, groupedSessionName, nestedTmuxArgv, viewSessionName, type AttachSettings,
+} from "./attach-place.ts";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
 // `attach` command can share them without an import cycle (dash-actions already
@@ -31,6 +34,14 @@ export interface ActionDeps {
   // Probe whether a tmux session still exists — injectable for tests. Defaults
   // to the real tmux `has-session`. Used to catch stale-live rows (see attach).
   sessionExists?: (name: string, socket: string | null) => Promise<boolean>;
+  // The caller's tmux pane (default: tmux display-message); null outside tmux.
+  currentPane?: () => Promise<PaneCoords | null>;
+  // Launch a [terminal] template without waiting for it.
+  spawnDetached?: (argv: string[]) => void;
+  // Resume placement (new window / new session); default: real tmux.
+  placement?: ResumePlacementDeps;
+  splitPane?: typeof splitPane;
+  now?: () => number;
 }
 
 const defaultActionDeps: ActionDeps = {
@@ -38,49 +49,103 @@ const defaultActionDeps: ActionDeps = {
   sessionExists: hasSession,
 };
 
+function spawnDetachedDefault(argv: string[]): void {
+  Bun.spawn(argv, { stdio: ["ignore", "ignore", "ignore"] }).unref();
+}
+
 export function makeActions(
   hubUrl: string,
   wrapBin: string,
   popup = false,
   deps: ActionDeps = defaultActionDeps,
+  settings: AttachSettings = DEFAULT_ATTACH_SETTINGS,
 ): Actions {
   const inTmux = !!process.env.TMUX;
   const sessionExists = deps.sessionExists ?? hasSession;
+  const currentPane = deps.currentPane ?? (() => readCurrentPane().catch(() => null));
+  const spawnDetached = deps.spawnDetached ?? spawnDetachedDefault;
+  const placement = deps.placement ?? defaultPlacementDeps;
+  const split = deps.splitPane ?? splitPane;
+  const now = deps.now ?? Date.now;
+  const ctx = attachCtxFor(settings, process.env, popup);
+  // Opened somewhere else: in a popup the empty handoff closes the popup onto
+  // it; in an inline dash the dash stays (null).
+  const opened = (): Handoff | null => (popup ? { argv: [] } : null);
 
-  async function resume(row: SessionRow): Promise<Handoff | null> {
+  function openTerminal(where: "new-tab" | "new-terminal", row: SessionRow): Handoff | null {
+    const tpl = where === "new-tab" ? settings.terminal.newTab : settings.terminal.newWindow;
+    if (!tpl) throw new Error(`${where}: not configured`);
+    // A fresh terminal is outside tmux, so a plain `agmux attach` opens it inline there.
+    spawnDetached(expandTemplate(tpl, [settings.agmuxBin, "attach", row.session_id]));
+    return opened();
+  }
+
+  async function resume(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
+    const where = resolvePlacement("closed", ctx, req?.placement, settings.defaults);
+    if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
     const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
     const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
     const spec = buildRelaunchSpec(session, {
       hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
       turnCount: usage?.turn_count ?? 0, loadProfileEnv,
     });
-    // Outside tmux: no client to switch — hand the terminal to the relaunched agent.
-    if (!inTmux) return { argv: spec.wrapArgv, env: spec.env };
-    // In tmux (popup or inline): place the agent in a new window of the caller's
-    // session and switch the client onto it.
-    const here = await readCurrentPane().catch(() => null);
-    const target = here?.session ?? session.tmux_session ?? "agmux";
+    // inline: hand the terminal (or the dash's own pane) to the relaunched agent.
+    if (where === "inline") return { argv: spec.wrapArgv, env: spec.env };
+    const here = await currentPane();
     const socket = here?.socket ?? null;
-    const h = await resumeIntoSession(spec, target, row.session_id.slice(0, 8), defaultPlacementDeps, socket);
-    // popup: exit sentinel closes the popup onto the agent. inline tmux: client
-    // already switched, keep the dash alive (return null).
+    const label = row.session_id.slice(0, 8);
+    if (where === "new-pane") {
+      if (!here) throw new Error("new pane: cannot read the current tmux pane");
+      await split({ targetPane: here.pane, cmd: spec.wrapArgv, env: relaunchEnv(spec.env), detach: false, socket });
+      return opened();
+    }
+    if (where === "new-session") {
+      const coords = await placement.newSession({
+        sessionName: groupedSessionName(row.session_id), windowName: `agmux:${label}`,
+        cmd: spec.wrapArgv, env: relaunchEnv(spec.env), socket,
+      });
+      await placement.switchClient(`${coords.session}:${coords.window}`, socket);
+      return opened();
+    }
+    // new-window: a new window of the caller's session (the pre-popup default).
+    const target = here?.session ?? session.tmux_session ?? "agmux";
+    const h = await resumeIntoSession(spec, target, label, placement, socket);
     return popup ? h : null;
   }
 
   return {
-    // In tmux → switch-client inline (TUI stays alive), return null.
-    // Not in tmux → return a Handoff so the entry hands the terminal to a
-    // blocking attach-session after ink unmounts.
-    async attach(row: SessionRow): Promise<Handoff | null> {
+    async attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
       // No tmux target to focus → nothing to attach to (unchanged no-op).
-      if (!LIVE_STATUSES.includes(row.status) || !row.tmux_session || !row.tmux_window) return null;
+      if (attachKind(row) !== "live") return null;
       // Status is only a lagging approximation of tmux reality: a LIVE row whose
       // tmux session is gone (e.g. pinned live by pid reuse, spec §8) would make
       // a doomed attach that errors out — resume it instead of failing.
-      if (!(await sessionExists(row.tmux_session, row.tmux_socket))) return resume(row);
+      if (!(await sessionExists(row.tmux_session!, row.tmux_socket))) return resume(row, req);
+      const where = resolvePlacement("live", ctx, req?.placement, settings.defaults);
       const coords: AttachCoords = {
-        tmux_session: row.tmux_session, tmux_window: row.tmux_window, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
+        tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };
+      if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
+      if (where === "new-session") {
+        const name = groupedSessionName(row.session_id);
+        const exists = await sessionExists(name, row.tmux_socket);
+        for (const args of buildGroupedSessionCommands(coords, name, exists)) await deps.runTmux(args);
+        return opened();
+      }
+      if (where === "new-pane" || where === "new-window") {
+        const here = await currentPane();
+        const sameSession = !!here && (here.socket ?? null) === (row.tmux_socket ?? null) && here.session === row.tmux_session;
+        // A view of the caller's own session would show itself — go there inline instead.
+        if (here && !sameSession) {
+          const view = nestedTmuxArgv(buildViewClientArgv(coords, viewSessionName(row.session_id, now()), settings.viewDetachKey));
+          const hs = tmuxSocketArgs(here.socket);
+          await deps.runTmux(where === "new-pane"
+            ? [...hs, "split-window", "-t", here.pane, "--", ...view]
+            : [...hs, "new-window", "-t", `${here.session}:`, "-n", `view:${row.session_id.slice(0, 8)}`, "--", ...view]);
+          return opened();
+        }
+      }
+      // inline (today's behaviour)
       if (popup) return attachInPopup(coords, deps.runTmux);
       const cmds = buildAttachCommands(coords, inTmux);
       if (inTmux) { for (const args of cmds) await deps.runTmux(args); return null; }

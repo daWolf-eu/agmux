@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   attachSettingsFrom, attachCtxFor, viewSessionName, groupedSessionName, buildViewClientArgv,
-  buildGroupedSessionCommands, shellQuote, expandTemplate, DEFAULT_ATTACH_SETTINGS,
+  buildGroupedSessionCommands, shellQuote, expandTemplate, nestedTmuxArgv, DEFAULT_ATTACH_SETTINGS,
 } from "../src/attach-place.ts";
 
 const C = { tmux_session: "work", tmux_window: "@3", tmux_pane: "%5", tmux_socket: "/tmp/tmux-501/default" };
@@ -76,4 +76,9 @@ test("expandTemplate splices {cmd} as argv, or shell-quotes it inside a string",
     .toEqual(["open", "-na", "Ghostty.app", "--args", "-e", "/Apps/My Tools/agmux", "attach", ID]);
   expect(expandTemplate(["osascript", "-e", "run {cmd}"], cmd))
     .toEqual(["osascript", "-e", `run '/Apps/My Tools/agmux' attach ${ID}`]);
+});
+
+test("nestedTmuxArgv escapes command separators so the outer tmux passes them through", () => {
+  expect(nestedTmuxArgv(["tmux", "new-session", "-s", "V", ";", "set-option", "status", "off"]))
+    .toEqual(["tmux", "new-session", "-s", "V", "\\;", "set-option", "status", "off"]);
 });

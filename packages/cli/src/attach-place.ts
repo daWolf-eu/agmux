@@ -2,7 +2,7 @@
 // (docs/superpowers/specs/2026-10-09-dash-attach-popup-design.md). The tmux
 // dance itself runs in dash-actions.ts.
 import { tmuxSocketArgs } from "@agmux/protocol";
-import type { AttachConfig } from "@agmux/wrapper";
+import { loadAttachConfig, type AttachConfig } from "@agmux/wrapper";
 import type { AttachCtx, AttachDefaults } from "@agmux/tui";
 import type { AttachCoords } from "./attach.ts";
 
@@ -25,6 +25,12 @@ export function attachSettingsFrom(cfg: AttachConfig, agmuxBin: string): AttachS
 }
 
 export const DEFAULT_ATTACH_SETTINGS: AttachSettings = attachSettingsFrom({ terminal: {} }, "agmux");
+
+// [attach]/[terminal] from config.toml + the agmux binary a new terminal should run.
+export function loadAttachSettings(configPath: string): AttachSettings {
+  const bin = process.env.AGMUX_BIN ?? Bun.which("agmux") ?? "agmux";
+  return attachSettingsFrom(loadAttachConfig(configPath), bin);
+}
 
 export function attachCtxFor(s: AttachSettings, env: Record<string, string | undefined>, popup: boolean): AttachCtx {
   return { inTmux: !!env.TMUX, popup, terminalWindow: !!s.terminal.newWindow, terminalTab: !!s.terminal.newTab };
@@ -59,6 +65,13 @@ export function buildViewClientArgv(c: AttachCoords, view: string, detachKey: st
   ];
   if (c.tmux_pane) argv.push(";", "select-pane", "-t", c.tmux_pane);
   return argv;
+}
+
+// A command embedded in another tmux command (`new-window -- …`,
+// `split-window -- …`) is parsed by that outer tmux first, and a bare ";" there
+// ends the outer command. "\;" reaches the inner tmux as a literal ";".
+export function nestedTmuxArgv(argv: string[]): string[] {
+  return argv.map((a) => (a === ";" ? "\\;" : a));
 }
 
 // "new session" for a live agent: no nesting — a grouped session on the agent's

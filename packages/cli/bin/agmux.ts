@@ -16,6 +16,7 @@ import { inspectCmd } from "../src/inspect.ts";
 import { explainCmd } from "../src/explain.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
+import { loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
 import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
@@ -294,10 +295,13 @@ async function main(): Promise<number> {
       let dashDefaults: DashConfig;
       try { dashDefaults = loadDashConfig(configPath); }
       catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+      let attachSettings: AttachSettings;
+      try { attachSettings = loadAttachSettings(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       const parsed = parseDashArgs(argv.slice(1), dashDefaults);
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
       // Long-lived view: follow the hub across restarts (see resolveLiveHubUrl).
-      return dashCmd({ ...parsed.opts, hubUrl, wrapBin, resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir) });
+      return dashCmd({ ...parsed.opts, hubUrl, wrapBin, attach: attachSettings, resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir) });
     }
     case "attach": {
       const id = argv[1]; if (!id) usage();
