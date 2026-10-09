@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import { dashCmd, type DashCmdDeps } from "../src/dash.ts";
 import type { DashOpts } from "../src/parse-dash.ts";
 import { initialGroup } from "@agmux/tui";
+import { attachSettingsFrom } from "../src/attach-place.ts";
 
 const groups = {
   open: { limit: 50, intervalMs: 1000 },
@@ -108,4 +109,22 @@ test("TTY path forwards the column layout to runManage", async () => {
   };
   await dashCmd(opts, deps);
   expect(seen).toEqual({ columns: ["glyph", "name", "last_seen"], showHeader: true });
+});
+
+test("dash passes attach settings to the actions and the matching attachCtx to the renderer", async () => {
+  let seenSettings: unknown;
+  let seenCtx: unknown;
+  const settings = attachSettingsFrom({ terminal: { newWindow: ["t", "{cmd}"] } }, "/bin/agmux");
+  await dashCmd(
+    { ...opts, attach: settings },
+    {
+      isTTY: () => true,
+      runManageImpl: async (o) => { seenCtx = o.attachCtx; return 0; },
+      makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
+      makeActionsImpl: (_h, _w, _p, s) => { seenSettings = s; return { async attach() { return null; }, async kill() {}, async resume() { return null; }, async copy() {}, async markSeen() {} }; },
+      errOut: () => {},
+    },
+  );
+  expect(seenSettings).toBe(settings);
+  expect((seenCtx as { terminalWindow: boolean }).terminalWindow).toBe(true);
 });
