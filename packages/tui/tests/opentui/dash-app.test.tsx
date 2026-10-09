@@ -620,9 +620,9 @@ test("a digit in the attach popup attaches with that placement", async () => {
   await renderOnce();
   await act(async () => { mockInput.pressKey("A"); });
   await renderOnce();
-  await act(async () => { mockInput.pressKey("3"); });
+  await act(async () => { mockInput.pressKey("1"); });
   await renderOnce();
-  expect(reqs).toEqual([{ placement: "new-window" }]);
+  expect(reqs).toEqual([{ placement: "inline" }]);
   expect(captureCharFrame()).not.toContain("attach to");
   renderer.destroy();
 });
@@ -656,7 +656,7 @@ test("picking a disabled target shows its reason and calls nothing", async () =>
   const rows = [mkRow({ session_id: "agx-att-4", status: "running", tmux_session: "m", tmux_window: "@1" })];
   const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
     <DashApp
-      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions} attachCtx={TMUX_CTX}
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
       onHandoff={() => {}} onQuit={() => {}}
     />,
@@ -665,10 +665,10 @@ test("picking a disabled target shows its reason and calls nothing", async () =>
   await renderOnce();
   await act(async () => { mockInput.pressKey("A"); });
   await renderOnce();
-  await act(async () => { mockInput.pressKey("2"); }); // new pane, no attachCtx → not in tmux
+  await act(async () => { mockInput.pressKey("2"); }); // new pane on a live agent
   await renderOnce();
   expect(calls).toEqual([]);
-  expect(captureCharFrame()).toContain("new pane: not in tmux");
+  expect(captureCharFrame()).toContain("new pane: already open");
   renderer.destroy();
 });
 

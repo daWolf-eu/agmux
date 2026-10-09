@@ -21,9 +21,9 @@ test("seven targets in slot order with labels", () => {
   ]);
 });
 
-test("live in tmux: tmux placements on, peek planned, terminals unconfigured", () => {
+test("live in tmux: only switching to it; new pane/window/session would need a second view", () => {
   expect(reasons(attachTargets("live", TMUX))).toEqual({
-    inline: "", "new-pane": "", "new-window": "", "new-session": "",
+    inline: "", "new-pane": "already open", "new-window": "already open", "new-session": "already open",
     peek: "planned", "new-tab": "not configured", "new-terminal": "not configured",
   });
 });
@@ -32,7 +32,7 @@ test("outside tmux only inline and configured terminals are enabled", () => {
   const ctx = { ...NO_ATTACH_CTX, terminalWindow: true };
   const on = attachTargets("live", ctx).filter((t) => t.enabled).map((t) => t.placement);
   expect(on).toEqual(["inline", "new-terminal"]);
-  expect(reasons(attachTargets("live", ctx))["new-pane"]).toBe("not in tmux");
+  expect(reasons(attachTargets("closed", ctx))["new-pane"]).toBe("not in tmux");
 });
 
 test("closed in a popup: inline disabled, peek ends with popup", () => {
@@ -54,12 +54,13 @@ test("defaults without config keep today's ⏎ behaviour", () => {
 });
 
 test("configured defaults apply when available", () => {
-  expect(defaultPlacement("live", TMUX, { live: "new-session" })).toBe("new-session");
+  expect(defaultPlacement("live", TMUX, { live: "new-tab" })).toBe("inline"); // not configured
+  expect(defaultPlacement("live", { ...TMUX, terminalTab: true }, { live: "new-tab" })).toBe("new-tab");
   expect(defaultPlacement("closed", TMUX, { closed: "new-pane" })).toBe("new-pane");
 });
 
 test("a configured default impossible in context falls back to inline", () => {
-  expect(defaultPlacement("live", NO_ATTACH_CTX, { live: "new-window" })).toBe("inline");
+  expect(defaultPlacement("live", TMUX, { live: "new-window" })).toBe("inline");
   expect(defaultPlacement("live", TMUX, { live: "peek" })).toBe("inline");
 });
 
@@ -68,7 +69,8 @@ test("a closed default of inline in a popup falls back to new-window", () => {
 });
 
 test("resolvePlacement passes enabled requests, rejects disabled ones, defaults when absent", () => {
-  expect(resolvePlacement("live", TMUX, "new-pane")).toBe("new-pane");
-  expect(() => resolvePlacement("live", NO_ATTACH_CTX, "new-pane")).toThrow("new pane: not in tmux");
+  expect(resolvePlacement("closed", TMUX, "new-pane")).toBe("new-pane");
+  expect(() => resolvePlacement("live", TMUX, "new-pane")).toThrow("new pane: already open");
+  expect(() => resolvePlacement("closed", NO_ATTACH_CTX, "new-pane")).toThrow("new pane: not in tmux");
   expect(resolvePlacement("closed", TMUX, undefined)).toBe("new-window");
 });

@@ -42,9 +42,13 @@ function reasonFor(p: AttachPlacement, kind: AttachKind, ctx: AttachCtx): string
   switch (p) {
     // A resumed agent in the dash's own pane would die with the popup.
     case "inline": return kind === "closed" && ctx.popup ? "in popup" : "";
+    // A live agent can't move; opening it elsewhere would need a second view of
+    // its window. Switching to where it runs (inline) is the local attach.
     case "new-pane":
     case "new-window":
-    case "new-session": return ctx.inTmux ? "" : "not in tmux";
+    case "new-session":
+      if (kind === "live") return "already open";
+      return ctx.inTmux ? "" : "not in tmux";
     // Phase 1: peek is not built yet; for a resume it can never work.
     case "peek": return kind === "closed" ? "ends with popup" : "planned";
     case "new-tab": return ctx.terminalTab ? "" : "not configured";

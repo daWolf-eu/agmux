@@ -31,10 +31,10 @@ in its slot, dimmed, with a one-word reason (yank convention).
 | Key | Target | Live local session | Closed session (resume) | Remote session |
 |---|---|---|---|---|
 | 1 | **inline** | switch this client to the agent's pane (today's ⏎ in tmux) | agent replaces the dash's pane (dash exits, handoff argv) | dash hands its pane to the transport (dash exits) |
-| 2 | **new pane** | split here, pane runs a view client (§Mechanics) | split here, agent runs in it | split here, transport runs in it |
-| 3 | **new window** | new window here, runs a view client | new window here (today's in-tmux resume) | new window here, transport (remote spec §4.7) |
-| 4 | **new session** | grouped session on the agent's session, switch to it (no nesting) | new tmux session, agent in it | new local session, transport in its window |
-| 5 | **peek** | `display-popup` with a view client; closes on detach | — (dimmed: agent would die with the popup) | `display-popup` with the transport |
+| 2 | **new pane** | — (dimmed: already open) | split here, agent runs in it | split here, transport runs in it |
+| 3 | **new window** | — (dimmed: already open) | new window here (today's in-tmux resume) | new window here, transport (remote spec §4.7) |
+| 4 | **new session** | — (dimmed: already open) | new tmux session, agent in it | new local session, transport in its window |
+| 5 | **peek** | planned: `display-popup` with a view of the agent's window | — (dimmed: agent would die with the popup) | `display-popup` with the transport |
 | 6 | **new tab** | terminal tab running `agmux attach <id> --placement inline` | same (resume happens there) | same |
 | 7 | **new terminal window** | terminal OS window, same command | same | same |
 
@@ -48,19 +48,21 @@ hide the mode line.
 
 ## Mechanics
 
-- **View client (local, slots 2/3/5).** A pane running a second client of the same tmux
-  server onto a throw-away grouped session of the agent's session — the same N1 view
-  session as the remote spec §8.1 (`prefix None`, `status off`, `destroy-unattached on`),
-  started with `TMUX=` unset. Closing the pane kills only that client; the agent is never
-  touched. Chosen over `link-window`, where a habitual `kill-window` on the linked window
-  would kill the agent itself.
-  - If the agent's window already is in the caller's session, 2/3 would show a window
-    inside itself → fall back to inline and say so in the notice.
-- **Leaving a view.** The `agmux-view` key table binds exactly one key, default `M-d` →
-  `detach-client` (`[attach] view_detach_key`). Needed for peek (the popup closes when its
-  client detaches) and handy everywhere else; it's not a key Claude Code uses.
-- **New session (local, slot 4)** needs no nesting: `new-session -d -t <agent session> -s
-  agmux-<id8>` + select window/pane + `switch-client`, with `destroy-unattached on`.
+- **Live local agents are only switched to (decided 2026-10-09).** A live agent can't move,
+  so opening it in a new pane/window/session would need a second view of its window. The
+  first build did that with a client on a throw-away *grouped* session; dropped because:
+  - tmux 3.6a segfaults when a session of a group loses its last window
+    (`server_destroy_session_group` → `session_destroy` → `notify_session` →
+    `cmd_find_from_nothing`) — an agent alone in its session exiting while a view is open
+    takes the whole tmux server down;
+  - switching to where the agent runs needs no workaround, and new tab/terminal still give
+    a second place to look (`agmux attach` there).
+
+  A future view (peek, remote N1) links the agent's window into a plain session instead
+  (`new-session -d -s V` + `link-window -s <win> -t V:` + kill V's first window): no group,
+  verified not to crash on agent exit or `kill-window`.
+- **A placed command that fails keeps its pane** until a key (`holdOnFailure`), so a resume
+  whose cwd is gone shows its error instead of flickering.
 - **Terminal tab/window (6/7)** go through argv templates, because there's no portable
   way to open a tab (Ghostty on macOS: verify what its CLI / AppleScript support allows):
 
@@ -80,9 +82,8 @@ hide the mode line.
 
 ```toml
 [attach]
-live   = "inline"       # live local session
+live   = "inline"       # live local session: inline | new-tab | new-terminal
 closed = "new-window"   # resume
-view_detach_key = "M-d"
 
 [remote.attach]         # remote spec §8
 placement = "new-window"
@@ -109,17 +110,15 @@ tmux) falls back to `inline`.
 
 ## Scope / phasing
 
-1. Local: slots 1–4 + 7 (Ghostty new window), ⏎ defaults from config, `--placement`.
+1. Local: slot 1 for live, 1–4 for closed, 6/7 via `[terminal]`, ⏎ defaults from config, `--placement`.
 2. Peek (5) and new tab (6) after verification.
 3. Remote rows: mode line + `m`, transport placements — lands with remote spec phase 2.
 
 ## Verify
 
-- Same-server nested client with `TMUX=` unset onto a grouped session: no recursion when
-  the agent's session differs from the caller's; behaviour when it doesn't.
 - `display-popup` from a dash already running in a popup (nested popups) — or close-then-
   open via `run-shell -b`.
 - Ghostty 1.3 on macOS: new window with a command (`open -na … --args -e`), and whether a
   new *tab* with a command is possible at all.
-- `M-d` reaches the view's key table through the outer tmux (not bound in the outer root
-  table).
+- Peek: a `link-window` view inside `display-popup`; what leaves it (popup close vs a
+  detach key).

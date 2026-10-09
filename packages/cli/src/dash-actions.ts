@@ -1,17 +1,16 @@
 import { $ } from "bun";
-import { tmuxSocketArgs, type SessionRow } from "@agmux/protocol";
+import type { SessionRow } from "@agmux/protocol";
 import { attachKind, resolvePlacement, type Actions, type AttachRequest, type Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileEnv } from "./profile-env.ts";
-import { readCurrentPane, hasSession, splitPane, holdOnFailure, type PaneCoords } from "./tmux-place.ts";
+import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen } from "./seen.ts";
 import {
-  DEFAULT_ATTACH_SETTINGS, attachCtxFor, buildViewClientArgv, buildGroupedSessionCommands,
-  expandTemplate, groupedSessionName, nestedTmuxArgv, viewSessionName, type AttachSettings,
+  DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, type AttachSettings,
 } from "./attach-place.ts";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
@@ -38,12 +37,9 @@ export interface ActionDeps {
   currentPane?: () => Promise<PaneCoords | null>;
   // Launch a [terminal] template without waiting for it.
   spawnDetached?: (argv: string[], env: Record<string, string | undefined>) => void;
-  // Is this window (id) part of that session? Grouped sessions share windows.
-  windowInSession?: (session: string, window: string, socket: string | null) => Promise<boolean>;
   // Resume placement (new window / new session); default: real tmux.
   placement?: ResumePlacementDeps;
   splitPane?: typeof splitPane;
-  now?: () => number;
 }
 
 const defaultActionDeps: ActionDeps = {
@@ -53,21 +49,6 @@ const defaultActionDeps: ActionDeps = {
 
 function spawnDetachedDefault(argv: string[], env: Record<string, string | undefined>): void {
   Bun.spawn(argv, { stdio: ["ignore", "ignore", "ignore"], env }).unref();
-}
-
-async function windowInSessionDefault(session: string, window: string, socket: string | null): Promise<boolean> {
-  try {
-    const out = await $`tmux ${tmuxSocketArgs(socket)} list-windows -t ${session} -F ${"#{window_id}"}`.quiet().text();
-    return out.split("\n").includes(window);
-  } catch {
-    return false;
-  }
-}
-
-// A null socket means "the default server" (agmux run outside tmux records null),
-// which from inside tmux is indistinguishable from the caller's own server.
-function sameServer(a: string | null, b: string | null): boolean {
-  return a === null || b === null || a === b;
 }
 
 // A new terminal must not look like it runs inside the dash's tmux client, or
@@ -88,10 +69,8 @@ export function makeActions(
   const sessionExists = deps.sessionExists ?? hasSession;
   const currentPane = deps.currentPane ?? (() => readCurrentPane().catch(() => null));
   const spawnDetached = deps.spawnDetached ?? spawnDetachedDefault;
-  const windowInSession = deps.windowInSession ?? windowInSessionDefault;
   const placement = deps.placement ?? defaultPlacementDeps;
   const split = deps.splitPane ?? splitPane;
-  const now = deps.now ?? Date.now;
   const ctx = attachCtxFor(settings, process.env, popup);
   // Opened somewhere else: in a popup the empty handoff closes the popup onto
   // it; in an inline dash the dash stays (null).
@@ -126,7 +105,7 @@ export function makeActions(
     }
     if (where === "new-session") {
       const coords = await placement.newSession({
-        sessionName: groupedSessionName(row.session_id), windowName: `agmux:${label}`,
+        sessionName: resumeSessionName(row.session_id), windowName: `agmux:${label}`,
         cmd: spec.wrapArgv, env: relaunchEnv(spec.env), socket,
       });
       await placement.switchClient(`${coords.session}:${coords.window}`, socket);
@@ -150,32 +129,8 @@ export function makeActions(
       const coords: AttachCoords = {
         tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };
+      // Only inline (switch to it) or a terminal reach a live agent: it can't move.
       if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
-      if (where === "new-session") {
-        // switch-client can't move a client to another server, and a session
-        // created there would never be reaped.
-        const here = await currentPane();
-        if (here && !sameServer(here.socket, row.tmux_socket)) throw new Error("new session: agent is on another tmux server");
-        const name = groupedSessionName(row.session_id);
-        const exists = await sessionExists(name, row.tmux_socket);
-        for (const args of buildGroupedSessionCommands(coords, name, exists)) await deps.runTmux(args);
-        return opened();
-      }
-      if (where === "new-pane" || where === "new-window") {
-        const here = await currentPane();
-        // A view of a session that already holds the agent's window (the caller's
-        // own, or one grouped with it) would show itself — go there inline instead.
-        const alreadyHere = !!here && sameServer(here.socket, row.tmux_socket)
-          && await windowInSession(here.session, row.tmux_window!, here.socket);
-        if (here && !alreadyHere) {
-          const view = nestedTmuxArgv(holdOnFailure(buildViewClientArgv(coords, viewSessionName(row.session_id, now()), settings.viewDetachKey)));
-          const hs = tmuxSocketArgs(here.socket);
-          await deps.runTmux(where === "new-pane"
-            ? [...hs, "split-window", "-t", here.pane, "--", ...view]
-            : [...hs, "new-window", "-t", `${here.session}:`, "-n", `view:${row.session_id.slice(0, 8)}`, "--", ...view]);
-          return opened();
-        }
-      }
       // inline (today's behaviour)
       if (popup) return attachInPopup(coords, deps.runTmux);
       const cmds = buildAttachCommands(coords, inTmux);

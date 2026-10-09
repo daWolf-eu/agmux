@@ -477,7 +477,14 @@ two layers.
 
 **N1 — transparent view (default inside tmux).** Each attach creates a throw-away remote
 *grouped* session that shares the agent's windows but has its own session options, all
-set so the inner tmux takes no keys and draws nothing:
+set so the inner tmux takes no keys and draws nothing.
+
+> **Do not group (found 2026-10-09).** tmux 3.6a segfaults when a session of a group loses
+> its last window (`server_destroy_session_group` → `notify_session` →
+> `cmd_find_from_nothing`): an agent alone in its session exiting under a view kills the
+> whole tmux server. Build `V` as a plain session holding the agent's window instead —
+> `new-session -d -s "$V"` + `link-window -s "$W" -t "$V:"` + `kill-window -t "$V:^"` —
+> verified not to crash on agent exit or `kill-window`. The block below predates this.
 
 ```sh
 # run remotely by `agmux attach --view <id>` (S), or sent as argv by the Mac (G)
@@ -502,7 +509,8 @@ tmux new-session -d -t "$S" -s "$V" \
   their normal prefix and status bar — the options are per-session.
 - `agmux-view` binds exactly one key, `[attach] view_detach_key` (default `M-d`) →
   `detach-client`; everything else passes to the pane. Same table as the local view client
-  in the attach-popup spec. Verify unbound keys in a custom table reach the pane.
+  in the attach-popup spec (local views were dropped there; the key comes back with N1).
+  Verify unbound keys in a custom table reach the pane.
 
 **N2 — full remote tmux (opt-in, for working sessions).** Attach a normal client to the
 agent's remote session (`attach-session -t work`, window/pane selected), with the image's
