@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import { parse as parseToml } from "smol-toml";
-import { expandStatusFilter, type AgentKind } from "@agmux/protocol";
+import { expandStatusFilter, isAttachPlacement, ATTACH_PLACEMENTS, type AgentKind, type AttachPlacement } from "@agmux/protocol";
 
 export interface ProfileConfig {
   agent_kind: AgentKind;
@@ -206,4 +206,65 @@ export function loadDashConfig(configPath: string): DashConfig {
   if (!fs.existsSync(configPath)) return {};
   const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
   return parseDashSection(raw.dash);
+}
+
+// [attach] + [terminal]: how `agmux attach` / the dash open a session (see
+// docs/superpowers/specs/2026-10-09-dash-attach-popup-design.md).
+export interface AttachConfig {
+  live?: AttachPlacement;    // ⏎ default for a live session
+  closed?: AttachPlacement;  // ⏎ default for a closed session (resume)
+  viewDetachKey?: string;    // the one key bound in a view client's key table
+  terminal: { newWindow?: string[]; newTab?: string[] };
+}
+
+function placementOpt(label: string, v: unknown): AttachPlacement {
+  if (!isAttachPlacement(v))
+    throw new Error(`${label} must be one of ${ATTACH_PLACEMENTS.join("|")}, got ${JSON.stringify(v)}`);
+  return v;
+}
+
+// An argv template: [] = unset; otherwise non-empty strings, at least one containing {cmd}.
+function templateOpt(label: string, v: unknown): string[] | undefined {
+  if (!Array.isArray(v) || !v.every((s) => typeof s === "string" && s.length > 0))
+    throw new Error(`${label} must be an array of non-empty strings, got ${JSON.stringify(v)}`);
+  if (v.length === 0) return undefined;
+  if (!v.some((s: string) => s.includes("{cmd}"))) throw new Error(`${label} must contain {cmd}`);
+  return v as string[];
+}
+
+function tableOf(label: string, raw: unknown, keys: string[]): Record<string, unknown> {
+  if (raw === undefined) return {};
+  if (typeof raw !== "object" || raw === null) throw new Error(`${label} must be a table`);
+  const r = raw as Record<string, unknown>;
+  for (const k of Object.keys(r)) if (!keys.includes(k)) throw new Error(`${label} unknown key ${JSON.stringify(k)}`);
+  return r;
+}
+
+export function parseAttachSection(attach: unknown, terminal: unknown): AttachConfig {
+  const a = tableOf("[attach]", attach, ["live", "closed", "view_detach_key"]);
+  const t = tableOf("[terminal]", terminal, ["new_window", "new_tab"]);
+  const out: AttachConfig = { terminal: {} };
+  if (a.live !== undefined) out.live = placementOpt("[attach] live", a.live);
+  if (a.closed !== undefined) out.closed = placementOpt("[attach] closed", a.closed);
+  if (a.view_detach_key !== undefined) {
+    if (typeof a.view_detach_key !== "string" || a.view_detach_key.length === 0)
+      throw new Error(`[attach] view_detach_key must be a non-empty string, got ${JSON.stringify(a.view_detach_key)}`);
+    out.viewDetachKey = a.view_detach_key;
+  }
+  if (t.new_window !== undefined) {
+    const w = templateOpt("[terminal] new_window", t.new_window);
+    if (w) out.terminal.newWindow = w;
+  }
+  if (t.new_tab !== undefined) {
+    const tab = templateOpt("[terminal] new_tab", t.new_tab);
+    if (tab) out.terminal.newTab = tab;
+  }
+  return out;
+}
+
+// Parses ONLY [attach] and [terminal]. Missing file/sections → defaults. Invalid values throw.
+export function loadAttachConfig(configPath: string): AttachConfig {
+  if (!fs.existsSync(configPath)) return { terminal: {} };
+  const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  return parseAttachSection(raw.attach, raw.terminal);
 }
