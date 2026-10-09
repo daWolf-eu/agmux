@@ -5,7 +5,7 @@
 ## Look & feel rules (dash)
 
 - **Hue = meaning only.** Status colours come from `STATUS_COLORS` (`shared/glyph.ts`); everything else (chrome, secondary columns, legend) uses the neutral ramp in `MOCHA` (`shared/palette.ts`). Sole exception: the branch column (`accent` role, pink). Never hard-code hexes in components — pick a `MOCHA` token.
-- **Whitespace over lines.** No pane borders or titles; blank spacer rows around the body; one faint `│` between table and preview. Overlays (`Overlays.tsx`: help, yank) are borderless blocks centred on an empty screen.
+- **Whitespace over lines.** No pane borders or titles; blank spacer rows around the body; one faint `│` between table and preview. Overlays (`Overlays.tsx`: help, yank, attach — the two pickers share `PickerOverlay`) are borderless blocks centred on an empty screen.
 - **Keys** render through `KeyHint` (`[key] label`) everywhere — footer, help, yank.
 - **One glyph vocabulary** shared by dash and the tmux status line: `statusTone()` → `toneGlyph(tone, frame)` / `STATUS_COLORS`. Red is reserved for errors; `waiting` is yellow.
 - Height budget in `DashApp`: header + spacer + footer spacer + footer = 4 rows; `PreviewPane.viewportHeight` must stay explicit (flex alone lets the scrollbox push the footer off-screen).
@@ -33,3 +33,13 @@
 4. Document it in the README `[dash] columns` list; extend `tests/shared/columns.test.ts`.
 
 **Deferred:** a format-string column spec with per-column styling (e.g. `"{glyph} {name:bold} {repo:faint}"`). The `style` role on `ColDef` is the hook it would override.
+
+## Attach targets (`shared/attach-targets.ts`)
+
+`ATTACH_PLACEMENTS` (`@agmux/protocol`) is the slot order of the `A` popup; `attachTargets(kind, ctx)` says which are available and why not; `defaultPlacement` / `resolvePlacement` are what ⏎ and `agmux attach --placement` use, so popup and cli always agree. The cli side (tmux/terminal argv) is `cli/src/attach-place.ts`, executed in `cli/src/dash-actions.ts`. A command embedded in another tmux command (`new-window -- …`) must go through `nestedTmuxArgv`, or the outer tmux splits it at `;`.
+
+### Adding a placement
+
+1. Append (never insert) to `ATTACH_PLACEMENTS`; add its label to `LABELS` and its availability rule to `reasonFor`.
+2. Build its argv as a pure function in `cli/src/attach-place.ts` (tested), execute it in `makeActions` (`attach` for live, `resume` for closed).
+3. Update the README slot list and `usage.ts`.

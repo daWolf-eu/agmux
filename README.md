@@ -116,7 +116,7 @@ status = "open"     # active | open | closed | comma-separated statuses
 ```
 
 `dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `f` filter · `/` search · `tab` preview tab ·
-`p` show/hide preview · `⏎` attach (switch-client) · `x` kill · `y` yank field ·
+`p` show/hide preview · `⏎` attach (switch-client) · `A` attach to… (pick where it opens) · `x` kill · `y` yank field ·
 `u` mark read · `?` help · `q` quit. The footer lists the everyday ones; `?` has all.
 
 Rows sort by status by default — `waiting` › `done` › `running` › `idle`/closed, newest
@@ -151,6 +151,23 @@ header = false
 [dash.closed]
 limit = 2000
 interval = 30
+```
+
+`A` lists every place a session can open — `1` inline · `2` new pane · `3` new window ·
+`4` new session · `5` peek (planned) · `6` new tab · `7` new terminal window. Unavailable
+ones stay in their slot, dimmed, with the reason. A live session in a new pane/window is
+shown through a throw-away tmux client (`M-d` closes it; the agent keeps running). ⏎ uses
+the defaults below; `agmux attach <id> --placement <p>` does the same from a shell.
+
+```toml
+[attach]
+live = "inline"          # ⏎ on a live session
+closed = "new-window"    # ⏎ on a closed session (resume); outside tmux: inline
+view_detach_key = "M-d"  # closes a new-pane/new-window view
+
+[terminal]               # unset → "new tab" / "new terminal window" are dimmed
+new_window = ["open", "-na", "Ghostty.app", "--args", "-e", "{cmd}"]
+new_tab = []
 ```
 
 Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.

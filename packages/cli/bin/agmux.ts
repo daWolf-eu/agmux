@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH } from "@agmux/protocol";
+import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { runHeadless } from "../src/headless.ts";
@@ -17,6 +17,7 @@ import { explainCmd } from "../src/explain.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
+import { attachPlacedCmd } from "../src/attach-placed.ts";
 import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
@@ -304,8 +305,19 @@ async function main(): Promise<number> {
       return dashCmd({ ...parsed.opts, hubUrl, wrapBin, attach: attachSettings, resolveHubUrl: () => resolveLiveHubUrl(process.env, stateDir) });
     }
     case "attach": {
-      const id = argv[1]; if (!id) usage();
-      return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
+      const id = argv[1]; if (!id || id.startsWith("--")) usage();
+      const pi = argv.indexOf("--placement");
+      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
+      const placement = argv[pi + 1];
+      if (!isAttachPlacement(placement)) {
+        console.error(`attach: --placement must be one of ${ATTACH_PLACEMENTS.join("|")}`);
+        return 2;
+      }
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      let settings: AttachSettings;
+      try { settings = loadAttachSettings(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+      return attachPlacedCmd({ idOrPrefix: id, hubUrl, wrapBin, placement, settings });
     }
     case "kill": {
       const id = argv[1]; if (!id) usage();
