@@ -2,7 +2,8 @@
 
 **Date:** 2026-10-08
 **Status:** draft, review round 1 incorporated — topology **S** chosen (§5); §6 kept as the
-considered alternative
+considered alternative. Phase 0 spike findings (2026-10-11,
+[`SPIKE_REPORT.md`](../../spikes/2026-10-11-remote-sandbox/SPIKE_REPORT.md)) folded in.
 **Builds on:** foundation §2 (B), §3 host-agent role, §7 remote attach, §11 security;
 homelab `docs/openshell-handoff.md`, `docs/ai-platform.md`, `docs/openshell-sag-workitem.md`
 
@@ -58,16 +59,20 @@ one sandbox at a time. Attention signals (blocked on a prompt, done) never reach
 | Liveness sweep is host-scoped: `kill -0` on live native rows **of this host** | `hub/src/liveness.ts`, `store.listLiveNativeSessions(host)` |
 | `GET /events?since=<ts>` exists, ordered by local rowid, filtered by `ts >= since` | `hub/src/server.ts`, `store/src/queries.ts` |
 | Attach builds tmux argv from stored `tmux_session/window/pane/socket` | `cli/src/attach.ts` `buildAttachCommands` |
-| Agent runs in `tmux new -s work`; sandbox main process is `sleep infinity` | homelab `docs/ai-platform.md` |
+| Agent runs under tmux in the sandbox; the session name is not fixed (`work` in the docs, `0` in the real `wi-sag-280`); sandbox main process is `sleep infinity` | homelab `docs/ai-platform.md`, spike |
 | Shell into a sandbox: `openshell -g <gw> sandbox exec -n <name> --tty -- <cmd>`; `sandbox connect` attaches to main (`sleep`) and looks like a hang | homelab handoff "Gotchas" |
-| `sandbox exec` ≈ 0.05 s warm; propagates exit code | homelab handoff §5, usecases proposal |
-| `sandbox list -o json`, `--label k=v` (repeatable), label selector on list | homelab `ai-platform.md`, `sag-sandbox-create` |
+| `sandbox exec` round trip Mac → `ai-sandbox` 20–30 ms; propagates exit code (death by signal → 1) | spike #9 |
+| `exec --no-tty` streams stdout line by line; idle `openshell exec` = 13 MB RSS on the Mac; 20 concurrent execs fine | spike #10, #11 |
+| Remote side of an `exec` dies with the local CLI only for `--no-tty` with local stdin held open; closed stdin or `--tty` ⇒ remote orphaned | spike, design change 1 |
+| Sandbox hostname = container id; create-time `--env` reaches `exec` processes and tmux panes, image `ENV` does not | spike #6, #7 |
+| Bun `fetch` to `127.0.0.1` works under the sandbox proxy env (`NO_PROXY` covers loopback); hub outlives the `exec` that spawned it | spike #3 |
+| `sandbox list -o json` → `[{name, id, phase, labels, …}]`; `create --label k=v` (repeatable); `list --selector k=v,…`; no label edit on an existing sandbox at 0.0.116 | homelab `ai-platform.md`, `sag-sandbox-create`, spike #8 |
 | `sandbox ssh-config` exists | homelab workitem §5.2 (VERIFIED `--help`) |
 | tmux in a sandbox needs `/dev/pts` in `filesystem_policy.read_write` — already in `work-default.yaml` | homelab `ai-platform.md` |
 | Egress is default-deny; `protocol: tcp` endpoints need a DNS name (no IP literals); loopback/link-local destinations always blocked | homelab workitem §3 |
 | Tools go under `/usr/local/bin` (binary-path policy matching; agent can modify `/sandbox`) | homelab handoff §1 |
 | Gateway host `ai-sandbox` 10.10.30.72, amd64, Docker driver, bridge `openshell0` 172.31.250.0/24; Mac reaches it as `ci_user@10.10.30.72` | homelab handoff |
-| PTY wrapper is the macOS-only part; native-first capture (hooks → `agmux emit` → HTTP) needs no PTY | foundation §4 (superseded note), spike report |
+| PTY wrapper is the macOS-only part; native-first capture (hooks → `agmux emit` → HTTP) needs no PTY — verified in `wi-sag-280` (hub, emit, liveness sweep, `bun:sqlite`, x86_64 glibc 2.39) | foundation §4 (superseded note), spike #2–#5 |
 
 ---
 
@@ -107,6 +112,11 @@ remote store (authoritative for its sessions)          Mac hub (sole writer of M
 - **Streaming is the primary mode.** `agmux events --follow --after <n>` keeps one
   long-lived `exec` per source emitting NDJSON as events happen; on drop, reconnect with
   the last cursor (backlog pitch 08: snapshot + dedup, no replay).
+- **Follower lifetime (spike).** The puller spawns `openshell … exec --no-tty` with a
+  **stdin pipe it never closes**: only then does the remote follower die with the local
+  process. With stdin closed up front the remote follower is orphaned and keeps running.
+  As a second guard, `events --follow --consumer <id>` takes a per-consumer lock in the
+  remote state dir and replaces (terminates) a previous follower holding it.
 - **Polling is a fallback only** (source where `--follow` keeps failing): exponential
   backoff from `interval` up to a cap, longer for sources whose last event is old.
 - **Consumers never trigger sync.** `dash`, `ls`, `watch`, the status line and notifyd
@@ -118,10 +128,11 @@ remote store (authoritative for its sessions)          Mac hub (sole writer of M
 | Mode | Steady-state cost on the Mac | Latency |
 |---|---|---|
 | Stream (default) | 1 idle `openshell` CLI process + 1 gateway stream per source; bytes only when hooks fire | ≈ live |
-| Poll (fallback) | 1 process spawn + mTLS handshake per source per cycle (est. 100–300 ms each, unmeasured — the homelab 0.05 s figure is in-sandbox exec time, not Mac round trip) | `interval` |
+| Poll (fallback) | 1 process spawn + mTLS handshake per source per cycle (measured 20–30 ms Mac → `ai-sandbox`) | `interval` |
 
-At 12 sandboxes: streaming ≈ 12 idle processes (a few MB each, measure); polling at 5 s
-≈ 2–3 spawns/s indefinitely — acceptable only as backoff fallback. If per-source streams
+At 12 sandboxes: streaming ≈ 12 idle processes × 13 MB ≈ 160 MB on the Mac (measured); 20
+concurrent streams hit no gateway cap. Polling at 5 s ≈ 2–3 spawns/s indefinitely —
+cheap per call, still only the backoff fallback. If per-source streams
 prove fragile or the count grows well past a dozen, a per-gateway relay (§7) collapses
 them to one stream per gateway without changing the protocol.
 
@@ -257,10 +268,14 @@ no network at image build, a new version is one local command.
   MB binaries would keep every version in homelab's git history forever (cleanup = history
   rewrite); git-ignored files are deleted like any other file.
 - **Staging:** homelab `openshell/bin/stage-agmux [<agmux checkout>]` runs
-  `bun build --compile` for `bun-linux-x64` and `bun-linux-arm64` from the local agmux
-  checkout (default `~/dawolf/agmux/AGX.git.main`), writes
-  `agmux/agmux-linux-{amd64,arm64}` + `agmux/VERSION`. Dockerfile
-  `COPY agmux/agmux-linux-${TARGETARCH} /usr/local/bin/agmux`.
+  `bun install --os='*' --cpu='*'` (cross-compiling the CLI needs opentui's Linux native
+  packages; lockfile unchanged) and then `bun build --compile` for `bun-linux-x64` and
+  `bun-linux-arm64` from the local agmux checkout (default `~/dawolf/agmux/AGX.git.main`),
+  writes `agmux/{agmux,agmux-hub}-linux-{amd64,arm64}` + `agmux/VERSION`. Dockerfile
+  copies both to `/usr/local/bin/{agmux,agmux-hub}` for `${TARGETARCH}` (`agmux` spawns
+  `agmux-hub` from `PATH`; claude hooks call `agmux` from `PATH`).
+- **Size:** `agmux` 128 MB + `agmux-hub` 95 MB per arch (spike). Folding the hub into the
+  `agmux` binary (`agmux hub serve`) would halve it; worth doing in Phase 1 if cheap.
 - **Reaches the gateway** because the Ansible role copies the build context from the
   controller's working tree (`roles/openshell/tasks/images.yml`, `ansible.builtin.copy
   src:`), git-ignored files included. The role asserts `agmux/VERSION` exists so a build
@@ -307,16 +322,19 @@ around). Rules:
 
 **What runs where**
 
-- Image: `agmux` Linux binary (amd64 for `ai-sandbox`, arm64 for the Mac gateway) in
-  `/usr/local/bin`, baked from the staged build context per §4.9. Nothing personal; config is
+- Image: `agmux` + `agmux-hub` Linux binaries (amd64 for `ai-sandbox`, arm64 for the Mac
+  gateway) in `/usr/local/bin`, baked from the staged build context per §4.9. Nothing personal; config is
   uploaded at create, consistent with the image rule.
-- At create (launcher, e.g. `sag-sandbox-create`): `--label agmux=1`, set `AGMUX_HOST`,
-  `agmux adapter install --kind claude` into the sandbox's Claude config dir.
+- At create (launcher, e.g. `sag-sandbox-create`): `--label agmux=1`,
+  `--env AGMUX_HOST=<gateway>/<sandbox>` (verified to reach exec'd processes and tmux
+  panes; the container hostname is its id), `agmux adapter install --kind claude` into the
+  sandbox's Claude config dir (pure file write, no network).
 - In the sandbox: the **same** background hub as on the Mac, localhost-only, SQLite under
   `/sandbox/.local/share/agmux`. Hooks → `agmux emit` → `127.0.0.1` exactly as locally.
   Optional: make `agmux hub` the sandbox main process instead of `sleep infinity`.
 - Mac: one puller per discovered sandbox:
-  `openshell -g <gw> sandbox exec -n <sbx> -- agmux events --follow --after <cursor>`.
+  `openshell -g <gw> sandbox exec -n <sbx> --no-tty -- agmux events --follow --after <cursor>`,
+  stdin an open pipe (§4.2 follower lifetime).
 
 **Liveness:** in-sandbox sweep, same pid namespace — works unchanged.
 
@@ -476,41 +494,56 @@ two layers.
 ### 8.1 Modes
 
 **N1 — transparent view (default inside tmux).** Each attach creates a throw-away remote
-*grouped* session that shares the agent's windows but has its own session options, all
-set so the inner tmux takes no keys and draws nothing.
+session that holds the agent's window (linked, not grouped) and has its own session
+options, all set so the inner tmux takes no keys and draws nothing.
 
 > **Do not group (found 2026-10-09).** tmux 3.6a segfaults when a session of a group loses
 > its last window (`server_destroy_session_group` → `notify_session` →
 > `cmd_find_from_nothing`): an agent alone in its session exiting under a view kills the
 > whole tmux server. Build `V` as a plain session holding the agent's window instead —
 > `new-session -d -s "$V"` + `link-window -s "$W" -t "$V:"` + `kill-window -t "$V:^"` —
-> verified not to crash on agent exit or `kill-window`. The block below predates this.
+> verified not to crash on agent exit or `kill-window` (3.6a; 3.7c in the spike). The
+> block below implements this.
 
 ```sh
-# run remotely by `agmux attach --view <id>` (S), or sent as argv by the Mac (G)
-V=agmux-view-<id8>
-tmux new-session -d -t "$S" -s "$V" \
-  \; set -t "$V" destroy-unattached on \
+# run remotely by `agmux attach --view <id>` (S); verified on tmux 3.7c (spike view.sh)
+V=agmux-view-<id8>-<tag>         # <tag> chosen by the Mac side (its pane id), for the reap
+tmux new-session -d -s "$V" \
   \; set -t "$V" status off \
   \; set -t "$V" prefix None \; set -t "$V" prefix2 None \
-  \; set -t "$V" key-table agmux-view \
-  \; set -t "$V" mouse on \
-  \; select-window -t "$V:$W" \; select-pane -t "$P" \
-  \; attach-session -t "$V"
+  \; set -t "$V" key-table agmux-view \; set -t "$V" mouse on
+tmux link-window -s "$W" -t "$V:"      # agent's window, by id
+tmux kill-window -t "$V:^"             # the placeholder
+tmux select-pane -t "$P"
+# -u: exec --tty passes no UTF-8 locale. destroy-unattached only at attach: set on the
+# never-attached session it fires on kill-window above and the view is gone (3.7c).
+exec tmux -u attach-session -t "$V" \; set -t "$V" destroy-unattached on
 ```
 
 - The outer (local) tmux owns every key; the remote pane behaves like a local pane.
-- Leave by closing the local window (`kill-pane`) or detaching the outer client: the
-  transport dies, the view session is destroyed (`destroy-unattached`), the agent's
-  `work` session is untouched.
+- Leave with `view_detach_key` (default `M-d`): the view is destroyed
+  (`destroy-unattached`), the transport exits 0, the agent's session is untouched.
+- **Closing the local window does not end the remote client** (spike: `exec --tty` never
+  tears down the remote side, whatever the local signal). The orphaned client keeps the
+  view attached and can pin the agent window's size; the remote side cannot tell an
+  orphan from a quiet viewer. So the Mac reaps explicitly, for both modes:
+  - Remotely, `agmux attach --view|--full` records its tmux client pid under
+    `<state>/attach/<tag>` before it execs the client.
+  - The local pane process is `agmux attach` (owning the transport), which on SIGHUP/exit
+    runs `exec --no-tty -- agmux attach --reap <tag>`: N1 kills the view session
+    (verified to free the orphaned client), N2 kills the recorded client pid.
+  - A Mac crash or sleep skips that; the next attach with the same `<tag>` reaps first.
 - Inner `mouse on`: the outer passes wheel events through to the inner (inner requested
   mouse mode), so scrolling enters the *inner* copy-mode and shows the agent's scrollback.
-- Grouped sessions mean other clients (you in `exec bash -l` + `tmux attach -t work`) keep
-  their normal prefix and status bar — the options are per-session.
+- Other clients (you in `exec bash -l` + `tmux attach -t <session>`) keep their normal
+  prefix and status bar — the options are per-session, and the view is its own session.
+- The agent exiting while viewed destroys the view (its only window is gone); the remote
+  server survives (verified 3.7c, link-window).
 - `agmux-view` binds exactly one key, `[attach] view_detach_key` (default `M-d`) →
   `detach-client`; everything else passes to the pane. Same table as the local view client
   in the attach-popup spec (local views were dropped there; the key comes back with N1).
-  Verify unbound keys in a custom table reach the pane.
+  Verified: unbound keys in the table reach the pane, including `C-b`, Esc (single
+  `1b`), arrows and extended keys.
 
 **N2 — full remote tmux (opt-in, for working sessions).** Attach a normal client to the
 agent's remote session (`attach-session -t work`, window/pane selected), with the image's
@@ -552,11 +585,11 @@ note for the local `~/.tmux.conf` (agmux.tmux can set what it owns):
 | Setting | Inner (sandbox) | Outer (Mac) | Why |
 |---|---|---|---|
 | `escape-time 0` | ✓ | ✓ | Esc = Claude interrupt; delay adds per layer |
-| `extended-keys on` + `terminal-features ',tmux*:extkeys'` | ✓ | ✓ (`always`?) | Shift+Enter / CSI-u through two layers — **likely papercut, verify first** |
+| `extended-keys on` + `terminal-features ',xterm*:extkeys'` | ✓ | ✓ | Shift+Enter through two layers — verified (outer 3.6a, inner 3.7c, app requesting modifyOtherKeys 2 → `ESC[27;2;13~`); the inner client's `TERM` is `xterm-256color` under `exec --tty`. Real Claude in Ghostty still to check by hand |
 | `default-terminal tmux-256color`, `terminal-features ',tmux*:RGB'` | ✓ | — | truecolor; image needs `tmux-256color` terminfo (`ncurses-term`) |
 | `set-clipboard on` | ✓ | ✓ | OSC 52 yank from the remote pane reaches the Mac clipboard (dash-yank spec already assumes SSH) |
 | `focus-events on` | ✓ | ✓ | agent UIs + agmux focus-seen |
-| `window-size latest` | ✓ | — | grouped view + `work` sharing windows resize to the active client |
+| `window-size latest` | ✓ | — | a window linked into a view and the agent's session resizes to the active client |
 
 ### 8.3 Local window bookkeeping
 
@@ -565,8 +598,10 @@ note for the local `~/.tmux.conf` (agmux.tmux can set what it owns):
 - Window name from `window_name`; agmux sets `automatic-rename off` on that window so the
   outer doesn't rename it to `openshell`.
 - If the transport exits non-zero (sandbox stopped mid-session, gateway down), keep the
-  pane (`remain-on-exit failed`) with a one-line reason, so the window doesn't vanish
-  silently.
+  pane open with a one-line reason until a key — reuse `holdOnFailure`
+  (`packages/cli/src/tmux-place.ts`), so the window doesn't vanish silently.
+- The local pane process is `agmux attach` (not `openshell` directly), so it can reap the
+  remote view on exit (§8.1).
 - Dedup is per mode: an open N1 view window doesn't satisfy an N2 attach request (and
   vice versa); `@agmux_attach_mode` on the local pane records which.
 
@@ -598,8 +633,9 @@ of that spec's target table.
 
 ## 10. Phasing
 
-**Phase 0 — spikes (half a day, settle §11 verify list).** Linux agmux binary runs a hub
-+ claude hooks in `scratch`; loopback HTTP inside a sandbox works with the proxy env;
+**Phase 0 — spikes (half a day, settle §11 verify list).** Done 2026-10-11 in `wi-sag-280`
+(not `scratch`: no tmux, no `/dev/pts`), remainder in §11. Linux agmux binary runs a hub
++ claude hooks; loopback HTTP inside a sandbox works with the proxy env;
 `exec` streams `--follow` output; N1 view session behaves (keys, mouse, Shift+Enter, Esc);
 `sandbox list` selector JSON shape.
 
@@ -638,22 +674,26 @@ Mac-routed downstream replication (§4.8); per-gateway relay if stream count dem
 
 **Still open:** none beyond the verify list.
 
-**Verify before building**
+**Verified (Phase 0 spike, 2026-10-11)** — details in the spike report
 
-- What hostname a sandbox reports; whether `sandbox create` can set env (`AGMUX_HOST`).
-- Bun `fetch` to `127.0.0.1` inside a sandbox with the OpenShell proxy env set
-  (`NO_PROXY` must cover loopback).
-- `sandbox exec` without `--tty` streams stdout incrementally (needed for `--follow`).
-- A long-lived `exec` stays up for hours (idle timeouts in the CLI/gateway gRPC path?);
-  whether the gateway caps concurrent exec streams.
-- Measured Mac → gateway `exec` round trip (process spawn + mTLS) and RSS of an idle
-  `openshell exec` process — feeds §4.2.1.
-- `bun:sqlite` + compiled binary on the workbench base image (glibc), amd64 and arm64,
-  cross-compiled on the Mac (`bun build --compile --target=bun-linux-*`).
-- tmux: empty `key-table` passes keys through; `destroy-unattached on` cleans the grouped
-  view; extended keys across two layers with Ghostty 1.3.1 + tmux 3.6a outer.
-- Hub memory per sandbox (S) — set `--memory` headroom accordingly.
-- G-push only: source attribution through the OpenShell proxy; Bun honours `HTTP_PROXY`.
+- Hostname = container id; create-time `--env` reaches exec'd processes and tmux panes.
+- Bun `fetch` to `127.0.0.1` works under the proxy env.
+- `exec --no-tty` streams incrementally; 20 concurrent execs fine; round trip 20–30 ms;
+  idle `openshell exec` 13 MB RSS.
+- Compiled binaries + `bun:sqlite` on the workbench image, amd64 (cross-compiled on the Mac).
+- tmux: keys pass through the view's key table; agent exit under a link-window view does
+  not crash 3.7c; extended keys across two layers (synthetic).
+- Hub RSS ≈ 45 MB per sandbox.
+
+**Still to verify**
+
+- A long-lived `exec` over hours / idle gaps up to 1 h, and how it fails when the Mac
+  sleeps (spike running).
+- Real Claude hooks end to end in a logged-in sandbox.
+- arm64 on the Mac gateway.
+- By hand in Ghostty with real Claude: Shift+Enter, Esc latency, mouse wheel → inner
+  copy-mode, OSC 52.
+- G-push only: source attribution through the OpenShell proxy.
 
 ## 12. Doc updates when this lands
 
