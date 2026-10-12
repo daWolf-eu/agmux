@@ -137,6 +137,57 @@ test("with @agmux-statusline on and tmux < 3.3, uses status-right instead", asyn
   }
 });
 
+// A fake agmux that records its argv, to see what the plugin launched.
+function fakeAgmux(): { dir: string; bin: string; log: string } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-tmux-fake-"));
+  const bin = path.join(dir, "agmux");
+  const log = path.join(dir, "argv.log");
+  fs.writeFileSync(bin, `#!/bin/sh\necho "$*" >> '${log}'\n`);
+  fs.chmodSync(bin, 0o755);
+  return { dir, bin, log };
+}
+
+async function waitForFile(file: string, ms = 3000): Promise<string> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (fs.existsSync(file)) return fs.readFileSync(file, "utf8");
+    await Bun.sleep(25);
+  }
+  return "";
+}
+
+test("installing the status line starts notifyd, which writes the cache it reads", async () => {
+  const socket = `agmux-test-notifyd-${Date.now()}-${Math.random()}`;
+  const fake = fakeAgmux();
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline '${fake.bin}' "inline" "2" "off" "3.6a"
+    `);
+    expect((await waitForFile(fake.log)).trim()).toBe("notifyd");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+    fs.rmSync(fake.dir, { recursive: true, force: true });
+  }
+});
+
+test("with the status line off, notifyd is not started", async () => {
+  const socket = `agmux-test-notifyd-off-${Date.now()}-${Math.random()}`;
+  const fake = fakeAgmux();
+  try {
+    await tmuxCmd(socket, ["new-session", "-d", "-s", "main"]);
+    await tmuxRunShell(socket, `
+      AGMUX_TMUX_LIB_ONLY=1 source '${PLUGIN}'
+      agmux_tmux_install_statusline '${fake.bin}' "off" "2" "off" "3.6a"
+    `);
+    expect(await waitForFile(fake.log, 300)).toBe("");
+  } finally {
+    await tmuxCmd(socket, ["kill-server"]);
+    fs.rmSync(fake.dir, { recursive: true, force: true });
+  }
+});
+
 test("agmux_tmux_config_defaults falls back to hardcoded defaults when the binary is missing", async () => {
   const out = await callFn("agmux_tmux_config_defaults", ["/no/such/agmux-binary"]);
   expect(out).toBe("off\nstatus2");

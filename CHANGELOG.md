@@ -85,6 +85,9 @@ The single source of truth for the running version is
   `done` session seen.
 
 ### Fixed
+- tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the
+  only writer of the cache it `cat`s, while the dash (hub auto-spawned) stayed live.
+  The plugin now starts notifyd whenever it installs the status line.
 - An agent resumed or run into a new pane, window or session that failed to start
   (e.g. its working directory was gone) closed the pane at once, hiding the error.
   The pane now stays open on a non-zero exit until a key is pressed.
