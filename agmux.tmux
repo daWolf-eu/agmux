@@ -87,6 +87,7 @@ agmux_tmux_install_statusline() {
   local target
   target="$(agmux_tmux_statusline_target "$position" "$version")"
   [ "$target" = "off" ] && return 0
+  agmux_tmux_start_notifyd "$bin"
   if [ "$target" = "status-right" ] && [ "$position" = "status2" ]; then
     tmux display-message "agmux: tmux $(tmux -V) has no multi-line status; using status-right"
   fi
@@ -104,6 +105,16 @@ agmux_tmux_install_statusline() {
     agmux_tmux_bind_click "$bin" MouseDown1Status left
     agmux_tmux_bind_click "$bin" MouseDown3Status right
   fi
+}
+
+# The line only `cat`s the cache notifyd writes, so without the daemon it
+# freezes on its last frame — e.g. after a reboot, which nothing else restarts
+# it from. Started on every plugin load: notifyd's singleton lock makes a second
+# start exit at once, so re-sourcing is harmless. Run by the tmux server (-b),
+# so it outlives the shell that sourced the config; output is dropped, else the
+# lock refusal would pop up in a pane.
+agmux_tmux_start_notifyd() {
+  tmux run-shell -b "'$1' notifyd >/dev/null 2>&1"
 }
 
 # The command a root-table mouse key ran before we took it over, so a click

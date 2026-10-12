@@ -248,7 +248,8 @@ Shown by `agmux ls` (NAME, REPO, BRANCH) and `agmux explain`; available on every
 
 `agmux notifyd` is a long-running daemon that watches sessions and drives two
 surfaces: an always-visible tmux status line, and debounced notifications when a
-session needs you. Start it once (e.g. from `~/.tmux.conf` or your shell profile):
+session needs you. The tmux plugin starts it whenever it installs the status line
+(see below); otherwise start it once (e.g. from your shell profile):
 
 ```
 agmux notifyd &
@@ -319,7 +320,9 @@ Notes:
   another window stays `done` and still notifies.
 - **`agmux notifyd` must be running for the status line to update.** `status-format`
   (or `status-right`) only `cat`s a cache file the daemon writes once per poll —
-  it does not invoke `agmux` itself. Without the daemon running, the line goes
+  it does not invoke `agmux` itself. The tmux plugin starts the daemon on every
+  load that installs the status line (a running one is left alone), so it comes
+  back with tmux after a reboot. Without the daemon running, the line goes
   stale; `agmux statusline --check` reports staleness explicitly rather than
   silently showing a frozen line.
 - Exit code 0 from a notifier is never treated as proof a human saw anything
@@ -422,7 +425,8 @@ Multi-line status needs tmux ≥ 3.3. On 3.2 the status line falls back to
 `status-right` automatically — the documented tmux floor stays at 3.2.
 
 `agmux notifyd` must be running for the status line to update; `status-format`
-only reads a cache file the daemon writes.
+only reads a cache file the daemon writes. The plugin starts it (in the
+background, via the tmux server) whenever it installs the status line.
 
 ## tmux plugin (TPM)
 
