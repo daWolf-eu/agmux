@@ -25,6 +25,7 @@ import { runHubCmd } from "../src/hub-cmd.ts";
 import { statuslineCmd, cycleShowCmd } from "../src/statusline-cmd.ts";
 import { statuslineClick } from "../src/statusline-click.ts";
 import { readTmuxStyle } from "../src/statusline-style.ts";
+import { readTmuxWidth } from "../src/statusline-width.ts";
 import { staleMarker } from "../src/statusline-cache.ts";
 import { runNotifyd, postIngest } from "../src/notifyd.ts";
 import { execFile } from "node:child_process";
@@ -115,6 +116,7 @@ async function main(): Promise<number> {
       env: process.env,
       readFile: (p: string) => { try { return fs.readFileSync(p, "utf8"); } catch { return null; } },
       tmuxStyle: () => readTmuxStyle(capture),
+      tmuxWidth: () => readTmuxWidth(capture),
     };
     // --click <left|right> <token>: agmux.tmux's status-line mouse bindings.
     // Like `seen`, a click with no hub is a quiet no-op, never a hub spawn.
@@ -182,6 +184,7 @@ async function main(): Promise<number> {
         {
           env: process.env, config,
           tmuxStyle: () => readTmuxStyle(capture),
+          tmuxWidth: () => readTmuxWidth(capture),
           paneSignals: {
             capture,
             host: os.hostname(),

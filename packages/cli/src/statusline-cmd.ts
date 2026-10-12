@@ -16,13 +16,16 @@ export interface StatuslineCmdDeps {
   fs?: AtomicFsDeps;
   // The @agmux-statusline-* tmux options (readTmuxStyle); none when absent.
   tmuxStyle?: () => Promise<TmuxStyle>;
+  // Cells the line may take (readTmuxWidth); no limit when absent.
+  tmuxWidth?: () => Promise<number | undefined>;
 }
 
-// The line for `rows` with the current filter, config and tmux style.
+// The line for `rows` with the current filter, config, tmux style and width.
 async function renderLine(rows: SessionRow[], show: ShowMode, deps: StatuslineCmdDeps): Promise<string> {
   const tmux = deps.tmuxStyle ? await deps.tmuxStyle().catch(() => ({})) : {};
+  const width = deps.tmuxWidth ? await deps.tmuxWidth().catch(() => undefined) : undefined;
   const { format, style } = resolveLineStyle(deps.config.statusline, tmux);
-  return formatStatusLine(rows, { show, max: deps.config.statusline.max, format, style });
+  return formatStatusLine(rows, { show, max: deps.config.statusline.max, format, style, width });
 }
 
 // The filter chip's override, else `[statusline] show`.

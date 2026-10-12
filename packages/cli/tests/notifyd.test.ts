@@ -607,3 +607,34 @@ test("a tmux style change re-renders the last rows on the next tick", async () =
   ac.abort();
   await p;
 });
+
+test("a status-bar width change re-renders the last rows on the next tick", async () => {
+  const { fs: fsDeps, files } = memFsDeps();
+  const ac = new AbortController();
+  let onUpdate: ((rows: SessionRow[]) => void) | undefined;
+  let tick: (() => void) | undefined;
+  let width: number | undefined;
+  const p = runNotifyd(
+    { hubUrl: "http://127.0.0.1:1", stop: ac.signal },
+    baseDeps({
+      fs: fsDeps,
+      readFile: (f) => files[f] ?? null,
+      tmuxStyle: async () => ({}),
+      tmuxWidth: async () => width,
+      setIntervalImpl: ((fn: () => void) => { tick = fn; return 0; }) as unknown as typeof setInterval,
+      clearIntervalImpl: (() => {}) as unknown as typeof clearInterval,
+      makeFeed: () => ({ subscribe: (cb) => { onUpdate = cb; return () => {}; } }),
+    }),
+  );
+  const cache = "/run/u/agmux/statusline";
+  await Bun.sleep(0);
+  onUpdate!([row]);
+  expect(files[cache]).toContain("range=user|@agx-1");
+  width = 5;
+  tick!();
+  await Bun.sleep(0);
+  expect(files[cache]).not.toContain("range=user|@agx-1");
+  expect(files[cache]).toContain("+1");
+  ac.abort();
+  await p;
+});

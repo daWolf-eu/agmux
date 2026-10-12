@@ -377,11 +377,24 @@ the chips reference unexpanded, `#{status-right}` copies what the theme built:
 
 ```tmux
 set -g @agmux-statusline-position inline
-set -g status-right-length 200      # tmux's default (40) cuts the chips off
 run '~/.tmux/plugins/tpm/tpm'
+set -g status-right-length 200      # after tpm: themes reset it (catppuccin: 100)
 set -gF status-right "##{E:@agmux-chips} #{status-right}"
 # or replace the theme's right side: set -g status-right "#{E:@agmux-chips}"
 ```
+
+### Width
+
+tmux cuts `status-left` / `status-right` off at their `-length` option, from the
+end — where the `▽` filter chip sits. So `notifyd` fits the line into the room it
+has: every name is shortened by the same amount, down to 9 cells; only then are
+the last chips folded into the `+N` chip. The filter chip always stays.
+
+The room is read from tmux every second: for chips in `status-right` / `status-left`,
+that side's `-length` (at most the narrowest client's width) minus whatever else
+is on that side; for `status2`, the narrowest client's width. Chips placed
+anywhere else (your own `status-format`) have no limit unless you set
+`@agmux-statusline-width` to a number of cells.
 
 ### Styling
 
@@ -417,6 +430,7 @@ alongside the options in [tmux plugin (TPM)](#tmux-plugin-tpm) below):
 | `@agmux-statusline`          | `[statusline].enabled` from `config.toml` (default `false`) | `on`/`off` overrides config.toml; opt-in, changes your status bar |
 | `@agmux-statusline-position` | `[statusline].position` from `config.toml` (default `status2`) | `status2`, `inline`, `status-right` or `off` (see [Placement](#placement)); overrides config.toml |
 | `@agmux-statusline-interval` | `2`       | sets tmux's `status-interval`                                |
+| `@agmux-statusline-width`    | (from tmux) | cells the chips may take (see [Width](#width)); read by `notifyd` live, so it may also be set later |
 | `@agmux-statusline-mouse`    | `on`      | clickable chips (see above); wraps the root-table `MouseDown1Status` / `MouseDown3Status` bindings, remembering the originals in `@agmux-orig-*` for clicks outside the chips |
 | `@agmux-mark-read-key`       | `u`       | prefix key that marks the session owning the current pane seen (`agmux seen --pane`) |
 | `@agmux-seen-on-focus`       | `on`      | a pane gaining focus marks its `done` session seen (installs a `pane-focus-in[99]` hook and turns on `focus-events`) |
