@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import {
-  formatStatusLine, abbreviate, chipToken, parseChipToken, nextShow, FILTER_TOKEN, SHOW_CYCLE, type StatusLineOpts,
+  formatStatusLine, abbreviate, chipToken, parseChipToken, nextShow, statusWidth, FILTER_TOKEN, SHOW_CYCLE, type StatusLineOpts,
 } from "../../src/shared/statusline.ts";
 import { mkRow } from "../helpers/mk-row.ts";
 
@@ -203,4 +203,74 @@ test("tmux #{…} formats in a template are left for tmux; unknown placeholders 
 test("plain fields in a template are escaped too", () => {
   const out = formatStatusLine([mkRow({ session_id: "a", name: "x#[fg=red]" })], { ...OPTS, style: { chip: "{name}" } });
   expect(out).toContain("x##[fg=red]");
+});
+
+// Fit to width: names shrink first (to NAME_MIN), only then chips fold into +N.
+const named = (n: number, len = 20) =>
+  Array.from({ length: n }, (_, i) => mkRow({ session_id: `s${i}`, status: "running", name: `${"abcdefghijklmnopqrstuvwxyz".slice(0, len - 1)}${i}` }));
+const nameCaps = (s: string) => plain(s).split(" ").filter((w) => w.startsWith("▌")).map((w) => w.length - 1);
+const NAME_FMT = { ...OPTS, format: "{name}" };
+
+test("statusWidth counts the cells tmux draws: styles are free, ## is one #, wide is 2, private-use is 1", () => {
+  expect(statusWidth("#[fg=red]ab#[default]")).toBe(2);
+  expect(statusWidth("x##[fg=red]")).toBe(10);
+  expect(statusWidth("日本")).toBe(4);
+  expect(statusWidth("\u{e0b6}▌⠋")).toBe(3);
+  expect(statusWidth("#[range=user|@a]x#[norange]")).toBe(1);
+});
+
+test("a line that fits the width is rendered as without one", () => {
+  const rows = named(3);
+  expect(formatStatusLine(rows, { ...NAME_FMT, width: 500 })).toBe(formatStatusLine(rows, NAME_FMT));
+});
+
+test("too wide: names shrink, all by the same cap, before any chip is hidden", () => {
+  const rows = named(4);
+  const full = formatStatusLine(rows, NAME_FMT);
+  const width = statusWidth(full) - 12;
+  const out = formatStatusLine(rows, { ...NAME_FMT, width });
+  expect(statusWidth(out)).toBeLessThanOrEqual(width);
+  expect(out).not.toContain("+");
+  for (const r of rows) expect(out).toContain(`range=user|@${r.session_id}]`);
+  const caps = nameCaps(out);
+  expect(new Set(caps).size).toBe(1);
+  expect(caps[0]!).toBeLessThan(20);
+  expect(caps[0]!).toBeGreaterThanOrEqual(9);
+  expect(out).toContain(`range=user|${FILTER_TOKEN}`);
+});
+
+test("names never shrink below 9 cells; past that the last chips fold into +N and the filter stays", () => {
+  const rows = named(6);
+  const width = 60;
+  const out = formatStatusLine(rows, { ...NAME_FMT, width });
+  expect(statusWidth(out)).toBeLessThanOrEqual(width);
+  const shown = rows.filter((r) => out.includes(`range=user|@${r.session_id}]`));
+  expect(shown.length).toBeLessThan(6);
+  expect(shown.length).toBeGreaterThan(0);
+  expect(shown).toEqual(rows.slice(0, shown.length));
+  expect(nameCaps(out).every((c) => c === 9)).toBe(true);
+  expect(out).toContain(` +${6 - shown.length} `);
+  expect(out.endsWith("#[norange]") && out.includes(`range=user|${FILTER_TOKEN}`)).toBe(true);
+});
+
+test("hidden chips and max share one +N", () => {
+  const rows = named(8);
+  const out = formatStatusLine(rows, { ...NAME_FMT, max: 6, width: 60 });
+  const shown = rows.filter((r) => out.includes(`range=user|@${r.session_id}]`)).length;
+  expect(out).toContain(` +${8 - shown} `);
+});
+
+test("a {name} in a style template shrinks too", () => {
+  const rows = named(4);
+  const style = { chip: "[{name}]" };
+  const width = statusWidth(formatStatusLine(rows, { ...NAME_FMT, style })) - 8;
+  const out = formatStatusLine(rows, { ...NAME_FMT, style, width });
+  expect(statusWidth(out)).toBeLessThanOrEqual(width);
+  expect(out).not.toContain("+");
+});
+
+test("a width too small for anything still keeps the filter chip", () => {
+  const out = formatStatusLine(named(3), { ...NAME_FMT, width: 3 });
+  expect(out).toContain(`range=user|${FILTER_TOKEN}`);
+  expect(out).not.toContain("range=user|@s");
 });

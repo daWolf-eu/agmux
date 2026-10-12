@@ -85,6 +85,9 @@ export interface NotifydDeps {
   // The @agmux-statusline-* tmux options (readTmuxStyle), re-read every tick so
   // a tmux.conf reload restyles the line within a second. Off unless provided.
   tmuxStyle?: () => Promise<TmuxStyle>;
+  // The line's width budget (readTmuxWidth), re-read alongside the style so a
+  // client resize re-fits it. No limit unless provided.
+  tmuxWidth?: () => Promise<number | undefined>;
 }
 
 export async function postIngest(hubUrl: string, events: IngestEnvelope[]): Promise<void> {
@@ -110,13 +113,15 @@ export async function runNotifyd(
   // Re-read per render: the filter chip changes it while the daemon runs.
   const show = () => readShow(readFile(showPath(file))) ?? deps.config.statusline.show;
   let tmuxStyle: TmuxStyle = {};
+  let width: number | undefined;
   // What the last line was rendered with; the tick re-renders when it moves.
   let renderedWith = "";
+  const renderKey = (): string => JSON.stringify([show(), tmuxStyle, width ?? null]);
   const render = (rows: SessionRow[]): void => {
     const mode = show();
-    renderedWith = JSON.stringify([mode, tmuxStyle]);
+    renderedWith = renderKey();
     const { format, style } = resolveLineStyle(deps.config.statusline, tmuxStyle);
-    writeLineAtomic(file, formatStatusLine(rows, { show: mode, max, format, style }), deps.fs);
+    writeLineAtomic(file, formatStatusLine(rows, { show: mode, max, format, style, width }), deps.fs);
   };
   const query = new URLSearchParams({ status: "open", sort, order: "desc" });
   const intervalMs = opts.intervalMs ?? DEFAULT_POLL_INTERVAL_MS;
@@ -224,14 +229,15 @@ export async function runNotifyd(
   const clearIntervalImpl = deps.clearIntervalImpl ?? clearInterval;
   let styleBusy = false;
   const refreshStyle = (): void => {
-    if (!deps.tmuxStyle || styleBusy) return;
+    if ((!deps.tmuxStyle && !deps.tmuxWidth) || styleBusy) return;
     styleBusy = true;
-    deps.tmuxStyle()
-      .then((next) => { tmuxStyle = next; })
-      .catch(() => { /* keep the last style */ })
+    Promise.all([
+      deps.tmuxStyle?.().then((next) => { tmuxStyle = next; }).catch(() => { /* keep the last style */ }),
+      deps.tmuxWidth?.().then((next) => { width = next; }).catch(() => { /* keep the last width */ }),
+    ])
       .finally(() => {
         styleBusy = false;
-        if (lastRows && JSON.stringify([show(), tmuxStyle]) !== renderedWith) render(lastRows);
+        if (lastRows && renderKey() !== renderedWith) render(lastRows);
       });
   };
   refreshStyle();

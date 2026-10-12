@@ -88,6 +88,11 @@ The single source of truth for the running version is
 - tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the
   only writer of the cache it `cat`s, while the dash (hub auto-spawned) stayed live.
   The plugin now starts notifyd whenever it installs the status line.
+- tmux status line: chips past `status-right-length` pushed the `▽` filter chip
+  out of the bar (tmux clips from the end). The line now fits the room tmux gives
+  it: names shrink evenly down to 9 cells, then the last chips fold into `+N`;
+  the filter chip always stays. The room is read live from tmux;
+  `@agmux-statusline-width` sets it for custom placements.
 - An agent resumed or run into a new pane, window or session that failed to start
   (e.g. its working directory was gone) closed the pane at once, hiding the error.
   The pane now stays open on a non-zero exit until a key is pressed.

@@ -7,7 +7,7 @@ export {
 } from "./types.ts";
 export { type ActivityGroup, GROUPS, inGroup, groupRows, nextGroup, initialGroup } from "./shared/group.ts";
 export {
-  formatStatusLine, abbreviate, chipToken, parseChipToken, nextShow, CHIP_MARK, FILTER_TOKEN,
+  formatStatusLine, statusWidth, abbreviate, chipToken, parseChipToken, nextShow, CHIP_MARK, FILTER_TOKEN, NAME_MIN,
   SHOW_CYCLE, SHOW_TONES, DEFAULT_STYLE, LINE_TONES,
   type StatusLineOpts, type ShowMode, type ChipTarget, type StatusLineStyle, type LineTone,
 } from "./shared/statusline.ts";

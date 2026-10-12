@@ -154,3 +154,20 @@ test("cycleShowCmd still saves the mode when the hub is down", async () => {
   expect(mem.files[`${CACHE}.show`]).toBe("all");
   expect(mem.files[CACHE]).toBeUndefined();
 });
+
+test("the line is fitted to tmux's width budget", async () => {
+  let printed = "";
+  await statuslineCmd({ hubUrl: "http://127.0.0.1:1" }, deps({ out: (s) => { printed = s; }, tmuxWidth: async () => 5 }));
+  expect(printed).not.toContain("range=user|@agx-1");
+  expect(printed).toContain("+1");
+});
+
+test("a filter click repaints the cache fitted to the width budget too", async () => {
+  const files: Record<string, string> = {};
+  const fs = {
+    mkdir: () => {}, write: (f: string, t: string) => { files[f] = t; }, rename: (a: string, b: string) => { files[b] = files[a]!; },
+  };
+  await cycleShowCmd(1, { hubUrl: "http://127.0.0.1:1" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, fs, tmuxWidth: async () => 5 }));
+  expect(files["/run/u/agmux/statusline"]).toContain("range=user|@filter");
+  expect(files["/run/u/agmux/statusline"]).not.toContain("range=user|@agx-1");
+});
