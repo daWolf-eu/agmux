@@ -27,13 +27,14 @@ One `agmux events --follow` child per sandbox, through `Transport.argv(target, c
 - **Kill:** `terminate` = SIGTERM, wait `KILL_GRACE_MS` (5 s), SIGKILL. `stop()` cancels all pending sleeps, aborts the read, then awaits the loop.
 - **Backoff:** failure n waits `min(interval * 2^(n-1), MAX_BACKOFF_MS = 300 s)`; reset by the next header. Every reconnect catches up from the cursor, so there is no separate poll mode. A permanent failure (header host mismatch) waits the 300 s cap.
 - **Single stream per consumer:** `--consumer` = `resolveHost()` with `[^A-Za-z0-9._-]` -> `_`, max 64 chars (`bin/agmux-hub.ts`). A new `agmux events --consumer X` SIGTERMs the previous one via `<state>/follow/X.pid`, so a reconnect never leaves two streams.
-- `onChange` throwing is logged, never a stream failure; a record that makes ingest throw is a rejected record.
+- `onChange` throwing is logged, never a stream failure; a record that makes ingest throw is a rejected record. `ready()` (optional) gates ingest after each header (see the host ledger).
 
 ## Host ledger (`sync/sync-loop.ts`)
 
 Per `[[remote]]`: every `interval` s, `Discovery.list()` → one follower per discovered node; the same tick runs `ledger()` for every node (also while `sandbox list` is in flight). The hub writes `host.*` events (`session_id = NO_SESSION_ID`, `host` = the node host, `dedup_key` null); the `hosts` projection (`store/src/hosts.ts`) is derived from them, so it survives `--rebuild-projections`.
 
 - **`host.synced`:** on becoming ok (first header / recovery), and when the cursor moved, debounced to `CURSOR_FLUSH_MS` (10 s). Also flushed on the connected→failing transition and on stop/removal, **only** if the node was ok and connected (a failing host's stale overlay must not be cleared). Not flushed on a `db_id` reset.
+- **ok only once written:** a node becomes ok only when its `host.synced` append succeeded. The follower asks `ready()` (= `ns.ok`) right after each accepted header; `false` fails the attempt (`host ledger write failed`, normal backoff) before any record is ingested, so remote rows never exist without their `hosts` row (they would read as local: unmasked pid/tmux).
 - **`host.sync_failed`:** permanent error immediately; transient error once failing longer than `STALE_AFTER_INTERVALS` (3) x `interval`. Once per distinct error. `error` is `sanitizeRemoteText`ed.
 - **`host.removed`:** the node is absent from `REMOVE_AFTER_MISSES` (2) consecutive *successful* listings (a failed listing counts as nothing; one empty listing must not flap sessions to lost). Stops the follower, then appends only if the row belongs to that remote and is not already removed. A node that reappears is restarted and the next `host.synced` clears `removed_ts` (rows of a previous incarnation stay `lost` via `host-reset`).
 - `startSync` returns `SyncHandle {stop(), remotes()}`; `bin/agmux-hub.ts` bounds `stop` to 3 s and ignores a second signal (`shuttingDown`) so the lock is released exactly once. A broken `[[remote]]` config disables sync only, never the hub.

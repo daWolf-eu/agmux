@@ -358,6 +358,30 @@ describe("startSync", () => {
     await h.stop();
   });
 
+  test("a host.synced that fails to append keeps the node not-ok (follower not ready); the next header retries", async () => {
+    const store = Store.openInMemory();
+    const orig = store.append.bind(store);
+    let fail = 1;
+    store.append = (ev) => {
+      if (ev.kind === "host.synced" && fail-- > 0) throw new Error("SQLITE_BUSY");
+      return orig(ev);
+    };
+    const h = harness({ store });
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    expect(f.o.ready!()).toBe(false);
+    f.emit({ connected: true, header: hdr, dbId: "db-1", cursor: 0 });
+    expect(f.o.ready!()).toBe(false);
+    expect(h.store.getHost("gw/a")).toBeNull();
+    expect(h.logs).toContain("sync: gw/a: writing host.synced failed: SQLITE_BUSY");
+    f.emit({ connected: false, lastError: "host ledger write failed", failingSinceMs: h.now() });
+    f.emit({ connected: true, lastError: null, failingSinceMs: null });
+    expect(f.o.ready!()).toBe(true);
+    expect(h.store.getHost("gw/a")).toMatchObject({ last_sync_ok: true, db_id: "db-1" });
+    await h.stop();
+  });
+
   test("no remotes → no timers, stop resolves", async () => {
     const h = harness({ remotes: [] });
     await ticks();

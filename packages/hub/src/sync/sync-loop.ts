@@ -58,14 +58,17 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): SyncHandle {
   const discoveries = new Map<RemoteConfig, DiscoveryState>();
   let stopped = false;
 
-  function append(host: string, kind: string, payload: unknown): void {
+  // False (logged) when the store refused the write.
+  function append(host: string, kind: string, payload: unknown): boolean {
     try {
       o.store.append({
         event_id: newId(), ts: new Date(nowMs()).toISOString(), session_id: NO_SESSION_ID,
         kind, version: 1, host, payload, dedup_key: null,
       });
+      return true;
     } catch (e) {
       o.log(`sync: ${host}: writing ${kind} failed: ${errMsg(e)}`);
+      return false;
     }
   }
 
@@ -74,7 +77,9 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): SyncHandle {
       remote: ns.remote.name, transport: ns.transport.spec(ns.node.target), cursor: s.cursor,
       db_id: h.db_id, agmux_version: sanitizeRemoteText(h.agmux), replication: h.replication, rejected: s.rejected,
     };
-    append(ns.node.host, "host.synced", payload);
+    // Only a written host.synced makes the node ok: until then its follower is not
+    // ready, so no record is ingested without a hosts row (which would read as local).
+    if (!append(ns.node.host, "host.synced", payload)) return;
     Object.assign(ns, { ok: true, flushedCursor: s.cursor, lastFlushMs: nowMs(), reportedError: null });
   }
 
@@ -110,6 +115,7 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): SyncHandle {
       store: o.store, node, transport, agmuxBin: r.agmux_bin, consumer: o.consumer,
       cursor, dbId: row?.db_id ?? null, intervalMs: r.interval * 1000,
       onChange: (s) => { if (ns && !stopped && nodes.get(node.host) === ns) ledger(ns, s); },
+      ready: () => ns?.ok ?? false,
     });
     ns = { remote: r, node, transport, follower, ok: false, flushedCursor: cursor, lastFlushMs: nowMs(), reportedError: null };
     nodes.set(node.host, ns);

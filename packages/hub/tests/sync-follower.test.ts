@@ -72,7 +72,7 @@ async function until(cond: () => boolean, what = "condition") {
 
 function harness(o: {
   cursor?: number; dbId?: string | null; store?: Store; stderr?: string; spawnThrows?: number;
-  wedged?: boolean; onChange?: (s: FollowerStatus) => void;
+  wedged?: boolean; onChange?: (s: FollowerStatus) => void; ready?: () => boolean;
 } = {}) {
   let now = 0;
   const sleeps: { at: number; resolve: () => void }[] = [];
@@ -84,6 +84,7 @@ function harness(o: {
     store, node: { target: "sbx", host: HOST }, transport, agmuxBin: "/usr/local/bin/agmux", consumer: "mac",
     cursor: o.cursor ?? 0, dbId: o.dbId ?? null, intervalMs: INTERVAL,
     onChange: (s) => { changes.push(s); o.onChange?.(s); },
+    ...(o.ready ? { ready: o.ready } : {}),
   }, {
     spawn: (argv) => {
       if (o.spawnThrows && o.spawnThrows-- > 0) throw new Error("ENOENT: openshell");
@@ -132,6 +133,25 @@ describe("startFollower", () => {
     h.last().push(header(), LINE_TOO_LONG, record(3));
     await until(() => h.f.status().cursor === 3, "records");
     expect(h.f.status()).toMatchObject({ connected: true, rejected: 1, lastError: "invalid line: too long" });
+    expect(h.store.sessionHost(sid(3))).toBe(HOST);
+    await h.f.stop();
+  });
+
+  test("not ready after the header (host ledger write failed): no record is ingested, the attempt backs off", async () => {
+    let ok = false;
+    const h = harness({ ready: () => ok });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), record(3));
+    await until(() => h.procs[0]!.killed === 1, "kill");
+    expect(h.f.status()).toMatchObject({ connected: false, lastError: "host ledger write failed", cursor: 0 });
+    expect(h.store.sessionHost(sid(3))).toBeNull();
+    await until(() => h.backoffs().length === 1, "backoff");
+    expect(h.backoffs()).toEqual([INTERVAL]);
+    ok = true;
+    await h.advance(INTERVAL);
+    await until(() => h.procs.length === 2, "respawn");
+    h.last().push(header(), record(3));
+    await until(() => h.f.status().cursor === 3, "record");
     expect(h.store.sessionHost(sid(3))).toBe(HOST);
     await h.f.stop();
   });

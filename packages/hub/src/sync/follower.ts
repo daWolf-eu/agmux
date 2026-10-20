@@ -34,6 +34,10 @@ export interface FollowerOptions {
   store: Store; node: DiscoveredNode; transport: Transport; agmuxBin: string; consumer: string;
   cursor: number; dbId: string | null; intervalMs: number;
   onChange(s: FollowerStatus): void;
+  // Asked once per accepted header, after onChange: false fails the attempt (with
+  // backoff) before any record is ingested. The sync loop answers "host.synced
+  // was written", so remote rows never exist without their hosts row.
+  ready?(): boolean;
 }
 
 // A sandbox controls this stream: one line may hold at most MAX_LINE_BYTES. A
@@ -202,8 +206,9 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
       return { kind: "reset" };
     }
     Object.assign(st, { connected: true, header: h, dbId: h.db_id, lastError: null, permanent: false, failingSinceMs: null });
-    failures = 0;
     notify();
+    if (o.ready && !o.ready()) return fail("host ledger write failed");
+    failures = 0;
     return null;
   }
 
