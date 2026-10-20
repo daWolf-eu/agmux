@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import { isShellSafeId, shellSafeIdChars, type SessionRow } from "@agmux/protocol";
 import { statusGlyph, statusTone, toneGlyph, STATUS_COLORS, type StatusTone } from "./glyph.ts";
 import { MOCHA } from "./palette.ts";
 import { abbreviateBranch, clip, COLUMNS, type ColumnStyle } from "./columns.ts";
@@ -77,13 +77,15 @@ export const DEFAULT_STYLE: StatusLineStyle = {
 // bytes: the mark plus a 14-char id prefix. Session ids are UUIDv7, whose first
 // 13 chars are the full 48-bit ms timestamp, so the prefix only collides for
 // two sessions minted in the same millisecond (the click then reports an
-// ambiguous prefix).
+// ambiguous prefix). agmux.tmux single-quotes the token inside run-shell, so it
+// keeps only hex digits and dashes: a replicated id must never carry shell syntax
+// (ingest already enforces UUIDs; local ids are UUIDv7 and pass unchanged).
 export const CHIP_MARK = "@";
 export const FILTER_TOKEN = `${CHIP_MARK}filter`;
 const RANGE_MAX = 15;
 
 export function chipToken(sessionId: string): string {
-  return CHIP_MARK + sessionId.slice(0, RANGE_MAX - CHIP_MARK.length);
+  return CHIP_MARK + shellSafeIdChars(sessionId).slice(0, RANGE_MAX - CHIP_MARK.length);
 }
 
 export type ChipTarget = { kind: "filter" } | { kind: "session"; prefix: string };
@@ -92,7 +94,8 @@ export type ChipTarget = { kind: "filter" } | { kind: "session"; prefix: string 
 export function parseChipToken(token: string): ChipTarget | null {
   if (token === FILTER_TOKEN) return { kind: "filter" };
   if (!token.startsWith(CHIP_MARK) || token.length === CHIP_MARK.length) return null;
-  return { kind: "session", prefix: token.slice(CHIP_MARK.length) };
+  const prefix = token.slice(CHIP_MARK.length);
+  return isShellSafeId(prefix) ? { kind: "session", prefix } : null;
 }
 
 // Middle-truncate: a numeric or branch-like suffix is the discriminating part,
@@ -162,10 +165,11 @@ function fieldStyle(key: string, state: string): string {
   }
 }
 
-// Agent-reported names reach tmux verbatim; `##[` is how tmux spells a literal
-// `#[`, so a name can never open a style of its own.
+// Agent-reported text reaches tmux, which format-expands the cache it reads via
+// `#(cat …)`: `#[` would open a style, `#{…}` expand a format, `#(…)` run a
+// command. `##` is tmux's literal `#`, so doubling every `#` neutralises all three.
 function escapeStyles(s: string): string {
-  return s.replace(/#\[/g, "##[");
+  return s.replace(/#/g, "##");
 }
 
 // Substitute placeholders, collapsing separators only when their field is empty.

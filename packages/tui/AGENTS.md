@@ -21,7 +21,7 @@
 - **Width.** `opts.width` (cells; unset = no limit) makes `fitLine` shrink every `{name}` by one shared cap from `NAME_MAX` down to `NAME_MIN` (9), then fold the last chips into the `+N` — tmux clips status-left/right from the end, where the filter chip is. `statusWidth` measures a tmux format (styles free, `##` = one cell). The budget comes from `cli/src/statusline-width.ts` (`readTmuxWidth`: `@agmux-statusline-width`, else the `-length` of the side holding `@agmux-chips` capped at the narrowest client, less the rest of that side; `status2` → client width), re-read by `notifyd` each tick and by `agmux statusline` / the filter click.
 - **Placement** is `agmux.tmux`'s job: it sets `@agmux-chips` (`#(cat <cache>)`) and points `status-format[1]` / `status-right` at `#{E:@agmux-chips}`, or (`inline`) leaves that to the user.
 - **Remote chips:** a remote session's `{name}` gets a `⇄ ` prefix (`statusline.ts`); click → same token path as local chips (remote attach is not supported yet, the cli refuses).
-- Agent-reported text goes through `escapeStyles` (`#[` → `##[`) — names must never open a tmux style.
+- Agent-reported text goes through `escapeStyles` (every `#` → `##`): tmux format-expands the `#(cat <cache>)` output, so a name must never open a style (`#[`), expand a format (`#{`) or start a job (`#(`). Same rule for the notifier's `display-message` toast (`cli/src/sinks.ts`). `chipToken` keeps only `[0-9a-f-]` of the id (agmux.tmux single-quotes it inside `run-shell`); `parseChipToken` refuses anything else.
 
 ## Table columns (`shared/columns.ts`)
 

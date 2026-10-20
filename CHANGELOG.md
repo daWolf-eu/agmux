@@ -90,8 +90,11 @@ The single source of truth for the running version is
 - `agmux seen` resolves id prefixes against open sessions; `--all` marks every
   `done` session seen.
 - `attach`, `resume` and `kill` refuse remote sessions; their `pid` and tmux coordinates
-  are not exposed. Text replicated from sandboxes is stripped of control characters
-  before it is stored or printed.
+  are not exposed. Replicated events need a UUID `session_id` and a plain `event_id`;
+  ids reach the notifier click action and status-line ranges only as `[0-9a-f-]`, and
+  every `#` of agent text is doubled for tmux (no `#{…}`/`#(…)` from a session name).
+  Sync errors and versions from sandboxes are stripped of control characters before
+  they are stored or printed.
 
 ### Fixed
 - tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the

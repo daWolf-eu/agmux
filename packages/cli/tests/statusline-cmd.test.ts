@@ -6,7 +6,7 @@ function deps(over: Partial<StatuslineCmdDeps> = {}): StatuslineCmdDeps {
   return {
     fetchImpl: (async () => new Response(JSON.stringify({
       sessions: [{
-        session_id: "agx-1", agent_kind: "claude", profile: null, native_session_id: null,
+        session_id: "abc-1", agent_kind: "claude", profile: null, native_session_id: null,
         command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
         tmux_session: "work", tmux_window: "@2", tmux_socket: null, tmux_pane: "%7",
         host: "h", project: null, parent_session_id: null, start_ts: "2026-09-11T10:00:00.000Z",
@@ -27,7 +27,7 @@ test("prints the rendered line to stdout", async () => {
   const code = await statuslineCmd({ hubUrl: "http://127.0.0.1:1" }, deps({ out: (s) => { printed = s; } }));
   expect(code).toBe(0);
   expect(printed).toContain("⠋");
-  expect(printed).toContain("range=user|@agx-1");
+  expect(printed).toContain("range=user|@abc-1");
 });
 
 test("a hub error prints a dim marker and still exits 0", async () => {
@@ -120,7 +120,7 @@ test("the saved filter mode overrides [statusline] show", async () => {
   const mem = memFiles({ [`${CACHE}.show`]: "waiting\n" });
   let printed = "";
   await statuslineCmd({ hubUrl: "http://h" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, out: (s) => { printed = s; } }));
-  expect(printed).not.toContain("range=user|@agx-1"); // the running session is filtered out
+  expect(printed).not.toContain("range=user|@abc-1"); // the running session is filtered out
   expect(printed).toContain("▽");
 });
 
@@ -128,7 +128,7 @@ test("an unknown saved mode falls back to the config", async () => {
   const mem = memFiles({ [`${CACHE}.show`]: "bogus" });
   let printed = "";
   await statuslineCmd({ hubUrl: "http://h" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, out: (s) => { printed = s; } }));
-  expect(printed).toContain("range=user|@agx-1");
+  expect(printed).toContain("range=user|@abc-1");
 });
 
 test("cycleShowCmd saves the next mode and repaints the cache with it", async () => {
@@ -136,10 +136,10 @@ test("cycleShowCmd saves the next mode and repaints the cache with it", async ()
   const d = deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, readFile: mem.readFile, fs: mem.fs });
   expect(await cycleShowCmd(1, { hubUrl: "http://h" }, d)).toBe(0); // working → all
   expect(mem.files[`${CACHE}.show`]).toBe("all");
-  expect(mem.files[CACHE]).toContain("range=user|@agx-1");
+  expect(mem.files[CACHE]).toContain("range=user|@abc-1");
   await cycleShowCmd(1, { hubUrl: "http://h" }, d); // all → attention: the running session goes
   expect(mem.files[`${CACHE}.show`]).toBe("attention");
-  expect(mem.files[CACHE]).not.toContain("range=user|@agx-1");
+  expect(mem.files[CACHE]).not.toContain("range=user|@abc-1");
   await cycleShowCmd(-1, { hubUrl: "http://h" }, d);
   expect(mem.files[`${CACHE}.show`]).toBe("all");
 });
@@ -158,7 +158,7 @@ test("cycleShowCmd still saves the mode when the hub is down", async () => {
 test("the line is fitted to tmux's width budget", async () => {
   let printed = "";
   await statuslineCmd({ hubUrl: "http://127.0.0.1:1" }, deps({ out: (s) => { printed = s; }, tmuxWidth: async () => 5 }));
-  expect(printed).not.toContain("range=user|@agx-1");
+  expect(printed).not.toContain("range=user|@abc-1");
   expect(printed).toContain("+1");
 });
 
@@ -169,5 +169,5 @@ test("a filter click repaints the cache fitted to the width budget too", async (
   };
   await cycleShowCmd(1, { hubUrl: "http://127.0.0.1:1" }, deps({ env: { XDG_RUNTIME_DIR: "/run/u" }, fs, tmuxWidth: async () => 5 }));
   expect(files["/run/u/agmux/statusline"]).toContain("range=user|@filter");
-  expect(files["/run/u/agmux/statusline"]).not.toContain("range=user|@agx-1");
+  expect(files["/run/u/agmux/statusline"]).not.toContain("range=user|@abc-1");
 });

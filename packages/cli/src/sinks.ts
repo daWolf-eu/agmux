@@ -59,7 +59,10 @@ export async function dispatchNotification(
   if (cfg.tmuxMessage && !(cfg.suppressWhenVisible && await isPaneVisible(ev.row.tmux_pane, deps))) {
     // display-message only. A popup freezes pane rendering and discards
     // keystrokes typed while it is open — see the spike in the spec, §2.
-    try { await deps.run("tmux", ["display-message", `agmux: ${body}`]); } catch { /* tmux absent */ }
+    // The message is a tmux format: `##` keeps session text (a tmux session
+    // name) from expanding `#{…}` or starting a `#(…)` job.
+    const msg = `agmux: ${body}`.replace(/#/g, "##");
+    try { await deps.run("tmux", ["display-message", msg]); } catch { /* tmux absent */ }
   }
 
   const kind = resolveNotifier(cfg.command, deps.which);

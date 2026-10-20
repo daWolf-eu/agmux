@@ -1,3 +1,5 @@
+import { isShellSafeId } from "@agmux/protocol";
+
 export type NotifierKind = "terminal-notifier" | "osascript" | "notify-send" | "custom";
 
 export interface NotifySpec {
@@ -32,11 +34,14 @@ export function buildNotifyArgv(
   spec: NotifySpec,
   custom?: string,
 ): { cmd: string; args: string[] } {
+  // terminal-notifier runs -execute through /bin/sh on click: an id from a
+  // sandbox must never carry shell syntax there (ingest already enforces UUIDs).
+  const attachId = spec.attachId && isShellSafeId(spec.attachId) ? spec.attachId : null;
   switch (kind) {
     case "terminal-notifier": {
       const args = ["-title", spec.title, "-message", spec.body];
       if (spec.sound) args.push("-sound", spec.sound);
-      if (spec.attachId) args.push("-execute", `agmux attach ${spec.attachId}`);
+      if (attachId) args.push("-execute", `agmux attach ${attachId}`);
       return { cmd: "terminal-notifier", args };
     }
     case "osascript": {
@@ -53,7 +58,7 @@ export function buildNotifyArgv(
         tok
           .replace("{title}", spec.title)
           .replace("{body}", spec.body)
-          .replace("{session_id}", spec.attachId ?? "")
+          .replace("{session_id}", attachId ?? "")
           .replace("{sound}", spec.sound ?? ""),
       );
       return { cmd: parts[0] ?? "", args: parts.slice(1) };

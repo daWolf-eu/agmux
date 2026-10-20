@@ -1,5 +1,5 @@
 import {
-  REPLICATION_VERSION, sanitizeRemoteText, validateEnvelope, validateKnownPayload,
+  EVENT_ID_RE, NO_SESSION_ID, REPLICATION_VERSION, SESSION_ID_RE, sanitizeRemoteText, validateEnvelope, validateKnownPayload,
   type EventEnvelope, type ReplicationHeader, type ReplicationRecord,
 } from "@agmux/protocol";
 import type { Store } from "@agmux/store";
@@ -48,6 +48,12 @@ export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedH
   const ev = rec.ev;
   const env = validateEnvelope(ev);
   if (!env.ok) return reject(`invalid envelope: ${env.error}`);
+  // Ids end up in shell and tmux command strings on this host (notifier click
+  // action, status-line ranges): only canonical shapes get in.
+  if (!SESSION_ID_RE.test(ev.session_id) || ev.session_id === NO_SESSION_ID) {
+    return reject(`invalid envelope: session_id ${JSON.stringify(ev.session_id)} is not a session UUID`);
+  }
+  if (!EVENT_ID_RE.test(ev.event_id)) return reject(`invalid envelope: event_id ${JSON.stringify(ev.event_id)} is malformed`);
   if (ev.kind.startsWith("host.")) return reject(`host event: ${ev.kind} is hub-local`);
   if (ev.host !== expectedHost) return reject(`host mismatch: event host "${ev.host}", expected "${expectedHost}"`);
   const p = validateKnownPayload(ev.kind, ev.payload);

@@ -33,7 +33,7 @@ test("a write failure is swallowed — the daemon must not die over a cache file
 // --- runNotifyd -------------------------------------------------------
 
 const row: SessionRow = {
-  session_id: "agx-1", agent_kind: "claude", profile: null, native_session_id: null,
+  session_id: "abc-1", agent_kind: "claude", profile: null, native_session_id: null,
   command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
   tmux_session: "work", tmux_window: "@2", tmux_socket: null, tmux_pane: "%7",
   host: "h", project: null, parent_session_id: null, start_ts: "2026-09-11T10:00:00.000Z",
@@ -81,7 +81,7 @@ test("a feed update writes the rendered line and the heartbeat", async () => {
   capturedOnUpdate!([row]);
 
   const cache = "/run/u/agmux/statusline";
-  expect(files[cache]).toContain("range=user|@agx-1");
+  expect(files[cache]).toContain("range=user|@abc-1");
   expect(files[heartbeatPath(cache)]).toBeTruthy();
 
   ac.abort();
@@ -359,11 +359,11 @@ test("a restart does not announce sessions that were already waiting", async () 
 
   // The board as a fresh daemon finds it: everything already wants attention.
   const board: SessionRow[] = [
-    { ...row, session_id: "agx-1", status: "waiting", last_input_kind: "permission",
+    { ...row, session_id: "abc-1", status: "waiting", last_input_kind: "permission",
       attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
-    { ...row, session_id: "agx-2", status: "idle",
+    { ...row, session_id: "abc-2", status: "idle",
       attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
-    { ...row, session_id: "agx-3", status: "idle",
+    { ...row, session_id: "abc-3", status: "idle",
       attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: "2026-09-12T09:00:00.000Z" },
   ];
   capturedOnUpdate!(board);
@@ -420,13 +420,13 @@ test("a subagent's tool activity does not re-announce an unchanged wait", async 
   );
 
   const waiting = (activity: string): SessionRow[] => [{
-    ...row, session_id: "agx-1", status: "waiting", last_input_kind: "permission",
+    ...row, session_id: "abc-1", status: "waiting", last_input_kind: "permission",
     attention_ts: "2026-09-12T09:00:00.000Z", activity_ts: activity,
   }];
 
   // The daemon starts with the session already running, so priming does not
   // silence it; the permission prompt then arrives and is announced once.
-  capturedOnUpdate!([{ ...row, session_id: "agx-1", status: "running" }]);
+  capturedOnUpdate!([{ ...row, session_id: "abc-1", status: "running" }]);
   timer.advance();
   await flush();
   capturedOnUpdate!(waiting("2026-09-12T09:00:00.000Z"));
@@ -570,10 +570,10 @@ test("each render uses the filter chip's saved mode, re-read every time", async 
   );
   const cache = "/run/u/agmux/statusline";
   onUpdate!([row]); // running, default show = working
-  expect(files[cache]).toContain("range=user|@agx-1");
+  expect(files[cache]).toContain("range=user|@abc-1");
   files[`${cache}.show`] = "waiting";
   onUpdate!([{ ...row }]);
-  expect(files[cache]).not.toContain("range=user|@agx-1");
+  expect(files[cache]).not.toContain("range=user|@abc-1");
   ac.abort();
   await p;
 });
@@ -602,7 +602,7 @@ test("a tmux style change re-renders the last rows on the next tick", async () =
   tmux = { chip: "<{name}>" };
   tick!();
   await Bun.sleep(0);
-  expect(files[cache]).toContain("<agx-1>");
+  expect(files[cache]).toContain("<abc-1>");
   expect(files[cache]).not.toContain("▌");
   ac.abort();
   await p;
@@ -629,11 +629,11 @@ test("a status-bar width change re-renders the last rows on the next tick", asyn
   const cache = "/run/u/agmux/statusline";
   await Bun.sleep(0);
   onUpdate!([row]);
-  expect(files[cache]).toContain("range=user|@agx-1");
+  expect(files[cache]).toContain("range=user|@abc-1");
   width = 5;
   tick!();
   await Bun.sleep(0);
-  expect(files[cache]).not.toContain("range=user|@agx-1");
+  expect(files[cache]).not.toContain("range=user|@abc-1");
   expect(files[cache]).toContain("+1");
   ac.abort();
   await p;

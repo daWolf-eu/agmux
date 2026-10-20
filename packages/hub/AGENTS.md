@@ -41,7 +41,7 @@ Per `[[remote]]`: every `interval` s, `Discovery.list()` → one follower per di
 
 Sandbox output is untrusted. `ingestReplicated(store, rec, expectedHost)` checks in this order; the first failure rejects the record (counted in `rejected`, `last_error = "record <id>: <reason>"`, cursor still advances):
 
-1. `validateEnvelope` → `invalid envelope: …`
+1. `validateEnvelope`, then `session_id` must match `SESSION_ID_RE` (canonical UUID, not `NO_SESSION_ID`) and `event_id` `EVENT_ID_RE` (`[A-Za-z0-9-]{1,64}`) → `invalid envelope: …`. Ids reach shell/tmux command strings on the Mac (terminal-notifier `-execute`, status-line click ranges); the sinks additionally keep to `[0-9a-f-]` (`isShellSafeId` / `shellSafeIdChars`, `@agmux/protocol`).
 2. kind starts with `host.` → `host event: … is hub-local`
 3. `ev.host !== expectedHost` → `host mismatch: …`
 4. `validateKnownPayload` → `invalid payload: …`
