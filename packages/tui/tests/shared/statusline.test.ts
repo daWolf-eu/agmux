@@ -307,3 +307,9 @@ test("status-line fields carry no control characters", () => {
   expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   expect(out).toContain("⇄ x ]52;c;ZXZpbA== y");
 });
+
+test("a stale remote chip prefixes the name with ? instead of ⇄ (spec §4.4)", () => {
+  const f = { ...OPTS, format: "{name}" };
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: true })], f))).toBe("▌? fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌⇄ fix ");
+});

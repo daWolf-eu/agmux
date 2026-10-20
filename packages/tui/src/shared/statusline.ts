@@ -138,6 +138,12 @@ const FIELD_STYLE: Record<string, ColumnStyle> = {
   agent_kind: "sub", last_tool: "sub",
 };
 
+// Remote chips: `⇄ ` before the name, `? ` while the sync is stale (as hostLabel).
+function remotePrefix(r: SessionRow): string {
+  if (!r.remote) return "";
+  return r.sync_stale ? "? " : "⇄ ";
+}
+
 // Field text is untrusted (remote rows): no control characters reach tmux.
 function fieldValue(r: SessionRow, key: string, caps: Caps): string {
   return stripControls(rawFieldValue(r, key, caps));
@@ -146,7 +152,7 @@ function fieldValue(r: SessionRow, key: string, caps: Caps): string {
 function rawFieldValue(r: SessionRow, key: string, caps: Caps): string {
   switch (key) {
     case "glyph": return statusGlyph(r).glyph;
-    case "name": return (r.remote ? "⇄ " : "") + clip(COLUMNS.name.text(r, 0), caps.name);
+    case "name": return remotePrefix(r) + clip(COLUMNS.name.text(r, 0), caps.name);
     case "repo": return r.git_repo ?? "";
     case "branch": return r.git_branch ? abbreviateBranch(r.git_branch, BRANCH_MAX) : "";
     case "tmux_session": return r.tmux_session ? abbreviate(r.tmux_session, caps.session) : "";
