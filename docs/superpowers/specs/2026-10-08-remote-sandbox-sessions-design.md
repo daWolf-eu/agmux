@@ -679,6 +679,7 @@ Refinements made while implementing; the code is authoritative.
 - R13b: "last sync" renders as `<rel> ago` only for short durations (`tui/src/shared/reltime.ts` `syncAge`, used by `hub status` and dash detail).
 - R14: `sanitizeRemoteText` (`protocol/src/host.ts`) strips control chars from sandbox text, applied at the writer and at the sink (`hub-cmd.ts`).
 - R17: replicated rows carry the source store's `db_id` (schema v10 `events.source_db` / `sessions.source_db`); a live row whose `source_db` differs from `hosts.db_id` derives `lost` with rule `host-reset`, so a sandbox recreated under the same name never resurrects old sessions (`store/src/lost.ts`).
+- Final review: ingest accepts only a canonical UUID `session_id` and an `[A-Za-z0-9-]{1,64}` `event_id`; ids reach shell/tmux strings only as `[0-9a-f-]`, agent text in tmux formats has every `#` doubled (`hub/src/sync/ingest.ts`, `cli/src/notifier.ts`, `tui/src/shared/statusline.ts`). Session text is printed through `stripControls` at every display sink. A stream line is capped at 1 MiB, `/ingest` bodies too (413). `GET /hosts` adds the in-memory per-remote discovery state for `hub status`. A node ingests only after its `host.synced` was written.
 
 ## 11. Open questions / verify list
 
