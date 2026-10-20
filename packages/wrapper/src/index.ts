@@ -1,5 +1,4 @@
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import {
   AGMUX_SESSION_ID_ENV,
@@ -7,6 +6,7 @@ import {
   AGMUX_TMUX_SESSION_DEFAULT,
   TITLE_KEEPALIVE_MS,
   TitleSignal,
+  resolveHost,
 } from "@agmux/protocol";
 import { buildChildEnv, reexecEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
@@ -41,7 +41,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const sessionId = parentId && parentId.length > 0 ? parentId : mintSessionId();
   const isResume = !!parentId;
 
-  const host = os.hostname();
+  const host = resolveHost();
   const queueDir = path.join(opts.stateDir, "queue");
   const client = new HubClient({ hubUrl: opts.hubUrl, queueDir, sessionId });
 

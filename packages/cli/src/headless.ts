@@ -1,7 +1,6 @@
-import * as os from "node:os";
 import * as path from "node:path";
 import type { Registry, HeadlessPlan } from "@agmux/adapters";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_PROFILE_ENV } from "@agmux/protocol";
+import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_PROFILE_ENV, resolveHost } from "@agmux/protocol";
 import {
   HubClient, mintSessionId, buildStartedEvent, buildEndedEvent, type ProfileConfig,
 } from "@agmux/wrapper";
@@ -57,7 +56,7 @@ export async function runHeadless(o: HeadlessOpts): Promise<HeadlessResult> {
   const base = o.baseEnv ?? process.env;
   const cwd = o.profile.cwd ?? process.cwd();
   const sessionId = mintSessionId();
-  const host = os.hostname();
+  const host = resolveHost();
 
   const env = scrubTmuxEnv(base);
   Object.assign(env, o.profile.env);

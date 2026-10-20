@@ -2,6 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { resolveHost } from "@agmux/protocol";
 import { Store } from "@agmux/store";
 import { createServer } from "../src/server.ts";
 import { drainQueueDir } from "../src/drain.ts";
@@ -40,7 +41,7 @@ atomicWritePortFile(path.join(stateDir, "hub.port"), server.port!);
 writePidFile(path.join(stateDir, "hub.pid"), process.pid);
 
 console.log(`agmux-hub listening on http://${server.hostname}:${server.port}`);
-const stopSweep = startNativeLivenessSweep(store, os.hostname());
+const stopSweep = startNativeLivenessSweep(store, resolveHost());
 
 const shutdown = () => {
   try { fs.unlinkSync(path.join(stateDir, "hub.pid")); } catch {}

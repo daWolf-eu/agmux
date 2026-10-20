@@ -8,3 +8,4 @@ export * from "./telemetry.ts";
 export * from "./ids.ts";
 export * from "./version.ts";
 export * from "./attach.ts";
+export * from "./host.ts";

@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement } from "@agmux/protocol";
+import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, resolveHost } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { runHeadless } from "../src/headless.ts";
@@ -77,7 +77,7 @@ async function main(): Promise<number> {
       registry: createDefaultRegistry(),
       env: process.env,
       stdin,
-      host: os.hostname(),
+      host: resolveHost(),
       stateDir,
     });
     return 0; // always 0 — never break the agent's surface
@@ -130,7 +130,7 @@ async function main(): Promise<number> {
       const seenDeps = { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() };
       return statuslineClick(button, token, {
         attach: (idOrPrefix) => attachCmd({ idOrPrefix, hubUrl: clickHub, wrapBin }),
-        seen: (o) => seenCmd({ ...o, hubUrl: clickHub, host: os.hostname() }, seenDeps),
+        seen: (o) => seenCmd({ ...o, hubUrl: clickHub, host: resolveHost() }, seenDeps),
         cycleShow: (step) => cycleShowCmd(step, { hubUrl: clickHub }, deps),
       });
     }
@@ -158,7 +158,7 @@ async function main(): Promise<number> {
     const seenHub = discoverHubUrl(process.env, stateDir);
     if (!seenHub) return pane ? 0 : 1;
     return seenCmd(
-      { idOrPrefix: id, pane, all, socket, source: source as "dismiss" | "focus" | undefined, hubUrl: seenHub, host: os.hostname() },
+      { idOrPrefix: id, pane, all, socket, source: source as "dismiss" | "focus" | undefined, hubUrl: seenHub, host: resolveHost() },
       { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() },
     );
   }
@@ -187,7 +187,7 @@ async function main(): Promise<number> {
           tmuxWidth: () => readTmuxWidth(capture),
           paneSignals: {
             capture,
-            host: os.hostname(),
+            host: resolveHost(),
             newId: () => crypto.randomUUID(),
             post: postIngest,
           },
