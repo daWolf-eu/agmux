@@ -19,3 +19,7 @@ test("hostDetail: stale", () => {
     .toBe("os/sbx · last sync 4m ago · stale");
   expect(hostDetail(mkRow({ remote: true, host: "os/sbx", last_sync_ts: null, sync_stale: true }), NOW)).toBe("os/sbx · stale");
 });
+test("hostDetail: no ago after yesterday", () => {
+  expect(hostDetail(mkRow({ remote: true, host: "os/sbx", last_sync_ts: "2026-06-19T09:00:00.000Z" }), NOW))
+    .toBe("os/sbx · last sync yesterday");
+});

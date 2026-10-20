@@ -115,11 +115,19 @@ test("status: stale host with rejected and error; never-synced", async () => {
   expect(out).toContain("remote sb1  gw/sb  stale  last sync never  agmux 0.2.0  cursor 42  rejected 3  error: unreachable");
 });
 
-test("status: removed host omits error", async () => {
+test("status: removed host still shows its error", async () => {
   const out = await statusOut([hostRow({ removed_ts: "2026-10-20T11:00:00Z", last_sync_ok: false, last_error: "x" })]);
   const line = out.find((l) => l.startsWith("remote "))!;
   expect(line).toContain("  removed  ");
   expect(line).toContain("error: x");
+});
+
+test("status: old sync prints yesterday without ago; hostile text is sanitized", async () => {
+  const out = await statusOut([hostRow({ last_sync_ts: "2026-10-19T09:00:00Z", agmux_version: "1\x1b[31m", last_error: "a\nb\u009bc", last_sync_ok: false })]);
+  const line = out.find((l) => l.startsWith("remote "))!;
+  expect(line).toContain("last sync yesterday  agmux 1 [31m");
+  expect(line).toContain("error: a b c");
+  expect(line).not.toMatch(/[\u0000-\u001f\u009b]/);
 });
 
 test("status: newer replication note", async () => {

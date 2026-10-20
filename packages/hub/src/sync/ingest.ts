@@ -1,5 +1,5 @@
 import {
-  REPLICATION_VERSION, validateEnvelope, validateKnownPayload,
+  REPLICATION_VERSION, sanitizeRemoteText, validateEnvelope, validateKnownPayload,
   type EventEnvelope, type ReplicationHeader, type ReplicationRecord,
 } from "@agmux/protocol";
 import type { Store } from "@agmux/store";
@@ -41,7 +41,7 @@ export type IngestOutcome = { ok: true; appended: boolean } | { ok: false; reaso
 // Reasons flow into hosts.last_error and get displayed in a terminal: strip
 // control characters and cap the length.
 function reject(reason: string): { ok: false; reason: string } {
-  return { ok: false, reason: reason.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 300) };
+  return { ok: false, reason: sanitizeRemoteText(reason, 299) };
 }
 
 export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedHost: string): IngestOutcome {

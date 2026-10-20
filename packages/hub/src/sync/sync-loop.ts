@@ -1,5 +1,5 @@
 import {
-  NO_SESSION_ID, type HostRemovedPayload, type HostSyncedPayload, type HostSyncFailedPayload, type ReplicationHeader,
+  NO_SESSION_ID, sanitizeRemoteText, type HostRemovedPayload, type HostSyncedPayload, type HostSyncFailedPayload, type ReplicationHeader,
 } from "@agmux/protocol";
 import type { Store } from "@agmux/store";
 import type { RemoteConfig } from "./config.ts";
@@ -65,7 +65,7 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
   function writeSynced(ns: NodeState, s: FollowerStatus, h: ReplicationHeader): void {
     const payload: HostSyncedPayload = {
       remote: ns.remote.name, transport: ns.transport.spec(ns.node.target), cursor: s.cursor,
-      db_id: h.db_id, agmux_version: h.agmux, replication: h.replication, rejected: s.rejected,
+      db_id: h.db_id, agmux_version: sanitizeRemoteText(h.agmux), replication: h.replication, rejected: s.rejected,
     };
     append(ns.node.host, "host.synced", payload);
     Object.assign(ns, { ok: true, flushedCursor: s.cursor, lastFlushMs: nowMs(), reportedError: null });
@@ -87,7 +87,7 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
     if (s.lastError === null || s.lastError === ns.reportedError) return;
     const staleMs = STALE_AFTER_INTERVALS * ns.remote.interval * 1000;
     if (s.permanent || (s.failingSinceMs !== null && now - s.failingSinceMs > staleMs)) {
-      const payload: HostSyncFailedPayload = { remote: ns.remote.name, error: s.lastError };
+      const payload: HostSyncFailedPayload = { remote: ns.remote.name, error: sanitizeRemoteText(s.lastError) };
       append(ns.node.host, "host.sync_failed", payload);
       ns.reportedError = s.lastError;
       o.log(`sync: ${ns.node.host}: ${s.lastError}`);

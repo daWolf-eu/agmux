@@ -239,6 +239,19 @@ describe("startSync", () => {
     await h.stop();
   });
 
+  test("remote-supplied error and version are sanitized before they are stored", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    f.emit({ connected: true, header: { ...hdr, agmux: "9\x1b[31m" }, dbId: "db-1" });
+    f.emit({ connected: false, permanent: true, lastError: "bad\x1b]0;x\x07\nhost" });
+    await until(() => h.hostEvents.length === 2, "sync_failed");
+    expect(h.hostEvents[0]).toMatchObject({ payload: { agmux_version: "9 [31m" } });
+    expect(h.hostEvents[1]).toMatchObject({ payload: { error: "bad ]0;x host" } });
+    await h.stop();
+  });
+
   test("a hung discovery does not delay stale detection", async () => {
     const h = harness();
     h.setListing([node("a")]);

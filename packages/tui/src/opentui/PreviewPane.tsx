@@ -2,7 +2,7 @@
 import type { SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
-import { relTime } from "../shared/reltime.ts";
+import { syncAge } from "../shared/reltime.ts";
 import { tmuxTarget } from "../shared/yank.ts";
 import { MOCHA, FAINT_SCROLLBAR } from "../shared/palette.ts";
 
@@ -21,7 +21,7 @@ function exitStr(r: SessionRow): string {
 // Remote rows add when the replica last synced and whether it has gone stale.
 export function hostDetail(r: SessionRow, now: number = Date.now()): string {
   let s = r.host;
-  if (r.remote && r.last_sync_ts) s += ` · last sync ${relTime(r.last_sync_ts, now)} ago`;
+  if (r.remote && r.last_sync_ts) s += ` · last sync ${syncAge(r.last_sync_ts, now)}`;
   if (r.remote && r.sync_stale) s += " · stale";
   return s;
 }

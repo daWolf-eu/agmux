@@ -27,3 +27,18 @@ describe("isValidHostName", () => {
     expect(isValidHostName("a".repeat(256))).toBe(false);
   });
 });
+
+import { sanitizeRemoteText } from "../src/host.ts";
+describe("sanitizeRemoteText", () => {
+  test("replaces control chars and collapses whitespace", () => {
+    expect(sanitizeRemoteText("\x1b[31mred\x1b[0m")).toBe("[31mred [0m");
+    expect(sanitizeRemoteText("a\n\n b\tc")).toBe("a b c");
+    expect(sanitizeRemoteText("x\u009by\x7fz")).toBe("x y z");
+    expect(sanitizeRemoteText("  hi  ")).toBe("hi");
+  });
+  test("caps length with an ellipsis", () => {
+    expect(sanitizeRemoteText("abcdef", 3)).toBe("abc…");
+    expect(sanitizeRemoteText("abc", 3)).toBe("abc");
+    expect(sanitizeRemoteText("a".repeat(400)).length).toBe(301);
+  });
+});

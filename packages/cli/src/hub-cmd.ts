@@ -1,7 +1,7 @@
 import * as path from "node:path";
 import { readPortFile, readPidFile, isProcessAlive } from "@agmux/hub";
-import { AGMUX_VERSION, REPLICATION_VERSION, type HostRow } from "@agmux/protocol";
-import { relTime } from "@agmux/tui";
+import { AGMUX_VERSION, REPLICATION_VERSION, sanitizeRemoteText as clean, type HostRow } from "@agmux/protocol";
+import { syncAge } from "@agmux/tui";
 import { ensureHubRunning } from "./hub-spawn.ts";
 
 // `agmux hub status|restart` — explicit, no automatic behavior. The hub is a
@@ -52,13 +52,13 @@ async function fetchHosts(port: number | null, fetchImpl: typeof fetch): Promise
 
 function hostLines(h: HostRow, now: number): string[] {
   const state = h.removed_ts ? "removed" : !h.last_sync_ok ? "stale" : "ok";
-  const sync = h.last_sync_ts ? `${relTime(h.last_sync_ts, now)} ago` : "never";
-  let line = `remote ${h.remote}  ${h.host}  ${state}  last sync ${sync}  agmux ${h.agmux_version ?? "?"}  cursor ${h.cursor}`;
+  const sync = syncAge(h.last_sync_ts, now);
+  let line = `remote ${clean(h.remote)}  ${clean(h.host)}  ${state}  last sync ${sync}  agmux ${h.agmux_version == null ? "?" : clean(h.agmux_version)}  cursor ${h.cursor}`;
   if (h.rejected > 0) line += `  rejected ${h.rejected}`;
-  if (state !== "ok" && h.last_error) line += `  error: ${h.last_error}`;
+  if (state !== "ok" && h.last_error) line += `  error: ${clean(h.last_error)}`;
   const lines = [line];
   if (h.replication != null && h.replication > REPLICATION_VERSION) {
-    lines.push(`note: ${h.host} runs a newer replication format (${h.replication}); update agmux`);
+    lines.push(`note: ${clean(h.host)} runs a newer replication format (${h.replication}); update agmux`);
   }
   return lines;
 }

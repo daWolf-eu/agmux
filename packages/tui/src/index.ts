@@ -1,5 +1,5 @@
 export { formatTable, activityCell, short } from "./format.ts";
-export { relTime } from "./shared/reltime.ts";
+export { relTime, syncAge } from "./shared/reltime.ts";
 export { PollingSessionFeed, type SessionFeed, type PollingFeedOpts } from "./feed.ts";
 export { runWatch, type RunWatchOpts } from "./run-watch.tsx";
 export { runManage, type RunManageOpts, type GroupQuery } from "./opentui/run-manage.tsx";

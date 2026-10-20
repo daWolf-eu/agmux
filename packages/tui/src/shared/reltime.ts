@@ -4,6 +4,14 @@ import { STATUS_COLORS } from "./glyph.ts";
 // Relative time for the LAST column. `now` is injected (Date.now() in the app)
 // so it's deterministic in tests. Recomputed each render — the feed's 1s poll
 // re-render keeps "3s → 4s" live without a dedicated timer.
+// "never" for no sync; " ago" only after a short duration ("4m ago"), not after
+// "yesterday" or a date.
+export function syncAge(ts: string | null, now: number): string {
+  if (!ts) return "never";
+  const r = relTime(ts, now);
+  return /^\d+[smhd]$/.test(r) ? `${r} ago` : r;
+}
+
 export function relTime(iso: string, now: number): string {
   const then = Date.parse(iso);
   if (Number.isNaN(then)) return "-";

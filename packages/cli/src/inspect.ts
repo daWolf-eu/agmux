@@ -19,11 +19,13 @@ export async function inspectCmd(opts: InspectOpts, deps: InspectDeps = {}): Pro
   const body = (await r.json()) as { session: SessionRow; events: EventEnvelope[] };
   let host: HostRow | undefined;
   if (body.session.remote) {
-    const hr = await fetch(`${opts.hubUrl}/hosts`);
-    if (hr.ok) {
-      const { hosts } = (await hr.json()) as { hosts: HostRow[] };
-      host = hosts.find((h) => h.host === body.session.host);
-    }
+    try {
+      const hr = await fetch(`${opts.hubUrl}/hosts`);
+      if (hr.ok) {
+        const { hosts } = (await hr.json()) as { hosts?: HostRow[] };
+        host = hosts?.find((h) => h.host === body.session.host);
+      }
+    } catch { /* the host row is optional */ }
   }
   out(JSON.stringify(host ? { ...body, host } : body, null, 2));
   return 0;

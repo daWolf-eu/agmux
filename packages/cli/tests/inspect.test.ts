@@ -34,3 +34,20 @@ test("remote session without matching row has no host key", async () => {
   const { body } = await run(true, [{ ...host, host: "other" }]);
   expect("host" in body).toBe(false);
 });
+
+test("failing or malformed /hosts is optional", async () => {
+  const out: string[] = [];
+  const base = fake(true, []);
+  for (const mode of ["throw", "nohosts"]) {
+    const f = (async (url: string) => {
+      if (String(url).includes("/hosts")) {
+        if (mode === "throw") throw new Error("down");
+        return new Response("{}");
+      }
+      return base(url);
+    }) as unknown as typeof fetch;
+    out.length = 0;
+    expect(await inspectCmd({ idOrPrefix: "1111", hubUrl: "http://h" }, { fetchImpl: f, out: (s) => out.push(s) })).toBe(0);
+    expect("host" in JSON.parse(out.join("\n"))).toBe(false);
+  }
+});
