@@ -5,6 +5,13 @@ export interface InspectOpts { idOrPrefix: string; hubUrl: string; }
 
 export interface InspectDeps { fetchImpl?: typeof fetch; out?: (s: string) => void; }
 
+// The output is a terminal sink for sandbox text, kept verbatim as JSON:
+// JSON.stringify escapes C0, but not DEL and C1 (U+009B is a CSI), so those are
+// \u-escaped too. Still the same JSON value.
+function terminalJson(v: unknown): string {
+  return JSON.stringify(v, null, 2).replace(/[\u007f-\u009f]/g, (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
 export async function inspectCmd(opts: InspectOpts, deps: InspectDeps = {}): Promise<number> {
   const fetch = deps.fetchImpl ?? globalThis.fetch;
   const out = deps.out ?? ((s: string) => console.log(s));
@@ -27,6 +34,6 @@ export async function inspectCmd(opts: InspectOpts, deps: InspectDeps = {}): Pro
       }
     } catch { /* the host row is optional */ }
   }
-  out(JSON.stringify(host ? { ...body, host } : body, null, 2));
+  out(terminalJson(host ? { ...body, host } : body));
   return 0;
 }

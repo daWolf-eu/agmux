@@ -51,3 +51,17 @@ test("failing or malformed /hosts is optional", async () => {
     expect("host" in JSON.parse(out.join("\n"))).toBe(false);
   }
 });
+
+test("output is JSON-escaped for the terminal: no raw C0, DEL or C1 character", async () => {
+  const evil = "x\x1b]52;c;ZXZpbA==\x07\x7f\x9b[2Jy";
+  const fetchImpl = (async (url: string) => {
+    const u = String(url);
+    if (u.includes("/sessions?")) return new Response(JSON.stringify({ sessions: [{ session_id: ID }] }));
+    return new Response(JSON.stringify({ session: { session_id: ID, host: "h", remote: false, name: evil }, events: [] }));
+  }) as unknown as typeof fetch;
+  const out: string[] = [];
+  await inspectCmd({ idOrPrefix: "1111", hubUrl: "http://h" }, { fetchImpl, out: (s) => out.push(s) });
+  const text = out.join("\n");
+  expect(text).not.toMatch(/[\u0000-\u0009\u000b-\u001f\u007f-\u009f]/);
+  expect(JSON.parse(text).session.name).toBe(evil);
+});
