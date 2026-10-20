@@ -11,6 +11,7 @@ import type { Transport } from "./transport.ts";
 
 export const IDLE_TIMEOUT_MS = 60_000;
 export const MAX_BACKOFF_MS = 300_000;
+export const KILL_GRACE_MS = 5_000;   // SIGTERM → SIGKILL
 const STDERR_TAIL_CHARS = 2048;
 
 export interface FollowerStatus {
@@ -18,8 +19,10 @@ export interface FollowerStatus {
   rejected: number; lastError: string | null; failingSinceMs: number | null; permanent: boolean;
 }
 export interface Follower { status(): FollowerStatus; stop(): Promise<void> }
-// stderrTail: the last ~2 KB the child wrote to stderr, for error messages.
-export interface ProcHandle { lines: AsyncIterable<string>; kill(): void; exited: Promise<number>; stderrTail?(): string }
+// kill() defaults to SIGTERM. stderrTail: the last ~2 KB the child wrote to stderr, for error messages.
+export interface ProcHandle {
+  lines: AsyncIterable<string>; kill(signal?: "SIGTERM" | "SIGKILL"): void; exited: Promise<number>; stderrTail?(): string;
+}
 export interface FollowerDeps {
   spawn(argv: string[]): ProcHandle;
   nowMs(): number;
@@ -54,7 +57,7 @@ export function spawnProcess(argv: string[], spawnImpl: typeof Bun.spawn = Bun.s
     const dec = new TextDecoder();
     for await (const chunk of p.stderr) tail = (tail + dec.decode(chunk, { stream: true })).slice(-STDERR_TAIL_CHARS);
   })().catch(() => {});
-  return { lines: splitLines(p.stdout), kill: () => p.kill("SIGTERM"), exited: p.exited, stderrTail: () => tail };
+  return { lines: splitLines(p.stdout), kill: (signal = "SIGTERM") => p.kill(signal), exited: p.exited, stderrTail: () => tail };
 }
 
 const defaultDeps: FollowerDeps = {
@@ -66,12 +69,13 @@ const defaultDeps: FollowerDeps = {
   }),
 };
 
+type Failed = { kind: "failed"; error: string; permanent: boolean };
 type Outcome =
-  | { kind: "failed"; error: string; permanent: boolean }
+  | Failed
   | { kind: "reset" }      // sandbox db changed: respawn from cursor 0 right away
   | { kind: "stopped" };
 
-const fail = (error: string, permanent = false): Outcome => ({ kind: "failed", error, permanent });
+const fail = (error: string, permanent = false): Failed => ({ kind: "failed", error, permanent });
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDeps): Follower {
@@ -80,13 +84,17 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     rejected: 0, lastError: null, failingSinceMs: null, permanent: false,
   };
   let stopping = false;
-  let proc: ProcHandle | null = null;
   let failures = 0;
+  let abortAttempt: ((out: Outcome) => void) | null = null;
   const cancels = new Set<() => void>();
 
-  const notify = () => { if (!stopping) o.onChange({ ...st }); };
+  // A throwing listener must neither crash the hub nor read as a stream failure.
+  const notify = () => {
+    if (stopping) return;
+    try { o.onChange({ ...st }); } catch (e) { console.error(`agmux-hub: follower ${o.node.host}: onChange threw: ${errMsg(e)}`); }
+  };
 
-  // A sleep that stop() (or the connection ending, for the watchdog) can cut short.
+  // A sleep that stop() (or the attempt ending, for the watchdog) can cut short.
   function pause(ms: number): { done: Promise<void>; cancel(): void } {
     const ac = new AbortController();
     let cancel!: () => void;
@@ -97,6 +105,26 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     cancels.add(cancel);
     void done.then(() => cancels.delete(cancel));
     return { done, cancel };
+  }
+
+  // The exit code, or null if the child hasn't exited within KILL_GRACE_MS (or stop() cut the wait short).
+  async function exitWithin(p: ProcHandle): Promise<number | null> {
+    const t = pause(KILL_GRACE_MS);
+    const code = await Promise.race([p.exited.then((c) => c, () => -1), t.done.then(() => null)]);
+    t.cancel();
+    return code;
+  }
+
+  async function terminate(p: ProcHandle): Promise<void> {
+    p.kill("SIGTERM");
+    if (await exitWithin(p) === null) p.kill("SIGKILL");
+  }
+
+  function recordFailure(out: Failed): void {
+    failures++;
+    Object.assign(st, { connected: false, lastError: out.error, permanent: out.permanent });
+    st.failingSinceMs ??= deps.nowMs();
+    notify();
   }
 
   function onHeader(h: ReplicationHeader): Outcome | null {
@@ -118,7 +146,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     // Sandbox output is untrusted: a record that makes the store throw is just a rejected record.
     let r: IngestOutcome;
     try { r = ingestReplicated(o.store, rec, o.node.host); } catch (e) { r = { ok: false, reason: `append failed: ${errMsg(e)}` }; }
-    st.cursor = rec.id;
+    st.cursor = Math.max(st.cursor, rec.id);
     if (!r.ok) { st.rejected++; st.lastError = `record ${rec.id}: ${r.reason}`; }
     notify();
   }
@@ -135,76 +163,94 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     return null;
   }
 
-  // Kills the child once IDLE_TIMEOUT_MS pass without a line (keepalives count).
-  function watchdog(p: ProcHandle, lastLineMs: () => number) {
+  // Aborts the attempt once IDLE_TIMEOUT_MS pass without a line (keepalives count).
+  function watchdog(lastLineMs: () => number, abort: (out: Outcome) => void) {
     let ended = false;
-    let fired = false;
     let cancel: (() => void) | null = null;
     void (async () => {
-      while (!ended) {
+      while (!ended && !stopping) {
         const left = IDLE_TIMEOUT_MS - (deps.nowMs() - lastLineMs());
-        if (left <= 0) { fired = true; p.kill(); return; }
+        if (left <= 0) { abort(fail(`stream idle for ${IDLE_TIMEOUT_MS / 1000}s`)); return; }
         const s = pause(left);
         cancel = s.cancel;
         await s.done;
       }
     })();
-    return { fired: () => fired, end: () => { ended = true; cancel?.(); } };
+    return () => { ended = true; cancel?.(); };
   }
 
-  async function connectOnce(): Promise<Outcome> {
-    const cmd = [o.agmuxBin, "events", "--follow", "--after", String(st.cursor), "--consumer", o.consumer];
-    let p: ProcHandle;
-    try { p = deps.spawn(o.transport.argv(o.node.target, cmd, { tty: false })); } catch (e) { return fail(`spawn failed: ${errMsg(e)}`); }
-    proc = p;
-    st.connected = false;
+  // Reads lines until the stream ends, a line ends the attempt, or the attempt is
+  // aborted (watchdog, stop). An abort never waits for stdout EOF: a wedged child
+  // or a grandchild holding the pipe must not block the next attempt.
+  async function read(p: ProcHandle): Promise<Outcome | null> {
+    let abort!: (out: Outcome) => void;
+    const aborted = new Promise<{ abort: Outcome }>((r) => { abort = (out) => r({ abort: out }); });
+    abortAttempt = abort;
     let lastLineMs = deps.nowMs();
-    const wd = watchdog(p, () => lastLineMs);
-
-    let out: Outcome | null = null;
+    const endWatchdog = watchdog(() => lastLineMs, abort);
+    const it = p.lines[Symbol.asyncIterator]();
     try {
-      for await (const line of p.lines) {
+      for (;;) {
+        const next = it.next();
+        next.catch(() => {});   // may settle after an abort, unobserved
+        const r = await Promise.race([next, aborted]);
+        if ("abort" in r) return r.abort;
+        if (r.done) return null;
         lastLineMs = deps.nowMs();
-        if (stopping || wd.fired()) break;
-        if ((out = onLine(line)) !== null) break;
+        const out = onLine(r.value);
+        if (out) return out;
       }
     } catch (e) {
-      out = fail(`stream error: ${errMsg(e)}`);
+      return fail(`stream error: ${errMsg(e)}`);
     } finally {
-      wd.end();
+      abortAttempt = null;
+      endWatchdog();
     }
-    if (stopping) return { kind: "stopped" };
-    if (out) { p.kill(); return out; }
-    if (wd.fired()) return fail(`stream idle for ${IDLE_TIMEOUT_MS / 1000}s`);
-    const code = await p.exited;
-    const tail = p.stderrTail?.().trim() ?? "";
-    const what = st.connected ? `stream ended (exit ${code})` : `exited ${code} before replication header`;
-    return fail(tail ? `${what}: ${tail}` : what);
+  }
+
+  async function attempt(): Promise<Outcome> {
+    const cmd = [o.agmuxBin, "events", "--follow", "--after", String(st.cursor), "--consumer", o.consumer];
+    st.connected = false;
+    let p: ProcHandle;
+    try { p = deps.spawn(o.transport.argv(o.node.target, cmd, { tty: false })); } catch (e) {
+      const out = fail(`spawn failed: ${errMsg(e)}`);
+      recordFailure(out);
+      return out;
+    }
+    let out = await read(p);
+    if (out === null) {
+      // stdout ended on its own; the child should be exiting.
+      const code = await exitWithin(p);
+      if (code === null) p.kill("SIGKILL");
+      const tail = p.stderrTail?.().trim() ?? "";
+      const what = st.connected ? `stream ended (exit ${code ?? "?"})` : `exited ${code ?? "?"} before replication header`;
+      out = fail(tail ? `${what}: ${tail}` : what);
+      if (stopping) return { kind: "stopped" };
+      recordFailure(out);
+      return out;
+    }
+    if (stopping) out = { kind: "stopped" };
+    if (out.kind === "failed") recordFailure(out);   // before the kill grace: status turns failing at once
+    await terminate(p);
+    return out;
   }
 
   async function run(): Promise<void> {
     while (!stopping) {
-      const out = await connectOnce();
-      proc = null;
-      if (out.kind === "stopped" || stopping) return;
+      const out = await attempt();
+      if (stopping || out.kind === "stopped") return;
       if (out.kind === "reset") continue;
-      failures++;
-      st.connected = false;
-      st.lastError = out.error;
-      st.permanent = out.permanent;
-      st.failingSinceMs ??= deps.nowMs();
-      notify();
       await pause(out.permanent ? MAX_BACKOFF_MS : Math.min(o.intervalMs * 2 ** (failures - 1), MAX_BACKOFF_MS)).done;
     }
   }
 
-  const loop = run();
+  const loop = run().catch((e) => { console.error(`agmux-hub: follower ${o.node.host} crashed: ${errMsg(e)}`); });
   return {
     status: () => ({ ...st }),
     stop: async () => {
       stopping = true;
-      proc?.kill();
       for (const c of [...cancels]) c();
+      abortAttempt?.({ kind: "stopped" });
       await loop;
     },
   };

@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { Store } from "@agmux/store";
 import {
-  IDLE_TIMEOUT_MS, MAX_BACKOFF_MS, spawnProcess, splitLines, startFollower,
+  IDLE_TIMEOUT_MS, KILL_GRACE_MS, MAX_BACKOFF_MS, spawnProcess, splitLines, startFollower,
   type FollowerStatus, type ProcHandle,
 } from "../src/sync/follower.ts";
 import type { Transport } from "../src/sync/transport.ts";
@@ -25,17 +25,19 @@ const record = (id: number, ev: any = registered(id)) => JSON.stringify({ id, ev
 const keepalive = () => JSON.stringify({ keepalive: TS });
 
 // A scripted child: the test pushes lines and ends it; kill() ends it with 143.
+// A wedged child ignores every signal: its lines never end and it never exits.
 class FakeProc implements ProcHandle {
   killed = 0;
+  signals: string[] = [];
   private queue: string[] = [];
   private wake: (() => void) | null = null;
   private done = false;
   private resolveExit!: (code: number) => void;
   readonly exited = new Promise<number>((r) => { this.resolveExit = r; });
-  constructor(readonly argv: string[], private tail = "") {}
+  constructor(readonly argv: string[], private tail = "", private wedged = false) {}
   push(...lines: string[]) { this.queue.push(...lines); this.wake?.(); }
   end(code = 0) { if (this.done) return; this.done = true; this.resolveExit(code); this.wake?.(); }
-  kill() { this.killed++; this.end(143); }
+  kill(signal = "SIGTERM") { this.killed++; this.signals.push(signal); if (!this.wedged) this.end(143); }
   stderrTail() { return this.tail; }
   get lines(): AsyncIterable<string> {
     const self = this;
@@ -62,7 +64,10 @@ async function until(cond: () => boolean, what = "condition") {
   throw new Error(`timed out waiting for ${what}`);
 }
 
-function harness(o: { cursor?: number; dbId?: string | null; store?: Store; stderr?: string; spawnThrows?: number } = {}) {
+function harness(o: {
+  cursor?: number; dbId?: string | null; store?: Store; stderr?: string; spawnThrows?: number;
+  wedged?: boolean; onChange?: (s: FollowerStatus) => void;
+} = {}) {
   let now = 0;
   const sleeps: { at: number; resolve: () => void }[] = [];
   const sleepCalls: number[] = [];
@@ -72,11 +77,11 @@ function harness(o: { cursor?: number; dbId?: string | null; store?: Store; stde
   const f = startFollower({
     store, node: { target: "sbx", host: HOST }, transport, agmuxBin: "/usr/local/bin/agmux", consumer: "mac",
     cursor: o.cursor ?? 0, dbId: o.dbId ?? null, intervalMs: INTERVAL,
-    onChange: (s) => changes.push(s),
+    onChange: (s) => { changes.push(s); o.onChange?.(s); },
   }, {
     spawn: (argv) => {
       if (o.spawnThrows && o.spawnThrows-- > 0) throw new Error("ENOENT: openshell");
-      const p = new FakeProc(argv, o.stderr); procs.push(p); return p; },
+      const p = new FakeProc(argv, o.stderr, o.wedged); procs.push(p); return p; },
     nowMs: () => now,
     sleep: (ms) => { sleepCalls.push(ms); return new Promise<void>((resolve) => sleeps.push({ at: now + ms, resolve })); },
   });
@@ -85,8 +90,9 @@ function harness(o: { cursor?: number; dbId?: string | null; store?: Store; stde
     for (const s of sleeps.filter((s) => s.at <= now)) { sleeps.splice(sleeps.indexOf(s), 1); s.resolve(); }
     await turn();
   };
-  // Backoff sleeps only: the watchdog's first sleep per connection is IDLE_TIMEOUT_MS.
-  const backoffs = () => sleepCalls.filter((ms) => ms !== IDLE_TIMEOUT_MS);
+  // Backoff sleeps only: the watchdog's first sleep per connection is IDLE_TIMEOUT_MS,
+  // and every exit wait is KILL_GRACE_MS.
+  const backoffs = () => sleepCalls.filter((ms) => ms !== IDLE_TIMEOUT_MS && ms !== KILL_GRACE_MS);
   return { f, store, procs, changes, advance, backoffs, sleepCalls, last: () => procs[procs.length - 1]! };
 }
 
@@ -242,6 +248,7 @@ describe("startFollower", () => {
     h.last().push(header({ db_id: "db-new" }), record(6));
     await until(() => h.procs.length === 2, "respawn");
     expect(h.procs[0]!.killed).toBe(1);
+    expect(await h.procs[0]!.exited).toBe(143);
     expect(afterArg(h.last())).toBe("0");
     expect(h.backoffs()).toEqual([]);
     expect(h.f.status()).toMatchObject({ cursor: 0, dbId: "db-new" });
@@ -251,6 +258,23 @@ describe("startFollower", () => {
     await until(() => h.f.status().cursor === 1, "record");
     expect(h.procs).toHaveLength(2);
     await h.f.stop();
+  });
+
+  test("db_id reset waits for the old child to exit before respawning", async () => {
+    const h = harness({ cursor: 5, dbId: "db-old", wedged: true });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header({ db_id: "db-new" }));
+    await until(() => h.procs[0]!.signals.length === 1, "SIGTERM");
+    await h.advance(KILL_GRACE_MS - 1);
+    expect(h.procs).toHaveLength(1);
+    await h.advance(1);
+    await until(() => h.procs.length === 2, "respawn");
+    expect(h.procs[0]!.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(afterArg(h.last())).toBe("0");
+    const stopped = h.f.stop();
+    await until(() => h.last().signals.length === 1, "SIGTERM 2");
+    await h.advance(KILL_GRACE_MS);
+    await stopped;
   });
 
   test("stop() kills the process and resolves", async () => {
@@ -264,6 +288,73 @@ describe("startFollower", () => {
     await h.advance(MAX_BACKOFF_MS);
     expect(h.procs).toHaveLength(1);
     expect(h.changes).toHaveLength(seen);
+  });
+
+  test("a wedged child is abandoned after the watchdog and replaced", async () => {
+    const h = harness({ wedged: true });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), record(2));
+    await until(() => h.f.status().cursor === 2, "record");
+    await h.advance(IDLE_TIMEOUT_MS);
+    await until(() => h.procs[0]!.signals.length === 1, "SIGTERM");
+    expect(h.f.status()).toMatchObject({ connected: false, lastError: "stream idle for 60s", failingSinceMs: IDLE_TIMEOUT_MS });
+    expect(h.changes.at(-1)).toMatchObject({ connected: false, lastError: "stream idle for 60s" });
+    await h.advance(KILL_GRACE_MS);
+    await until(() => h.backoffs().length === 1, "backoff");
+    expect(h.procs[0]!.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    await h.advance(INTERVAL);
+    await until(() => h.procs.length === 2, "respawn");
+    expect(afterArg(h.last())).toBe("2");
+    const stopped = h.f.stop();
+    await until(() => h.last().signals.length === 1, "SIGTERM 2");
+    await h.advance(KILL_GRACE_MS);
+    await stopped;
+  });
+
+  test("stop() on a wedged child resolves after the kill grace with SIGKILL", async () => {
+    const h = harness({ wedged: true });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header());
+    await until(() => h.f.status().connected, "header");
+    let stopped = false;
+    const stopping = h.f.stop().then(() => { stopped = true; });
+    await until(() => h.procs[0]!.signals.length === 1, "SIGTERM");
+    expect(stopped).toBe(false);
+    await h.advance(KILL_GRACE_MS);
+    await stopping;
+    expect(h.procs[0]!.signals).toEqual(["SIGTERM", "SIGKILL"]);
+    await h.advance(IDLE_TIMEOUT_MS + MAX_BACKOFF_MS);
+    expect(h.procs).toHaveLength(1);
+  });
+
+  test("a throwing onChange is logged and the stream keeps working", async () => {
+    const err = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const h = harness({ onChange: () => { throw new Error("SQLITE_BUSY"); } });
+      await until(() => h.procs.length === 1, "spawn");
+      h.last().push(header(), record(3), record(4));
+      await until(() => h.f.status().cursor === 4, "records");
+      expect(h.f.status()).toMatchObject({ connected: true, lastError: null, rejected: 0 });
+      expect(h.last().killed).toBe(0);
+      h.last().end(1);
+      await until(() => h.backoffs().length === 1, "backoff after a throwing failure notify");
+      await h.advance(INTERVAL);
+      await until(() => h.procs.length === 2, "respawn");
+      expect(err).toHaveBeenCalled();
+      expect(String(err.mock.calls[0]![0])).toContain("SQLITE_BUSY");
+      await h.f.stop();
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  test("the cursor never moves backwards", async () => {
+    const h = harness({ cursor: 10, dbId: "db-1" });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), record(7), record(12));
+    await until(() => h.f.status().cursor === 12, "records");
+    expect(h.changes.map((c) => c.cursor).every((c) => c >= 10)).toBe(true);
+    await h.f.stop();
   });
 
   test("stop() during a backoff sleep resolves without respawning", async () => {
