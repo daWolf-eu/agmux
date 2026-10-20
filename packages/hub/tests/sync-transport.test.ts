@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseRemotes } from "../src/sync/config.ts";
 import { openshellTransport } from "../src/sync/transport.ts";
-import { openshellDiscovery, parseSandboxList } from "../src/sync/discovery.ts";
+import { openshellDiscovery, parseSandboxList, runCapture } from "../src/sync/discovery.ts";
 
 const [remote] = parseRemotes([{ name: "r", gateway: "ai-sandbox", openshell_bin: "/bin/os" }]);
 
@@ -31,6 +31,9 @@ describe("parseSandboxList", () => {
     const j = JSON.stringify([{ id: "x" }, { name: 5 }, { name: "bad name" }, { name: "ok" }]);
     expect(parseSandboxList(j, "g")).toEqual([{ target: "ok", host: "g/ok" }]);
   });
+  test("skips flag-like names", () => {
+    expect(parseSandboxList(JSON.stringify([{ name: "-x" }, { name: "ok" }]), "g")).toEqual([{ target: "ok", host: "g/ok" }]);
+  });
   test("invalid JSON throws", () => expect(() => parseSandboxList("nope", "g")).toThrow());
   test("non-array throws", () => expect(() => parseSandboxList("{}", "g")).toThrow());
 });
@@ -41,5 +44,17 @@ describe("openshellDiscovery", () => {
     const d = openshellDiscovery(remote!, async (argv) => { seen = argv; return FIXTURE; });
     expect(await d.list()).toHaveLength(1);
     expect(seen).toEqual(["/bin/os", "-g", "ai-sandbox", "sandbox", "list", "-o", "json", "--selector", "agmux=1"]);
+  });
+});
+
+describe("runCapture", () => {
+  test("stdout", async () => expect(await runCapture(["echo", "hi"])).toBe("hi\n"));
+  test("non-zero exit carries stderr", async () => {
+    await expect(runCapture(["sh", "-c", "echo oops >&2; exit 3"])).rejects.toThrow("oops");
+  });
+  test("timeout kills and rejects", async () => {
+    const t0 = Date.now();
+    await expect(runCapture(["sleep", "5"], { timeoutMs: 100 })).rejects.toThrow("timed out after 100 ms");
+    expect(Date.now() - t0).toBeLessThan(2000);
   });
 });

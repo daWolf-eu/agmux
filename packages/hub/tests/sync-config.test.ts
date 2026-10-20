@@ -31,6 +31,7 @@ describe("parseRemotes", () => {
       .toThrow('[[remote]] "a": duplicate name');
     expect(() => parseRemotes([{ name: "a/b", gateway: "g" }])).toThrow('[[remote]] "a/b": invalid name');
     expect(() => parseRemotes([{ gateway: "g" }])).toThrow("[[remote]] #0: missing name");
+    expect(() => parseRemotes([{ name: "a", gateway: "-g x" }])).toThrow('[[remote]] "a": invalid gateway');
     expect(() => parseRemotes([{ name: "a" }])).toThrow('[[remote]] "a": missing gateway');
     expect(() => parseRemotes([{ name: "a", gateway: "g", interval: 0 }])).toThrow('[[remote]] "a": interval must be a positive number');
     expect(() => parseRemotes([{ name: "a", gateway: "g", bogus: 1 }])).toThrow('[[remote]] "a": unknown key "bogus"');

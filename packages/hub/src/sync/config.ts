@@ -33,6 +33,7 @@ function parseOne(t: unknown, i: number, seen: Set<string>): RemoteConfig {
   const transport = str(tbl, "transport", "openshell", fail);
   if (transport !== "openshell") return fail(`transport "${transport}" is not supported yet`);
   const gateway = str(tbl, "gateway", undefined, fail);
+  if (!NAME_RE.test(gateway)) return fail("invalid gateway (allowed: A-Z a-z 0-9 . _ -)");
   const interval = tbl.interval ?? 5;
   if (typeof interval !== "number" || !Number.isFinite(interval) || interval <= 0) return fail("interval must be a positive number");
   return {
