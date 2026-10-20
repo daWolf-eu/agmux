@@ -52,7 +52,7 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      stream this host's exportable log as NDJSON (header, records, keepalives);
      used by the remote follower, not meant for interactive use. --limit is the
      page size per hub request (default 500); --consumer <id> replaces a prior
-     follower with the same id; --max-duration <s> ends a follow with exit 0
+     follower with the same id; --max-duration <s> ends a follow with exit 75
      after <s> seconds
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>

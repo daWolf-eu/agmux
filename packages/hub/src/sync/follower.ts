@@ -1,4 +1,4 @@
-import type { ReplicationHeader, ReplicationRecord } from "@agmux/protocol";
+import { EXIT_ROTATE, type ReplicationHeader, type ReplicationRecord } from "@agmux/protocol";
 import type { Store } from "@agmux/store";
 import type { DiscoveredNode } from "./discovery.ts";
 import { checkHeader, ingestReplicated, parseStreamLine, type IngestOutcome } from "./ingest.ts";
@@ -8,7 +8,7 @@ import type { Transport } from "./transport.ts";
 // transport. The child's stdin is closed: openshell 0.0.116 `exec --no-tty`
 // starts the remote command only once the local stdin reaches EOF. Closed stdin
 // orphans the remote side when the local process dies, so the remote stream is
-// bounded: `--max-duration` ends it (exit 0) and the follower reconnects at once;
+// bounded: `--max-duration` ends it (EXIT_ROTATE) and the follower reconnects at once;
 // a reconnect's `--consumer` lock SIGTERMs any leftover one.
 
 export const IDLE_TIMEOUT_MS = 60_000;
@@ -145,7 +145,7 @@ type Failed = { kind: "failed"; error: string; permanent: boolean };
 type Outcome =
   | Failed
   | { kind: "reset" }      // sandbox db changed: respawn from cursor 0 right away
-  | { kind: "rotate" }     // exit 0 after a header (--max-duration): respawn from the cursor right away
+  | { kind: "rotate" }     // EXIT_ROTATE after a header (--max-duration): respawn from the cursor right away
   | { kind: "stopped" };
 
 const fail = (error: string, permanent = false): Failed => ({ kind: "failed", error, permanent });
@@ -302,7 +302,9 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
       if (code === null) p.kill("SIGKILL");
       if (stopping) return { kind: "stopped" };
       // Not a failure: lastError, failingSinceMs and the backoff count stay as they are.
-      if (code === 0 && st.connected) return { kind: "rotate" };
+      // Exit 0 (SIGTERM, e.g. a consumer-lock replacement) is not a rotation: two
+      // followers sharing a consumer id must back off, not replace each other in a loop.
+      if (code === EXIT_ROTATE && st.connected) return { kind: "rotate" };
       const tail = p.stderrTail?.().trim() ?? "";
       const what = st.connected ? `stream ended (exit ${code ?? "?"})` : `exited ${code ?? "?"} before replication header`;
       out = fail(tail ? `${what}: ${tail}` : what);

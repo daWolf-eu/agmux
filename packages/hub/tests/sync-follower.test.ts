@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test";
+import { EXIT_ROTATE } from "@agmux/protocol";
 import { Store } from "@agmux/store";
 import {
   FOLLOW_MAX_DURATION_S, IDLE_TIMEOUT_MS, KILL_GRACE_MS, LINE_TOO_LONG, MAX_BACKOFF_MS, MAX_LINE_BYTES, abortableReader, spawnProcess, splitLines, startFollower,
@@ -194,12 +195,12 @@ describe("startFollower", () => {
     await h.f.stop();
   });
 
-  test("exit 0 after a header is a planned rotation: immediate respawn from the cursor, no failure", async () => {
+  test("EXIT_ROTATE after a header is a planned rotation: immediate respawn from the cursor, no failure", async () => {
     const h = harness();
     await until(() => h.procs.length === 1, "spawn");
     h.last().push(header(), record(3), record(7));
     await until(() => h.f.status().cursor === 7, "records");
-    h.last().end(0);
+    h.last().end(EXIT_ROTATE);
     await until(() => h.procs.length === 2, "respawn");
     expect(afterArg(h.last())).toBe("7");
     expect(h.backoffs()).toEqual([]);
@@ -214,13 +215,28 @@ describe("startFollower", () => {
     await h.f.stop();
   });
 
-  test("exit 0 before a header is a failure, not a rotation", async () => {
+  test("EXIT_ROTATE before a header is a failure, not a rotation", async () => {
     const h = harness();
     await until(() => h.procs.length === 1, "spawn");
-    h.last().end(0);
+    h.last().end(EXIT_ROTATE);
     await until(() => h.backoffs().length === 1, "backoff");
     expect(h.procs).toHaveLength(1);
-    expect(h.f.status().lastError).toBe("exited 0 before replication header");
+    expect(h.f.status().lastError).toBe(`exited ${EXIT_ROTATE} before replication header`);
+    await h.f.stop();
+  });
+
+  // Exit 0 is what a consumer-lock replacement (SIGTERM) produces: two followers
+  // sharing a consumer id must back off, not replace each other in a tight loop.
+  test("exit 0 after a header is an ordinary disconnect with backoff", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), record(3));
+    await until(() => h.f.status().cursor === 3, "record");
+    h.last().end(0);
+    await until(() => h.backoffs().length === 1, "backoff");
+    expect(h.backoffs()).toEqual([INTERVAL]);
+    expect(h.procs).toHaveLength(1);
+    expect(h.f.status()).toMatchObject({ connected: false, lastError: "stream ended (exit 0)", failingSinceMs: 0 });
     await h.f.stop();
   });
 

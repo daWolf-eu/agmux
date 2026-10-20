@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { EXIT_ROTATE } from "@agmux/protocol";
 import { parseEventsArgs, eventsCmd, isEventsProcess, KEEPALIVE_MS, FOLLOW_POLL_MS } from "../src/events-cmd.ts";
 
 test("parse: --after is required and a non-negative integer", () => {
@@ -123,7 +124,7 @@ test("follow picks up rows appearing after an empty page", async () => {
   expect(lines.slice(1).map((l) => JSON.parse(l).id)).toEqual([1, 2]);
 });
 
-test("follow --max-duration exits 0 at the next loop boundary, after the current page", async () => {
+test("follow --max-duration exits EXIT_ROTATE at the next loop boundary, after the current page", async () => {
   // 3 pages of 2 rows; every events request takes 1 s on the fake clock.
   const hub = fakeHub(6);
   let now = 0;
@@ -133,7 +134,8 @@ test("follow --max-duration exits 0 at the next loop boundary, after the current
   }) as unknown as typeof fetch;
   const { deps, lines } = mkDeps({ fetchImpl, nowMs: () => now, sleep: async (ms: number) => { now += ms; } });
   const code = await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 2, maxDurationS: 2 }, deps);
-  expect(code).toBe(0);
+  expect(EXIT_ROTATE).toBe(75);
+  expect(code).toBe(EXIT_ROTATE);
   // Deadline passes during the 2nd page: that page is written in full, then the command exits.
   expect(lines.slice(1).map((l) => JSON.parse(l).id)).toEqual([1, 2, 3, 4]);
   expect(hub.urls.filter((u) => u.includes("/events"))).toHaveLength(2);
@@ -142,9 +144,18 @@ test("follow --max-duration exits 0 at the next loop boundary, after the current
 test("follow --max-duration also ends an idle stream", async () => {
   const { deps, lines } = mkDeps({ fetchImpl: fakeHub(0).fetchImpl });
   const code = await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 500, maxDurationS: 60 }, deps);
-  expect(code).toBe(0);
+  expect(code).toBe(EXIT_ROTATE);
   // header + keepalives at 15, 30 and 45 s; at 60 s the deadline check comes first
   expect(lines.map((l) => Object.keys(JSON.parse(l))[0])).toEqual(["replication", "keepalive", "keepalive", "keepalive"]);
+});
+
+test("follow --max-duration: SIGTERM before the deadline still exits 0", async () => {
+  const ac = new AbortController();
+  const { deps } = mkDeps({ fetchImpl: fakeHub(0).fetchImpl });
+  const tick = deps.sleep;
+  deps.sleep = async (ms: number) => { await tick(ms); ac.abort(); };
+  const code = await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 500, maxDurationS: 60, signal: ac.signal }, deps);
+  expect(code).toBe(0);
 });
 
 test("exits 0 when write returns false", async () => {

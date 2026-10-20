@@ -49,6 +49,10 @@ export type RemoteSyncState =
   | { name: string; gateway: string; last_discovery_ts: string | null; last_discovery_error?: string; nodes: number };
 
 export const REPLICATION_VERSION = 1;
+// `agmux events --follow --max-duration` ends with this code (EX_TEMPFAIL): the
+// follower's planned rotation. Only this code after a valid header respawns at
+// once; exit 0 (SIGTERM, e.g. a consumer-lock replacement) is a normal disconnect.
+export const EXIT_ROTATE = 75;
 
 // Text that reaches a terminal (session names, branches, cwd, tool details —
 // replicated from sandboxes, so untrusted): C0, DEL and C1 controls become a

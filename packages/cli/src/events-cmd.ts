@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { AGMUX_VERSION, REPLICATION_VERSION, type ReplicationHeader, type ReplicationRecord } from "@agmux/protocol";
+import { AGMUX_VERSION, EXIT_ROTATE, REPLICATION_VERSION, type ReplicationHeader, type ReplicationRecord } from "@agmux/protocol";
 import { EXPORT_MAX_LIMIT, isProcessAlive } from "@agmux/hub";
 
 // `agmux events`: the remote side of replication. Streams this host's exportable
@@ -50,8 +50,8 @@ export function parseEventsArgs(argv: string[]): EventsArgs {
 
 export interface EventsOpts {
   hubUrl: string; follow: boolean; after: number; consumer: string | null; limit: number;
-  // Follow only: exit 0 at the first loop boundary after this many seconds (the
-  // Mac's follower then reconnects), so an orphaned remote stream ends on its own.
+  // Follow only: exit EXIT_ROTATE at the first loop boundary after this many seconds
+  // (the Mac's follower then reconnects), so an orphaned remote stream ends on its own.
   maxDurationS?: number | null;
   // Aborted on SIGTERM/SIGINT: stop streaming, clean up, exit 0.
   signal?: AbortSignal;
@@ -158,7 +158,8 @@ async function stream(opts: EventsOpts, deps: EventsDeps): Promise<number> {
 
   let cursor = opts.after;
   const deadlineMs = opts.maxDurationS ? startMs + opts.maxDurationS * 1000 : Infinity;
-  while (!opts.signal?.aborted && deps.nowMs() < deadlineMs) {
+  while (!opts.signal?.aborted) {
+    if (deps.nowMs() >= deadlineMs) return EXIT_ROTATE;
     let records: ReplicationRecord[];
     try {
       const r = await deps.fetchImpl(`${opts.hubUrl}/events?after_id=${cursor}&limit=${opts.limit}`);
