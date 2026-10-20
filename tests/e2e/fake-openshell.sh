@@ -3,6 +3,8 @@
 #   -g <gw> sandbox list -o json --selector <sel>      → $FAKE_OS_DIR/list.json
 #   -g <gw> sandbox exec -n <name> --no-tty -- <cmd…>  → <cmd…> with HOME=$FAKE_OS_DIR/<name>
 #                                                         and AGMUX_HOST=<gw>/<name>
+# Like openshell 0.0.116, exec starts <cmd…> only once the local stdin reaches EOF,
+# so a caller that holds stdin open hangs here too.
 # A name listed (one per line) in $FAKE_OS_DIR/nohost gets no AGMUX_HOST, like an old sandbox.
 die() { echo "fake-openshell: $*" >&2; exit 2; }
 
@@ -39,7 +41,8 @@ case "$1" in
     else
       export AGMUX_HOST="$gw/$name"
     fi
-    exec "$@"
+    cat >/dev/null
+    exec "$@" </dev/null
     ;;
   *) die "unsupported verb '$1'" ;;
 esac

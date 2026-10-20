@@ -9,12 +9,12 @@ test("parse: --after is required and a non-negative integer", () => {
   expect(parseEventsArgs(["--after", "-1"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "1.5"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "x"]).kind).toBe("error");
-  expect(parseEventsArgs(["--after", "0"])).toEqual({ kind: "ok", follow: false, after: 0, consumer: null, limit: 500 });
+  expect(parseEventsArgs(["--after", "0"])).toEqual({ kind: "ok", follow: false, after: 0, consumer: null, limit: 500, maxDurationS: null });
 });
 
 test("parse: flags", () => {
   expect(parseEventsArgs(["--follow", "--after", "7", "--consumer", "mac.1_a-b", "--limit", "20"]))
-    .toEqual({ kind: "ok", follow: true, after: 7, consumer: "mac.1_a-b", limit: 20 });
+    .toEqual({ kind: "ok", follow: true, after: 7, consumer: "mac.1_a-b", limit: 20, maxDurationS: null });
   expect(parseEventsArgs(["--after", "0", "--limit", "0"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--limit", "x"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--limit", "5001"]).kind).toBe("error");
@@ -23,6 +23,17 @@ test("parse: flags", () => {
   expect(parseEventsArgs(["--after", "0", "--consumer", "a".repeat(65)]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--bogus"]).kind).toBe("error");
   expect(parseEventsArgs(["--after"]).kind).toBe("error");
+});
+
+test("parse: --max-duration is a positive integer and needs --follow", () => {
+  expect(parseEventsArgs(["--max-duration", "3600", "--follow", "--after", "0"]))
+    .toEqual({ kind: "ok", follow: true, after: 0, consumer: null, limit: 500, maxDurationS: 3600 });
+  expect(parseEventsArgs(["--follow", "--after", "0", "--max-duration", "0"]).kind).toBe("error");
+  expect(parseEventsArgs(["--follow", "--after", "0", "--max-duration", "-5"]).kind).toBe("error");
+  expect(parseEventsArgs(["--follow", "--after", "0", "--max-duration", "1.5"]).kind).toBe("error");
+  expect(parseEventsArgs(["--follow", "--after", "0", "--max-duration"]).kind).toBe("error");
+  expect(parseEventsArgs(["--after", "0", "--max-duration", "60"]))
+    .toEqual({ kind: "error", message: "events: --max-duration needs --follow" });
 });
 
 const ev = (n: number) => ({ id: `e${n}`, kind: "x" });
@@ -110,6 +121,30 @@ test("follow picks up rows appearing after an empty page", async () => {
   deps.sleep = async () => { if (urls.length >= 3) ac.abort(); };
   await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 500, signal: ac.signal }, deps);
   expect(lines.slice(1).map((l) => JSON.parse(l).id)).toEqual([1, 2]);
+});
+
+test("follow --max-duration exits 0 at the next loop boundary, after the current page", async () => {
+  // 3 pages of 2 rows; every events request takes 1 s on the fake clock.
+  const hub = fakeHub(6);
+  let now = 0;
+  const fetchImpl = (async (u: any, i: any) => {
+    if (String(u).includes("/events")) now += 1000;
+    return hub.fetchImpl(u, i);
+  }) as unknown as typeof fetch;
+  const { deps, lines } = mkDeps({ fetchImpl, nowMs: () => now, sleep: async (ms: number) => { now += ms; } });
+  const code = await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 2, maxDurationS: 2 }, deps);
+  expect(code).toBe(0);
+  // Deadline passes during the 2nd page: that page is written in full, then the command exits.
+  expect(lines.slice(1).map((l) => JSON.parse(l).id)).toEqual([1, 2, 3, 4]);
+  expect(hub.urls.filter((u) => u.includes("/events"))).toHaveLength(2);
+});
+
+test("follow --max-duration also ends an idle stream", async () => {
+  const { deps, lines } = mkDeps({ fetchImpl: fakeHub(0).fetchImpl });
+  const code = await eventsCmd({ hubUrl: "http://h", follow: true, after: 0, consumer: null, limit: 500, maxDurationS: 60 }, deps);
+  expect(code).toBe(0);
+  // header + keepalives at 15, 30 and 45 s; at 60 s the deadline check comes first
+  expect(lines.map((l) => Object.keys(JSON.parse(l))[0])).toEqual(["replication", "keepalive", "keepalive", "keepalive"]);
 });
 
 test("exits 0 when write returns false", async () => {

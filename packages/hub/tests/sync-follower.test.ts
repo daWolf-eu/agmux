@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { Store } from "@agmux/store";
 import {
-  IDLE_TIMEOUT_MS, KILL_GRACE_MS, LINE_TOO_LONG, MAX_BACKOFF_MS, MAX_LINE_BYTES, abortableReader, spawnProcess, splitLines, startFollower,
+  FOLLOW_MAX_DURATION_S, IDLE_TIMEOUT_MS, KILL_GRACE_MS, LINE_TOO_LONG, MAX_BACKOFF_MS, MAX_LINE_BYTES, abortableReader, spawnProcess, splitLines, startFollower,
   type FollowerStatus, type ProcHandle,
 } from "../src/sync/follower.ts";
 import type { Transport } from "../src/sync/transport.ts";
@@ -112,7 +112,9 @@ describe("startFollower", () => {
     expect(h.procs[0]!.argv).toEqual([
       "openshell", "exec", "-n", "sbx", "--no-tty", "--",
       "/usr/local/bin/agmux", "events", "--follow", "--after", "0", "--consumer", "mac",
+      "--max-duration", "3600",
     ]);
+    expect(FOLLOW_MAX_DURATION_S).toBe(3600);
     h.last().push(header(), record(3), keepalive(), record(5), record(8, registered(8, "evil")), "not json");
     await until(() => h.f.status().rejected === 2, "records");
     const s = h.f.status();
@@ -192,6 +194,36 @@ describe("startFollower", () => {
     await h.f.stop();
   });
 
+  test("exit 0 after a header is a planned rotation: immediate respawn from the cursor, no failure", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), record(3), record(7));
+    await until(() => h.f.status().cursor === 7, "records");
+    h.last().end(0);
+    await until(() => h.procs.length === 2, "respawn");
+    expect(afterArg(h.last())).toBe("7");
+    expect(h.backoffs()).toEqual([]);
+    expect(h.f.status()).toMatchObject({ lastError: null, failingSinceMs: null, permanent: false });
+    expect(h.changes.every((c) => c.lastError === null && c.failingSinceMs === null)).toBe(true);
+    // The next real failure is still the first one: the base interval, not a doubled one.
+    h.last().push(header());
+    await until(() => h.f.status().connected, "header 2");
+    h.last().end(1);
+    await until(() => h.backoffs().length === 1, "backoff");
+    expect(h.backoffs()).toEqual([INTERVAL]);
+    await h.f.stop();
+  });
+
+  test("exit 0 before a header is a failure, not a rotation", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().end(0);
+    await until(() => h.backoffs().length === 1, "backoff");
+    expect(h.procs).toHaveLength(1);
+    expect(h.f.status().lastError).toBe("exited 0 before replication header");
+    await h.f.stop();
+  });
+
   test("silent stream is restarted by the watchdog", async () => {
     const h = harness();
     await until(() => h.procs.length === 1, "spawn");
@@ -228,7 +260,7 @@ describe("startFollower", () => {
     h.last().push(header());
     await until(() => h.f.status().connected, "header");
     expect(h.f.status()).toMatchObject({ failingSinceMs: null, lastError: null });
-    h.last().end(0);
+    h.last().end(1);
     await until(() => h.backoffs().length === 12, "backoff after header");
     expect(h.backoffs()[11]).toBe(INTERVAL);
     await h.f.stop();
@@ -445,26 +477,15 @@ describe("abortableReader", () => {
 });
 
 describe("spawnProcess", () => {
-  test("spawns with a stdin pipe", () => {
+  // openshell 0.0.116 `exec --no-tty` starts the remote command only at local stdin EOF.
+  test("spawns with stdin closed", () => {
     let opts: any;
     const fake: any = (_argv: string[], o: any) => {
       opts = o;
       return { stdout: new ReadableStream(), stderr: new ReadableStream(), exited: Promise.resolve(0), kill() {} };
     };
     spawnProcess(["x"], fake);
-    expect(opts).toEqual({ stdin: "pipe", stdout: "pipe", stderr: "pipe" });
-  });
-
-  test("stdin is never closed", async () => {
-    const p = spawnProcess([process.execPath, "-e",
-      "process.stdin.on('data',()=>{});process.stdin.on('end',()=>console.log('EOF'));console.log('ready')"]);
-    const lines: string[] = [];
-    const reading = (async () => { for await (const l of p.lines) lines.push(l); })();
-    await Bun.sleep(300);
-    p.kill();
-    await reading;
-    expect(await p.exited).not.toBe(0);
-    expect(lines).toEqual(["ready"]);
+    expect(opts).toEqual({ stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   });
 });
 

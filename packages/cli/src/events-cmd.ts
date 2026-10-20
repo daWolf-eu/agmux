@@ -11,7 +11,7 @@ const DEFAULT_LIMIT = 500;
 const CONSUMER_RE = /^[A-Za-z0-9._-]{1,64}$/;
 
 export type EventsArgs =
-  | { kind: "ok"; follow: boolean; after: number; consumer: string | null; limit: number }
+  | { kind: "ok"; follow: boolean; after: number; consumer: string | null; limit: number; maxDurationS: number | null }
   | { kind: "error"; message: string };
 
 export function parseEventsArgs(argv: string[]): EventsArgs {
@@ -19,10 +19,11 @@ export function parseEventsArgs(argv: string[]): EventsArgs {
   let after: number | null = null;
   let consumer: string | null = null;
   let limit = DEFAULT_LIMIT;
+  let maxDurationS: number | null = null;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--follow") { follow = true; continue; }
-    if (a !== "--after" && a !== "--consumer" && a !== "--limit") {
+    if (a !== "--after" && a !== "--consumer" && a !== "--limit" && a !== "--max-duration") {
       return { kind: "error", message: `events: unknown argument ${a}` };
     }
     const v = argv[++i];
@@ -35,18 +36,23 @@ export function parseEventsArgs(argv: string[]): EventsArgs {
     if (!/^\d+$/.test(v)) return { kind: "error", message: `events: ${a} must be an integer` };
     const n = Number(v);
     if (a === "--after") after = n;
-    else if (n < 1) return { kind: "error", message: "events: --limit must be positive" };
+    else if (n < 1) return { kind: "error", message: `events: ${a} must be positive` };
+    else if (a === "--max-duration") maxDurationS = n;
     else if (n > EXPORT_MAX_LIMIT) {
       // The hub clamps page size; a larger limit would make a clamped full page look short.
       return { kind: "error", message: `events: --limit must be at most ${EXPORT_MAX_LIMIT}` };
     } else limit = n;
   }
   if (after === null) return { kind: "error", message: "events: --after <n> is required" };
-  return { kind: "ok", follow, after, consumer, limit };
+  if (maxDurationS !== null && !follow) return { kind: "error", message: "events: --max-duration needs --follow" };
+  return { kind: "ok", follow, after, consumer, limit, maxDurationS };
 }
 
 export interface EventsOpts {
   hubUrl: string; follow: boolean; after: number; consumer: string | null; limit: number;
+  // Follow only: exit 0 at the first loop boundary after this many seconds (the
+  // Mac's follower then reconnects), so an orphaned remote stream ends on its own.
+  maxDurationS?: number | null;
   // Aborted on SIGTERM/SIGINT: stop streaming, clean up, exit 0.
   signal?: AbortSignal;
 }
@@ -130,7 +136,8 @@ export async function eventsCmd(opts: EventsOpts, deps: EventsDeps): Promise<num
 }
 
 async function stream(opts: EventsOpts, deps: EventsDeps): Promise<number> {
-  let lastWrite = deps.nowMs();
+  const startMs = deps.nowMs();
+  let lastWrite = startMs;
   // False once the reader is gone.
   const emit = (obj: object): boolean => {
     try {
@@ -150,7 +157,8 @@ async function stream(opts: EventsOpts, deps: EventsDeps): Promise<number> {
   if (!emit(header)) return 0;
 
   let cursor = opts.after;
-  while (!opts.signal?.aborted) {
+  const deadlineMs = opts.maxDurationS ? startMs + opts.maxDurationS * 1000 : Infinity;
+  while (!opts.signal?.aborted && deps.nowMs() < deadlineMs) {
     let records: ReplicationRecord[];
     try {
       const r = await deps.fetchImpl(`${opts.hubUrl}/events?after_id=${cursor}&limit=${opts.limit}`);

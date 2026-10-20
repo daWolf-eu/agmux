@@ -239,6 +239,23 @@ describe("startSync", () => {
     await h.stop();
   });
 
+  test("a follower rotation (connected → not connected → connected, no failure) writes no host.sync_failed", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    // A rejected record leaves a lastError while connected; a rotation leaves it as is.
+    f.emit({ connected: true, header: hdr, dbId: "db-1", cursor: 3, rejected: 1, lastError: "record 2: host mismatch: x" });
+    f.emit({ connected: false });
+    h.advance(STALE_MS + 1);
+    await ticks();
+    expect(h.kinds()).toEqual(["host.synced"]);
+    f.emit({ connected: true });
+    expect(h.kinds()).toEqual(["host.synced", "host.synced"]);
+    expect(h.store.getHost("gw/a")).toMatchObject({ last_sync_ok: true, cursor: 3 });
+    await h.stop();
+  });
+
   test("remote-supplied error and version are sanitized before they are stored", async () => {
     const h = harness();
     h.setListing([node("a")]);

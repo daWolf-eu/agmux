@@ -5,13 +5,16 @@ import { checkHeader, ingestReplicated, parseStreamLine, type IngestOutcome } fr
 import type { Transport } from "./transport.ts";
 
 // One long-lived `agmux events --follow` child per sandbox, run through the
-// transport. The child's stdin is a pipe that is never written or closed: with
-// `exec --no-tty` that is what ties the remote command's life to the local
-// process (spike 2026-10-11, design change #1). A closed stdin orphans it.
+// transport. The child's stdin is closed: openshell 0.0.116 `exec --no-tty`
+// starts the remote command only once the local stdin reaches EOF. Closed stdin
+// orphans the remote side when the local process dies, so the remote stream is
+// bounded: `--max-duration` ends it (exit 0) and the follower reconnects at once;
+// a reconnect's `--consumer` lock SIGTERMs any leftover one.
 
 export const IDLE_TIMEOUT_MS = 60_000;
 export const MAX_BACKOFF_MS = 300_000;
 export const KILL_GRACE_MS = 5_000;   // SIGTERM → SIGKILL
+export const FOLLOW_MAX_DURATION_S = 3600;   // remote `--max-duration`: planned rotation, hourly
 const STDERR_TAIL_CHARS = 2048;
 
 export interface FollowerStatus {
@@ -86,8 +89,8 @@ export async function* splitLines(stream: ReadableStream<Uint8Array>, max = MAX_
 }
 
 export function spawnProcess(argv: string[], spawnImpl: typeof Bun.spawn = Bun.spawn): ProcHandle {
-  // stdin stays an open pipe for the child's whole life — never write to or end it.
-  const p = spawnImpl(argv, { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+  // stdin closed: an open stdin keeps `openshell exec --no-tty` from starting the command.
+  const p = spawnImpl(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   let tail = "";
   void (async () => {
     const dec = new TextDecoder();
@@ -142,6 +145,7 @@ type Failed = { kind: "failed"; error: string; permanent: boolean };
 type Outcome =
   | Failed
   | { kind: "reset" }      // sandbox db changed: respawn from cursor 0 right away
+  | { kind: "rotate" }     // exit 0 after a header (--max-duration): respawn from the cursor right away
   | { kind: "stopped" };
 
 const fail = (error: string, permanent = false): Failed => ({ kind: "failed", error, permanent });
@@ -280,7 +284,10 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   }
 
   async function attempt(): Promise<Outcome> {
-    const cmd = [o.agmuxBin, "events", "--follow", "--after", String(st.cursor), "--consumer", o.consumer];
+    const cmd = [
+      o.agmuxBin, "events", "--follow", "--after", String(st.cursor), "--consumer", o.consumer,
+      "--max-duration", String(FOLLOW_MAX_DURATION_S),
+    ];
     st.connected = false;
     let p: ProcHandle;
     try { p = deps.spawn(o.transport.argv(o.node.target, cmd, { tty: false })); } catch (e) {
@@ -293,10 +300,12 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
       // stdout ended on its own; the child should be exiting.
       const code = await exitWithin(p);
       if (code === null) p.kill("SIGKILL");
+      if (stopping) return { kind: "stopped" };
+      // Not a failure: lastError, failingSinceMs and the backoff count stay as they are.
+      if (code === 0 && st.connected) return { kind: "rotate" };
       const tail = p.stderrTail?.().trim() ?? "";
       const what = st.connected ? `stream ended (exit ${code ?? "?"})` : `exited ${code ?? "?"} before replication header`;
       out = fail(tail ? `${what}: ${tail}` : what);
-      if (stopping) return { kind: "stopped" };
       recordFailure(out);
       return out;
     }
@@ -310,7 +319,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     while (!stopping) {
       const out = await attempt();
       if (stopping || out.kind === "stopped") return;
-      if (out.kind === "reset") continue;
+      if (out.kind === "reset" || out.kind === "rotate") continue;
       await pause(out.permanent ? MAX_BACKOFF_MS : Math.min(o.intervalMs * 2 ** (failures - 1), MAX_BACKOFF_MS)).done;
     }
   }
