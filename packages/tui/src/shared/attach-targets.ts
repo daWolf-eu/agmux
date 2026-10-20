@@ -7,6 +7,8 @@ import {
 export type AttachKind = "live" | "closed" | "none";
 
 export function attachKind(row: SessionRow): AttachKind {
+  // Remote rows are read-only here: their tmux coords and pid are not ours.
+  if (row.remote) return "none";
   if (TERMINAL_STATUSES.includes(row.status)) return "closed";
   if (LIVE_STATUSES.includes(row.status) && row.tmux_session && row.tmux_window) return "live";
   return "none";

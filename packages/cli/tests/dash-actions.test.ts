@@ -264,3 +264,20 @@ test("terminal templates are launched without the dash's tmux env", async () => 
   expect("TMUX_PANE" in envs[0]!).toBe(false);
   expect(envs[0]!.PATH).toBe(process.env.PATH);
 });
+
+test("makeActions: remote rows are refused by attach and resume, and kill never signals", async () => {
+  const { spyOn } = await import("bun:test");
+  const row = staleRow({ remote: true, host: "sbx-1" });
+  const refusal = (v: string) => `${v}: 019f1898 runs on sbx-1; remote ${v} is not supported yet`;
+  const actions = makeActions("http://hub", "agmux-wrap", false, {
+    runTmux: async () => { throw new Error("should not run tmux"); },
+    sessionExists: async () => { throw new Error("should not probe tmux"); },
+  });
+  await expect(actions.attach(row)).rejects.toThrow(refusal("attach"));
+  await expect(actions.resume(row)).rejects.toThrow(refusal("resume"));
+  const kill = spyOn(process, "kill").mockImplementation(() => true);
+  try {
+    await actions.kill(row);
+    expect(kill).not.toHaveBeenCalled();
+  } finally { kill.mockRestore(); }
+});

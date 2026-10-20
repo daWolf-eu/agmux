@@ -40,3 +40,9 @@ test("a range that isn't ours is a no-op", async () => {
   for (const t of ["window", "left", "", "my-range"]) expect(await statuslineClick("left", t, r.deps)).toBe(0);
   expect(r.calls).toEqual([]);
 });
+
+test("left click on a remote chip still goes through attach (which refuses remote rows)", async () => {
+  const r = recorder();
+  expect(await statuslineClick("left", chipToken(ID), r.deps)).toBe(0);
+  expect(r.calls).toEqual(["attach 0198abcd-1234-"]);
+});

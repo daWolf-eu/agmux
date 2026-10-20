@@ -8,6 +8,7 @@ import { loadProfileEnv } from "./profile-env.ts";
 import { hasSession, readCurrentPane } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 import { postSeen } from "./seen.ts";
+import { remoteRefusal } from "./remote-guard.ts";
 
 export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
 
@@ -64,6 +65,9 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     session: SessionRow;
     usage: { turn_count: number } | null;
   };
+
+  const refusal = remoteRefusal(session, "attach");
+  if (refusal) { console.error(refusal); return 2; }
 
   const inTmux = !!process.env.TMUX;
 

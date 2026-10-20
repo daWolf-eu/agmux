@@ -9,6 +9,7 @@ import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen } from "./seen.ts";
+import { remoteRefusal } from "./remote-guard.ts";
 import {
   DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, type AttachSettings,
 } from "./attach-place.ts";
@@ -85,6 +86,8 @@ export function makeActions(
   }
 
   async function resume(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
+    const refusal = remoteRefusal(row, "resume");
+    if (refusal) throw new Error(refusal);
     const where = resolvePlacement("closed", ctx, req?.placement, settings.defaults);
     if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
     const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
@@ -119,6 +122,8 @@ export function makeActions(
 
   return {
     async attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
+      const refusal = remoteRefusal(row, "attach");
+      if (refusal) throw new Error(refusal);
       // No tmux target to focus → nothing to attach to (unchanged no-op).
       if (attachKind(row) !== "live") return null;
       // Status is only a lagging approximation of tmux reality: a LIVE row whose
@@ -138,7 +143,8 @@ export function makeActions(
       return { argv: ["tmux", ...cmds[0]!] };
     },
     async kill(row: SessionRow): Promise<void> {
-      if (!row.pid) return;
+      // Read-only on the Mac: never signal a local pid for a remote row.
+      if (remoteRefusal(row, "kill") || !row.pid) return;
       try { process.kill(row.pid, "SIGTERM"); } catch { /* already gone */ }
     },
     resume,

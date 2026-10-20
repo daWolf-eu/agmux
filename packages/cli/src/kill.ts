@@ -1,5 +1,6 @@
 import type { SessionRow } from "@agmux/protocol";
 import { resolvePrefix } from "./id-resolve.ts";
+import { remoteRefusal } from "./remote-guard.ts";
 
 export interface KillOpts { idOrPrefix: string; signal: string; hubUrl: string; }
 
@@ -12,6 +13,8 @@ export async function killCmd(opts: KillOpts): Promise<number> {
 
   const r = await fetch(`${opts.hubUrl}/sessions/${res.id}`);
   const { session } = (await r.json()) as { session: SessionRow };
+  const refusal = remoteRefusal(session, "kill");
+  if (refusal) { console.error(refusal); return 2; }
   if (!session.pid) { console.error(`session has no recorded pid; nothing to signal`); return 1; }
   try {
     process.kill(session.pid, opts.signal as NodeJS.Signals);

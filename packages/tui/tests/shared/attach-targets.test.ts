@@ -74,3 +74,8 @@ test("resolvePlacement passes enabled requests, rejects disabled ones, defaults 
   expect(() => resolvePlacement("closed", NO_ATTACH_CTX, "new-pane")).toThrow("new pane: not in tmux");
   expect(resolvePlacement("closed", TMUX, undefined)).toBe("new-window");
 });
+
+test("attachKind: a remote row is never attachable or resumable", () => {
+  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true }))).toBe("none");
+  expect(attachKind(mkRow({ status: "lost", remote: true }))).toBe("none");
+});

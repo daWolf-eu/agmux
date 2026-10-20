@@ -1,4 +1,4 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { buildAttachCommands, decideAttach } from "../src/attach.ts";
 import type { SessionRow } from "@agmux/protocol";
 
@@ -90,4 +90,27 @@ test("not inTmux: prefixes -S socket on the chained attach when tmux_socket set"
 
 test("omits -S when tmux_socket is null", () => {
   expect(buildAttachCommands(coords, true)[0]!.slice(0, 2)).toEqual(["switch-client", "-t"]);
+});
+
+test("attachCmd on a remote row prints the refusal, returns 2, never touches tmux or spawn", async () => {
+  const { attachCmd } = await import("../src/attach.ts");
+  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle" });
+  const calls: string[] = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => {
+    calls.push(String(url));
+    return String(url).includes("/sessions?")
+      ? new Response(JSON.stringify({ sessions: [{ session_id: row.session_id }] }))
+      : new Response(JSON.stringify({ session: row, usage: null }));
+  }) as unknown as typeof fetch;
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => { throw new Error("spawn"); }) as never);
+  const err = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    expect(await attachCmd({ idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap" })).toBe(2);
+    expect(err).toHaveBeenCalledWith("attach: 019f1898 runs on sbx-1; remote attach is not supported yet");
+    expect(spawn).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.includes("/seen"))).toBe(false);
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
+  }
 });
