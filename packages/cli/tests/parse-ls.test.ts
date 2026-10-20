@@ -65,3 +65,23 @@ test("value flags error when value is missing", () => {
   expect(parseLsArgs(["--limit"], {}).kind).toBe("error");
   expect(parseLsArgs(["--agent"], {}).kind).toBe("error");
 });
+
+test("--remote / --local set locality; both is an error", () => {
+  expect(ok(["--remote"]).locality).toBe("remote");
+  expect(ok(["--local"]).locality).toBe("local");
+  const r = parseLsArgs(["--remote", "--local"], {});
+  expect(r).toEqual({ kind: "error", message: "ls: --remote and --local are mutually exclusive" });
+});
+
+test("--host takes a glob in both forms; empty is an error", () => {
+  expect(ok(["--host", "gw/*"]).host).toBe("gw/*");
+  expect(ok(["--host=gw/*"]).host).toBe("gw/*");
+  expect(parseLsArgs(["--host="], {}).kind).toBe("error");
+  expect(parseLsArgs(["--host"], {}).kind).toBe("error");
+});
+
+test("locality: flag > config default > undefined", () => {
+  expect(ok([], {}).locality).toBeUndefined();
+  expect(ok([], { locality: "remote" }).locality).toBe("remote");
+  expect(ok(["--local"], { locality: "remote" }).locality).toBe("local");
+});

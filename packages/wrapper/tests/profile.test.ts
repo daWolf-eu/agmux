@@ -105,3 +105,11 @@ test("loadLsConfig: missing file → {}; [ls] section parsed; broken profiles ig
   expect(loadLsConfig(f)).toEqual({ limit: 5, sort: "activity" });
 });
 
+
+test("parseLsSection locality: all → undefined, local/remote kept, other throws", () => {
+  expect(parseLsSection({ locality: "all" })).toEqual({});
+  expect(parseLsSection({ locality: "all" }).locality).toBeUndefined();
+  expect(parseLsSection({ locality: "remote" })).toEqual({ locality: "remote" });
+  expect(parseLsSection({ locality: "local" })).toEqual({ locality: "local" });
+  expect(() => parseLsSection({ locality: "x" })).toThrow("[ls] locality must be all|local|remote");
+});

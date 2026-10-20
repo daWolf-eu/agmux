@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import { parse as parseToml } from "smol-toml";
-import { expandStatusFilter, isAttachPlacement, ATTACH_PLACEMENTS, type AgentKind, type AttachPlacement } from "@agmux/protocol";
+import { expandStatusFilter, isAttachPlacement, ATTACH_PLACEMENTS, type AgentKind, type AttachPlacement, type Locality } from "@agmux/protocol";
 
 export interface ProfileConfig {
   agent_kind: AgentKind;
@@ -70,6 +70,7 @@ export interface LsConfig {
   asc?: boolean;
   reverse?: boolean;
   status?: string; // group alias or comma-separated statuses (pre-validated)
+  locality?: Locality; // config "all" = undefined
 }
 
 export function parseLsSection(raw: unknown): LsConfig {
@@ -100,6 +101,10 @@ export function parseLsSection(raw: unknown): LsConfig {
       throw new Error(`[ls] status must be active|open|closed or comma-separated statuses, got ${JSON.stringify(r.status)}`);
     out.status = r.status;
   }
+  if (r.locality !== undefined) {
+    const l = parseLocality("[ls]", r.locality);
+    if (l) out.locality = l;
+  }
   return out;
 }
 
@@ -128,11 +133,19 @@ export interface DashConfig {
   limit?: number;    // fallback for every group
   status?: string;   // group alias or comma-separated statuses (pre-validated)
   sort?: "started" | "activity";
+  locality?: Locality; // config "all" = undefined
   groups?: Partial<Record<DashGroupKey, DashGroupConfig>>;
   // Visible table columns, in order. Only the shape is checked here; the
   // column names belong to @agmux/tui and are validated by `agmux dash`.
   columns?: string[];
   header?: boolean; // show the column-title row
+}
+
+// `all` (or absent) means no locality filter.
+function parseLocality(label: string, v: unknown): Locality | undefined {
+  if (v === "all") return undefined;
+  if (v === "local" || v === "remote") return v;
+  throw new Error(`${label} locality must be all|local|remote, got ${JSON.stringify(v)}`);
 }
 
 function parseDashGroup(label: string, raw: unknown): DashGroupConfig {
@@ -188,6 +201,10 @@ export function parseDashSection(raw: unknown): DashConfig {
     if (r.sort !== "started" && r.sort !== "activity")
       throw new Error(`[dash] sort must be 'started' or 'activity', got ${JSON.stringify(r.sort)}`);
     out.sort = r.sort;
+  }
+  if (r.locality !== undefined) {
+    const l = parseLocality("[dash]", r.locality);
+    if (l) out.locality = l;
   }
   if (r.columns !== undefined) {
     if (!Array.isArray(r.columns) || r.columns.length === 0 || !r.columns.every((c) => typeof c === "string" && c.length > 0))

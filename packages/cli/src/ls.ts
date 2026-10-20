@@ -13,6 +13,8 @@ export function buildLsQuery(opts: LsQueryOpts): URLSearchParams {
   if (opts.status) qs.set("status", opts.status);
   if (opts.agent) qs.set("agent_kind", opts.agent);
   if (opts.profile) qs.set("profile", opts.profile);
+  if (opts.locality) qs.set("locality", opts.locality);
+  if (opts.host) qs.set("host", opts.host);
   qs.set("sort", opts.sort);
   qs.set("order", opts.asc ? "asc" : "desc");
   qs.set("limit", String(opts.limit));

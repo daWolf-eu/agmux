@@ -115,3 +115,15 @@ test("unknown or duplicate [dash] columns are rejected with the known list", () 
   const dup = parseDashArgs([], { columns: ["name", "name"] });
   expect(dup.kind === "error" && dup.message).toMatch(/duplicate \[dash\] column "name"/);
 });
+
+test("inherits locality flags; [dash] locality is the default, flag wins", () => {
+  const a = parseDashArgs(["--remote"], {});
+  if (a.kind !== "ok") throw new Error(a.message);
+  expect(a.opts.locality).toBe("remote");
+  const b = parseDashArgs([], { locality: "remote" });
+  if (b.kind !== "ok") throw new Error(b.message);
+  expect(b.opts.locality).toBe("remote");
+  const c = parseDashArgs(["--local"], { locality: "remote" });
+  if (c.kind !== "ok") throw new Error(c.message);
+  expect(c.opts.locality).toBe("local");
+});

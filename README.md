@@ -113,6 +113,7 @@ sort = "activity"   # started | activity
 asc = false
 reverse = true      # newest at the bottom
 status = "open"     # active | open | closed | comma-separated statuses
+locality = "all"    # all | local | remote (flags: --local, --remote, --host <glob>)
 ```
 
 `dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `f` filter · `/` search · `tab` preview tab ·

@@ -67,3 +67,9 @@ test("rejects malformed columns and header", () => {
   expect(() => parseDashSection({ columns: ["name", 3] })).toThrow(/\[dash\] columns must be/);
   expect(() => parseDashSection({ header: "yes" })).toThrow(/\[dash\] header must be a boolean/);
 });
+
+test("locality: all → undefined, local/remote kept, other throws", () => {
+  expect(parseDashSection({ locality: "all" }).locality).toBeUndefined();
+  expect(parseDashSection({ locality: "remote" })).toEqual({ locality: "remote" });
+  expect(() => parseDashSection({ locality: "x" })).toThrow("[dash] locality must be all|local|remote");
+});

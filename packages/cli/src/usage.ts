@@ -17,6 +17,7 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
      [--status <active|open|closed|s1,s2,...>] [--live] [--agent <kind>] [--profile <name>]
+     [--remote|--local] [--host <glob>]
      defaults configurable in ~/.config/agmux/config.toml under [ls]
   watch [ls flags] [-i/--interval <seconds>]
      fullscreen live view of ls (defaults: --status open --sort started); q quits

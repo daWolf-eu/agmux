@@ -44,3 +44,10 @@ test("formatTable: reverse flips data rows but keeps the header on top", () => {
   expect(flipped[1]).toStartWith("bbbb");
   expect(flipped[2]).toStartWith("aaaa");
 });
+
+test("buildLsQuery sets locality and host", () => {
+  const qs = buildLsQuery({ limit: 5, sort: "started", asc: false, reverse: false, locality: "remote", host: "gw/*" });
+  expect(qs.get("locality")).toBe("remote");
+  expect(qs.get("host")).toBe("gw/*");
+  expect(qs.toString()).toContain("locality=remote&host=gw%2F*");
+});

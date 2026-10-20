@@ -1,4 +1,4 @@
-import { expandStatusFilter } from "@agmux/protocol";
+import { expandStatusFilter, type Locality } from "@agmux/protocol";
 import type { LsConfig } from "@agmux/wrapper";
 
 // Fully resolved ls options (flag > config > built-in default).
@@ -10,6 +10,8 @@ export interface LsQueryOpts {
   status?: string;    // group alias or comma list, validated; undefined = all
   agent?: string;
   profile?: string;
+  locality?: Locality; // undefined = local and remote
+  host?: string;       // hub-side glob over the session host
 }
 
 // `explicit` records which values came from the argv (not config / built-in
@@ -36,6 +38,8 @@ export function parseLsArgs(argv: string[], defaults: LsConfig): ParsedLs {
   let live = false;
   let agent: string | undefined;
   let profile: string | undefined;
+  let locality: Locality | undefined;
+  let host: string | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
@@ -82,6 +86,18 @@ export function parseLsArgs(argv: string[], defaults: LsConfig): ParsedLs {
         if (!v) return { kind: "error", message: "ls: --profile requires a value" };
         profile = v; break;
       }
+      case "--remote": case "--local": {
+        const e = bool(); if (e) return e;
+        const next: Locality = name === "--remote" ? "remote" : "local";
+        if (locality !== undefined && locality !== next)
+          return { kind: "error", message: "ls: --remote and --local are mutually exclusive" };
+        locality = next; break;
+      }
+      case "--host": {
+        const v = take();
+        if (!v) return { kind: "error", message: "ls: --host requires a value" };
+        host = v; break;
+      }
       default:
         return { kind: "error", message: `ls: unknown flag ${a}` };
     }
@@ -98,6 +114,8 @@ export function parseLsArgs(argv: string[], defaults: LsConfig): ParsedLs {
       status: status ?? (live ? "open" : defaults.status),
       agent,
       profile,
+      locality: locality ?? defaults.locality,
+      host,
     },
   };
 }

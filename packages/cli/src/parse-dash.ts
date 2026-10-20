@@ -92,7 +92,7 @@ export function parseDashArgs(argv: string[], cfg: DashConfig): ParsedDash {
   }
 
   // ls defaults: dash mirrors watch (status=open, sort=started) unless config overrides.
-  const lsDefaults: LsConfig = { status: cfg.status ?? "open", sort: cfg.sort ?? "started" };
+  const lsDefaults: LsConfig = { status: cfg.status ?? "open", sort: cfg.sort ?? "started", locality: cfg.locality };
   const parsed = parseLsArgs(rest, lsDefaults);
   if (parsed.kind === "error")
     return { kind: "error", message: parsed.message.replace(/^ls:/, "dash:") };

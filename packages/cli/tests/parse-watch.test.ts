@@ -39,3 +39,10 @@ test("unknown flag errors with a watch-prefixed message", () => {
   expect(p.kind).toBe("error");
   if (p.kind === "error") expect(p.message).toStartWith("watch:");
 });
+
+test("inherits --remote and --host from ls", () => {
+  const p = parseWatchArgs(["--remote", "--host", "gw/*"]);
+  if (p.kind !== "ok") throw new Error(p.message);
+  expect(p.opts.locality).toBe("remote");
+  expect(p.opts.host).toBe("gw/*");
+});
