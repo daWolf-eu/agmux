@@ -26,7 +26,7 @@ One `agmux events --follow` child per sandbox, through `Transport.argv(target, c
 - **Watchdog:** no line (keepalives count) for `IDLE_TIMEOUT_MS` (60 s) → attempt fails. Aborting never waits for stdout EOF (`abortableReader`): a wedged child or a grandchild holding the pipe must not block the next attempt.
 - **Kill:** `terminate` = SIGTERM, wait `KILL_GRACE_MS` (5 s), SIGKILL. `stop()` cancels all pending sleeps, aborts the read, then awaits the loop.
 - **Backoff:** failure n waits `min(interval * 2^(n-1), MAX_BACKOFF_MS = 300 s)`; reset by the next header. Every reconnect catches up from the cursor, so there is no separate poll mode. A permanent failure (header host mismatch) waits the 300 s cap.
-- **Single stream per consumer:** `--consumer` = `resolveHost()` with `[^A-Za-z0-9._-]` -> `_`, max 64 chars (`bin/agmux-hub.ts`). A new `agmux events --consumer X` SIGTERMs the previous one via `<state>/follow/X.pid`, so a reconnect never leaves two streams.
+- **Single stream per consumer:** `--consumer` = `resolveHost()` with `[^A-Za-z0-9._-]` -> `_`, max 64 chars (`bin/agmux-hub.ts`). A new `agmux events --consumer X` SIGTERMs the previous one via `<state>/follow/X.pid`, so a reconnect never leaves two streams. Only if that pid is alive **and** an `agmux events` process (`isEventsProcess`: an `events` argument in `/proc/<pid>/cmdline` on Linux, `ps -o command=` elsewhere; unreadable = stale): a pid reused by an unrelated process is never signalled, the file is just overwritten.
 - `onChange` throwing is logged, never a stream failure; a record that makes ingest throw is a rejected record. `ready()` (optional) gates ingest after each header (see the host ledger).
 
 ## Host ledger (`sync/sync-loop.ts`)

@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { parseEventsArgs, eventsCmd, KEEPALIVE_MS, FOLLOW_POLL_MS } from "../src/events-cmd.ts";
+import { parseEventsArgs, eventsCmd, isEventsProcess, KEEPALIVE_MS, FOLLOW_POLL_MS } from "../src/events-cmd.ts";
 
 test("parse: --after is required and a non-negative integer", () => {
   expect(parseEventsArgs([]).kind).toBe("error");
@@ -142,6 +142,7 @@ test("consumer lock replaces a live previous follower and cleans up on exit", as
     fetchImpl: fakeHub(1).fetchImpl,
     kill: (pid: number, sig: string) => { kills.push([pid, sig]); },
     isAlive: (pid: number) => pid === 4242,
+    isFollower: (pid: number) => pid === 4242,
     pid: 99,
   });
   fs.mkdirSync(path.join(stateDir, "follow"));
@@ -171,4 +172,35 @@ test("consumer lock: stale pid is overwritten without a kill; dir is created", a
   const fresh = mkDeps({ fetchImpl: fakeHub(0).fetchImpl, kill: () => {}, isAlive: () => false });
   await eventsCmd({ hubUrl: "http://h", follow: false, after: 0, consumer: "c", limit: 500 }, fresh.deps);
   expect(fs.existsSync(path.join(fresh.stateDir, "follow"))).toBe(true);
+});
+
+test("consumer lock: a live pid that is not an `agmux events` process (pid reuse) is not signalled", async () => {
+  const kills: number[] = [];
+  const { deps, stateDir } = mkDeps({
+    fetchImpl: fakeHub(0).fetchImpl,
+    kill: (pid: number) => { kills.push(pid); },
+    isAlive: () => true, isFollower: () => false, pid: 99,
+  });
+  fs.mkdirSync(path.join(stateDir, "follow"));
+  const pidFile = path.join(stateDir, "follow", "c.pid");
+  fs.writeFileSync(pidFile, "123\n");
+  let during = "";
+  const write = deps.write;
+  deps.write = (l: string) => { during = fs.readFileSync(pidFile, "utf8").trim(); return write(l); };
+  await eventsCmd({ hubUrl: "http://h", follow: false, after: 0, consumer: "c", limit: 500 }, deps);
+  expect(kills).toEqual([]);
+  expect(during).toBe("99");
+});
+
+test("isEventsProcess: /proc cmdline must have an `events` argument; unreadable = not ours", () => {
+  const files: Record<string, string> = {
+    "/proc/1/cmdline": "/usr/local/bin/agmux\0events\0--follow\0--after\0" + "0\0",
+    "/proc/2/cmdline": "/usr/bin/python3\0/home/events/x.py\0",
+  };
+  const read = (f: string) => { const v = files[f]; if (v === undefined) throw new Error("ENOENT"); return v; };
+  expect(isEventsProcess(1, { platform: "linux", readFile: read })).toBe(true);
+  expect(isEventsProcess(2, { platform: "linux", readFile: read })).toBe(false);
+  expect(isEventsProcess(3, { platform: "linux", readFile: read })).toBe(false);
+  expect(isEventsProcess(4, { platform: "darwin", ps: () => "/opt/bin/agmux events --follow --after 0" })).toBe(true);
+  expect(isEventsProcess(5, { platform: "darwin", ps: () => { throw new Error("no such pid"); } })).toBe(false);
 });

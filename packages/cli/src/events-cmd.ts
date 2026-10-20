@@ -61,11 +61,43 @@ export interface EventsDeps {
   stateDir: string;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   isAlive?: (pid: number) => boolean;
+  // Is this pid an `agmux events` process? Default: isEventsProcess.
+  isFollower?: (pid: number) => boolean;
   pid?: number;
 }
 
+export interface ProcProbe {
+  platform: NodeJS.Platform;
+  readFile?: (file: string) => string;
+  ps?: (pid: number) => string;
+}
+
+const defaultProbe: ProcProbe = {
+  platform: process.platform,
+  readFile: (f) => fs.readFileSync(f, "utf8"),
+  ps: (pid) => {
+    const r = Bun.spawnSync(["ps", "-p", String(pid), "-o", "command="], { stdout: "pipe", stderr: "ignore" });
+    if (r.exitCode !== 0) throw new Error(`ps exited ${r.exitCode}`);
+    return r.stdout.toString();
+  },
+};
+
+// A recorded pid may have been reused by an unrelated process after a crash:
+// only an argv with an `events` argument counts. Linux reads /proc/<pid>/cmdline
+// (NUL-separated); elsewhere `ps`. Unreadable = not ours (the file is stale).
+export function isEventsProcess(pid: number, probe: ProcProbe = defaultProbe): boolean {
+  try {
+    const argv = probe.platform === "linux"
+      ? probe.readFile!(`/proc/${pid}/cmdline`).split("\0")
+      : probe.ps!(pid).trim().split(/\s+/);
+    return argv.includes("events");
+  } catch {
+    return false;
+  }
+}
+
 // One follower per consumer id: SIGTERM a live previous one, then claim the file.
-// A dead pid is just overwritten. Returns a release that only removes our own claim
+// A dead pid, or a live one that is not an `agmux events` process, is just overwritten. Returns a release that only removes our own claim
 // (the replaced follower's exit cleanup must not delete a file that is now ours).
 function claimConsumer(consumer: string, deps: EventsDeps): () => void {
   const dir = path.join(deps.stateDir, "follow");
@@ -74,9 +106,10 @@ function claimConsumer(consumer: string, deps: EventsDeps): () => void {
   const self = deps.pid ?? process.pid;
   const isAlive = deps.isAlive ?? isProcessAlive;
   const kill = deps.kill ?? ((pid, sig) => process.kill(pid, sig));
+  const isFollower = deps.isFollower ?? ((pid) => isEventsProcess(pid));
   let prev = NaN;
   try { prev = parseInt(fs.readFileSync(file, "utf8").trim(), 10); } catch { /* no previous follower */ }
-  if (Number.isInteger(prev) && prev > 0 && prev !== self && isAlive(prev)) {
+  if (Number.isInteger(prev) && prev > 0 && prev !== self && isAlive(prev) && isFollower(prev)) {
     try { kill(prev, "SIGTERM"); } catch { /* already gone */ }
   }
   fs.writeFileSync(file, `${self}\n`);
