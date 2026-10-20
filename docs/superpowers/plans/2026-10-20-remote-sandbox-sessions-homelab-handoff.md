@@ -20,7 +20,7 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 - The container hostname is the container id. A create-time `--env` reaches `exec`'d processes **and** tmux panes started from them; an image `ENV` does not.
 - The agmux hub auto-starts on first use, binds `127.0.0.1` (the proxy env's `NO_PROXY` already covers loopback), and stores its state under `~/.agmux`.
 - The agent's tmux session name isn't fixed (`0` in `wi-sag-280`, not `work`); agmux resolves coords itself.
-- `openshell` 0.0.116 has no label-edit verb: opt-in means a label at create.
+- Opt-in is a label set at create (the spike's OpenShell had no label-edit verb; if a current version has one, it's fine to use it).
 
 ### Contract with agmux (do not change unilaterally)
 
@@ -32,7 +32,7 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 | Claude hooks | `agmux adapter install --kind claude` run inside the sandbox against its Claude config dir: pure file writes, no network |
 | Remote command the Mac runs | `agmux events --follow --after <n> --consumer <id> --max-duration 3600` via `sandbox exec --no-tty`, stdin closed. Exit 75 = planned hourly rotation. The image's agmux must be the same build as the Mac's (an older agmux rejects `--max-duration`). |
 | Sandbox main process | must stay alive (`sleep infinity`); a create whose command exits puts the sandbox in the Error phase |
-| OpenShell client/server version | the Mac's client must match the gateway server version: a 0.1.x client cannot talk to a 0.0.116 gateway (`workspace '\n\u{7}default' not found`). Upgrade the gateway, or keep a matching client |
+| OpenShell version | no specific version required: use the current OpenShell on both the gateway and the Mac. Client and gateway must be compatible with each other (the smoke test hit a newer client that could not talk to an older gateway, so upgrade the gateway together with the client). agmux uses only `sandbox list -o json --selector`, `sandbox exec -n <sbx> --no-tty -- …` (exit codes propagated) and `sandbox create --label/--env` |
 
 ### Work items
 

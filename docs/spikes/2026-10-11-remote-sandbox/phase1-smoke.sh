@@ -3,12 +3,11 @@
 # binaries are uploaded, the Mac side runs an isolated hub under a temp HOME, so
 # the developer's own hub, config and status line are untouched.
 #
-#   OS=/opt/homebrew/Cellar/openshell/0.0.116/bin/openshell \
 #   IMAGE=openshell-workbench:e797e53b7f50 docs/spikes/2026-10-11-remote-sandbox/phase1-smoke.sh setup
 #   … then: check | teardown
 #
-# OS must match the gateway's server version (a 0.1.x client cannot talk to a
-# 0.0.116 gateway: the workspace field is misparsed).
+# OS: the openshell client to use (default: openshell on PATH). It must be
+# compatible with the gateway; no particular version is required.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../../.." && pwd)
 GW=${GW:-ai-sandbox}

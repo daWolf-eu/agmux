@@ -493,7 +493,7 @@ describe("abortableReader", () => {
 });
 
 describe("spawnProcess", () => {
-  // openshell 0.0.116 `exec --no-tty` starts the remote command only at local stdin EOF.
+  // openshell `exec --no-tty` can start the remote command only at local stdin EOF (observed on 0.0.116).
   test("spawns with stdin closed", () => {
     let opts: any;
     const fake: any = (_argv: string[], o: any) => {

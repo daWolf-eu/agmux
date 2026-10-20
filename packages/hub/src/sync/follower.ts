@@ -5,7 +5,7 @@ import { checkHeader, ingestReplicated, parseStreamLine, type IngestOutcome } fr
 import type { Transport } from "./transport.ts";
 
 // One long-lived `agmux events --follow` child per sandbox, run through the
-// transport. The child's stdin is closed: openshell 0.0.116 `exec --no-tty`
+// transport. The child's stdin is closed: openshell `exec --no-tty` (observed on 0.0.116)
 // starts the remote command only once the local stdin reaches EOF. Closed stdin
 // orphans the remote side when the local process dies, so the remote stream is
 // bounded: `--max-duration` ends it (EXIT_ROTATE) and the follower reconnects at once;

@@ -89,7 +89,7 @@ container id; unverified what OpenShell sets), so:
 
 - New env `AGMUX_HOST` overrides `os.hostname()` everywhere agmux stamps `host`
   (`emit`, wrapper, headless). Set by the sandbox launcher (`--env` at create, or
-  `/etc/agmux/host` written at create — whichever OpenShell supports at v0.0.116).
+  `/etc/agmux/host` written at create — whichever the current OpenShell supports; `--env` at create is verified).
 - The name is unique per gateway because sandbox names are.
 
 ### 4.2 Replication: remote is authoritative, Mac pulls
