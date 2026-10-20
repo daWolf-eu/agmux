@@ -352,3 +352,20 @@ test("POST /ingest rejects host.* kinds with reserved_kind", async () => {
   expect(r2.status).toBe(400);
   server.stop();
 });
+
+test("POST /ingest rejects a body over 1 MiB with 413 (with and without content-length)", async () => {
+  const { server, url, store } = makeServer();
+  const big = JSON.stringify({ ...startedEv, payload: { ...startedEv.payload, cwd: "x".repeat(1 << 20) } });
+  const r = await fetch(`${url}/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: big });
+  expect(r.status).toBe(413);
+  const enc = new TextEncoder().encode(big);
+  const chunked = new ReadableStream<Uint8Array>({
+    start(c) { for (let i = 0; i < enc.length; i += 65536) c.enqueue(enc.subarray(i, i + 65536)); c.close(); },
+  });
+  const r2 = await fetch(`${url}/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: chunked });
+  expect(r2.status).toBe(413);
+  expect(store.rawDb().query("SELECT COUNT(*) AS n FROM events").get()).toEqual({ n: 0 });
+  const ok = await fetch(`${url}/ingest`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(startedEv) });
+  expect(ok.status).toBe(202);
+  server.stop();
+});

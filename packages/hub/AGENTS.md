@@ -10,6 +10,7 @@ The hub is the per-host query daemon (`src/server.ts`) and, on a machine with `[
 - **record**: `{id, ev}`. `id` = the sandbox `events.id` rowid; `ev` = the full `EventEnvelope`. Only `source IS NULL` rows are exported (`Store.listExportable`), `dedup_key` included in `ev` but dropped on ingest.
 - **keepalive**: `{keepalive: <iso>}` after 15 s without a write (`KEEPALIVE_MS`, `cli/src/events-cmd.ts`). The sandbox polls its hub (`GET /events?after_id&limit`) every 500 ms.
 - Anything else is an `invalid` line: counted in `rejected`, never fatal.
+- **Line cap:** `splitLines` (`sync/follower.ts`) scans each byte once and holds at most `MAX_LINE_BYTES` (1 MiB) of a line; a longer one is dropped up to its `\n` and becomes `invalid line: too long` (the `LINE_TOO_LONG` sentinel). The source side caps too: `POST /ingest` bodies over `INGEST_MAX_BODY_BYTES` (1 MiB, `Bun.serve` `maxRequestBodySize`) get 413.
 
 Hub side: `GET /events?after_id=<n>&limit=<n>` → `{records, last_id}` (default page `EXPORT_DEFAULT_LIMIT` 500, clamped to `EXPORT_MAX_LIMIT` 5000; `agmux events --limit` rejects > 5000 because a clamped full page would look short). `GET /health` carries `db_id`; `GET /hosts` = the `hosts` projection.
 

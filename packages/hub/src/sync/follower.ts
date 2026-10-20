@@ -36,17 +36,49 @@ export interface FollowerOptions {
   onChange(s: FollowerStatus): void;
 }
 
+// A sandbox controls this stream: one line may hold at most MAX_LINE_BYTES. A
+// longer one is dropped up to its "\n" and yielded as LINE_TOO_LONG instead
+// (onLine counts it as an invalid line; the stream continues).
+export const MAX_LINE_BYTES = 1 << 20;
+export const LINE_TOO_LONG = "\u0000line too long";
+
 // Splits a UTF-8 byte stream on "\n"; a trailing partial line is yielded at the end.
-export async function* splitLines(stream: ReadableStream<Uint8Array>): AsyncGenerator<string> {
+// Each byte is scanned once ("\n" never occurs inside a UTF-8 sequence, so a line
+// can be decoded on its own) and a partial line is kept as chunks until its end.
+export async function* splitLines(stream: ReadableStream<Uint8Array>, max = MAX_LINE_BYTES): AsyncGenerator<string> {
   const dec = new TextDecoder();
-  let buf = "";
+  let parts: Uint8Array[] = [];
+  let size = 0;
+  let skipping = false;
+  const take = (): string => {
+    const line = parts.length === 1 ? parts[0]! : Buffer.concat(parts, size);
+    parts = [];
+    size = 0;
+    return dec.decode(line);
+  };
   for await (const chunk of stream) {
-    buf += dec.decode(chunk, { stream: true });
-    let i: number;
-    while ((i = buf.indexOf("\n")) >= 0) { yield buf.slice(0, i); buf = buf.slice(i + 1); }
+    let start = 0;
+    for (;;) {
+      const nl = chunk.indexOf(10, start);
+      const end = nl < 0 ? chunk.length : nl;
+      if (!skipping && end > start) {
+        if (size + end - start > max) {
+          skipping = true;
+          parts = [];
+          size = 0;
+          yield LINE_TOO_LONG;
+        } else {
+          parts.push(chunk.slice(start, end));
+          size += end - start;
+        }
+      }
+      if (nl < 0) break;
+      if (skipping) skipping = false;
+      else yield take();
+      start = nl + 1;
+    }
   }
-  buf += dec.decode();
-  if (buf) yield buf;
+  if (!skipping && size > 0) yield take();
 }
 
 export function spawnProcess(argv: string[], spawnImpl: typeof Bun.spawn = Bun.spawn): ProcHandle {
@@ -185,7 +217,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   }
 
   function onLine(line: string): Outcome | null {
-    const l = parseStreamLine(line);
+    const l = line === LINE_TOO_LONG ? { type: "invalid" as const, reason: "too long" } : parseStreamLine(line);
     if (!st.connected) return l.type === "header" ? onHeader(l.header) : fail("no replication header");
     if (l.type === "record") onRecord(l.record);
     else if (l.type !== "keepalive") {

@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { Store } from "@agmux/store";
 import {
-  IDLE_TIMEOUT_MS, KILL_GRACE_MS, MAX_BACKOFF_MS, abortableReader, spawnProcess, splitLines, startFollower,
+  IDLE_TIMEOUT_MS, KILL_GRACE_MS, LINE_TOO_LONG, MAX_BACKOFF_MS, MAX_LINE_BYTES, abortableReader, spawnProcess, splitLines, startFollower,
   type FollowerStatus, type ProcHandle,
 } from "../src/sync/follower.ts";
 import type { Transport } from "../src/sync/transport.ts";
@@ -123,6 +123,16 @@ describe("startFollower", () => {
     expect(h.store.sessionHost(sid(8))).toBeNull();
     expect(h.changes[0]).toMatchObject({ connected: true, cursor: 0 });
     expect(h.changes.map((c) => c.cursor)).toContain(5);
+    await h.f.stop();
+  });
+
+  test("an oversized line is a rejected `invalid line: too long`; the stream continues", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header(), LINE_TOO_LONG, record(3));
+    await until(() => h.f.status().cursor === 3, "records");
+    expect(h.f.status()).toMatchObject({ connected: true, rejected: 1, lastError: "invalid line: too long" });
+    expect(h.store.sessionHost(sid(3))).toBe(HOST);
     await h.f.stop();
   });
 
@@ -445,5 +455,40 @@ describe("splitLines", () => {
     const out: string[] = [];
     for await (const l of splitLines(stream)) out.push(l);
     expect(out).toEqual(["a", "üb", "", "partial"]);
+  });
+
+  const streamOf = (chunks: Uint8Array[]) =>
+    new ReadableStream<Uint8Array>({ start(c) { for (const x of chunks) c.enqueue(x); c.close(); } });
+  const collect = async (st: ReadableStream<Uint8Array>) => { const out: string[] = []; for await (const l of splitLines(st)) out.push(l); return out; };
+
+  test("a 3 MB line becomes one LINE_TOO_LONG; the lines around it survive", async () => {
+    const enc = new TextEncoder();
+    const big = new Uint8Array(3 * 1024 * 1024).fill(0x61);
+    const out = await collect(streamOf([enc.encode("before\nxx"), big.subarray(0, 1_000_000), big.subarray(1_000_000), enc.encode("yy\nafter\ntail")]));
+    expect(out).toEqual(["before", LINE_TOO_LONG, "after", "tail"]);
+  });
+
+  test("a line of exactly MAX_LINE_BYTES is kept", async () => {
+    const line = new Uint8Array(MAX_LINE_BYTES).fill(0x62);
+    const out = await collect(streamOf([line, new TextEncoder().encode("\n")]));
+    expect(out).toHaveLength(1);
+    expect(out[0]!.length).toBe(MAX_LINE_BYTES);
+  });
+
+  test("many small chunks without a newline stay linear (8 MB in 4 KB chunks < 1 s)", async () => {
+    const chunk = new Uint8Array(4096).fill(0x63);
+    const chunks = Array.from({ length: 2048 }, () => chunk);
+    const t0 = performance.now();
+    const out = await collect(streamOf([...chunks, new TextEncoder().encode("\nok\n")]));
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(out).toEqual([LINE_TOO_LONG, "ok"]);
+  });
+
+  test("1 MB under the cap in 4 KB chunks is not quadratic either", async () => {
+    const chunk = new Uint8Array(4096).fill(0x64);
+    const t0 = performance.now();
+    const out = await collect(streamOf([...Array.from({ length: 255 }, () => chunk), new TextEncoder().encode("\n")]));
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(out[0]!.length).toBe(255 * 4096);
   });
 });

@@ -6,6 +6,10 @@ import type { SessionStatus, Locality } from "@agmux/protocol";
 
 const EXPORT_DEFAULT_LIMIT = 500;
 export const EXPORT_MAX_LIMIT = 5000;
+// Cap on a POST /ingest body (one event or a batch). Every event a sandbox's
+// hub ingests is replicated to the Mac as one stream line, which the follower
+// caps at MAX_LINE_BYTES (also 1 MiB): capping here keeps them from piling up.
+export const INGEST_MAX_BODY_BYTES = 1 << 20;
 
 export interface CreateServerOpts {
   store: Store;
@@ -20,6 +24,8 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
   return Bun.serve({
     port: opts.port,
     hostname,
+    // Bun answers 413 itself when a declared or streamed body passes this.
+    maxRequestBodySize: INGEST_MAX_BODY_BYTES,
     fetch: async (req) => {
       const url = new URL(req.url);
       const m = req.method;
