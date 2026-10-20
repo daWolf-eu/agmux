@@ -32,6 +32,7 @@ import { execFile } from "node:child_process";
 import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
 import { discoverHubUrl, resolveLiveHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
+import { eventsCmd, parseEventsArgs } from "../src/events-cmd.ts";
 import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
@@ -48,6 +49,20 @@ function capture(cmd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile(cmd, args, (err, stdout) => { if (err) reject(err); else resolve(stdout); });
   });
+}
+
+// Synchronous, fully-flushed line write to stdout. false = the reader is gone (EPIPE etc).
+function writeStdoutLine(line: string): boolean {
+  const buf = Buffer.from(`${line}\n`);
+  let off = 0;
+  while (off < buf.length) {
+    try { off += fs.writeSync(1, buf, off); }
+    catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "EAGAIN") continue; // pipe full: retry
+      return false;
+    }
+  }
+  return true;
 }
 
 const argv = process.argv.slice(2);
@@ -337,6 +352,19 @@ async function main(): Promise<number> {
         { idOrPrefix: id, pane, json: argv.includes("--json"), hubUrl },
         { fetchImpl: fetch, out: (s) => console.log(s), err: (s) => console.error(s) },
       );
+    }
+    case "events": {
+      const parsed = parseEventsArgs(argv.slice(1));
+      if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      // SIGTERM/SIGINT (incl. a replacing follower) end the stream cleanly so the
+      // consumer pid file is removed.
+      const ac = new AbortController();
+      process.once("SIGTERM", () => ac.abort());
+      process.once("SIGINT", () => ac.abort());
+      return eventsCmd({ ...parsed, hubUrl, signal: ac.signal }, {
+        fetchImpl: fetch, write: writeStdoutLine, host: resolveHost(), stateDir,
+        sleep: (ms) => new Promise((r) => setTimeout(r, ms)), nowMs: () => Date.now(),
+      });
     }
     case "inspect": {
       const id = argv[1]; if (!id) usage();

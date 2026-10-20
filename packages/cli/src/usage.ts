@@ -47,6 +47,11 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      long-running daemon: writes the status-line cache file and fires
      debounced, focus-aware notifications; must be running for the tmux
      status line to update
+  events [--follow] --after <n> [--consumer <id>] [--limit <n>]
+     stream this host's exportable log as NDJSON (header, records, keepalives);
+     used by the remote follower, not meant for interactive use. --limit is the
+     page size per hub request (default 500); --consumer <id> replaces a prior
+     follower with the same id
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
   adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]
