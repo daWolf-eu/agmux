@@ -508,8 +508,30 @@ Projection: `host.synced` upserts every field, sets `last_sync_ok = 1`, `last_er
 
 ---
 
+### Task 16: Smoke test against a real sandbox (no homelab change needed)
+
+Proves Phase 1 on `ai-sandbox` before the image work lands. Same approach as the spike: binaries uploaded, not baked. Needs `openshell` access; run it with the user.
+
+**Files:**
+- Create: `docs/spikes/2026-10-11-remote-sandbox/phase1-smoke.sh` (scripted steps 1–3), with the results appended to the spike report under "Phase 1 smoke test"
+
+- [ ] **Step 1:** Cross-compile `agmux` + `agmux-hub` for `bun-linux-x64` (after `bun install --os='*' --cpu='*'`).
+- [ ] **Step 2:** `openshell -g ai-sandbox sandbox create --name agmux-smoke --label agmux=1 --env AGMUX_HOST=ai-sandbox/agmux-smoke …` (same image/policy as `wi-*`; it needs `/dev/pts` for tmux). Upload both binaries to `/sandbox/.agmux-bin/`.
+- [ ] **Step 3:** Inside, with `PATH=/sandbox/.agmux-bin:$PATH`, run the spike's `stub-agent.sh` in tmux (fires the Claude hook points). Inside, `agmux ls` shows the session with host `ai-sandbox/agmux-smoke`.
+- [ ] **Step 4:** Mac config `[[remote]] name="ai-sandbox" gateway="ai-sandbox" agmux_bin="/sandbox/.agmux-bin/agmux"`, then `agmux hub restart`. Expected within one interval: `agmux ls --remote` lists the session; `agmux dash` shows it with `[dash] columns` incl. `host`; status-line chip has `⇄`; `agmux kill <id>` and ⏎ refuse.
+- [ ] **Step 5:** Resilience:
+  - Sleep the Mac ≥ 10 min with the stub agent still emitting, then wake: the missed events arrive, with no duplicates (`agmux inspect`).
+  - Kill the Mac hub: the remote follower exits (`ps` in the sandbox).
+  - Delete the sandbox: the session derives `lost` with rule `host-removed`.
+- [ ] **Step 6:** Create a second sandbox **without** `--env AGMUX_HOST` and the label: `agmux hub status` shows it failing with the `AGMUX_HOST=…` hint.
+- [ ] **Step 7:** Delete both sandboxes. Commit the script + report: `docs(remote): phase 1 smoke test in a real sandbox`.
+
+Real Claude through real hooks isn't covered here: it needs `agmux` on `PATH` for the hook commands, plus a logged-in Claude. That happens in the homelab verification (handoff step 2).
+
+---
+
 ## Not in this plan
 
-- **homelab** (separate plan, other repo): `openshell/bin/stage-agmux`; the git-ignored `openshell/images/workbench/agmux/`; Dockerfile `COPY` for `${TARGETARCH}`; the Ansible `agmux/VERSION` assert + image prune (keep one prior); `sag-sandbox-create` `--label agmux=1 --env AGMUX_HOST=<gw>/<name>` + `agmux adapter install --kind claude`; the image `/etc/tmux.conf` (Phase 2).
+- **homelab** (other repo): handed off as a ready-to-paste prompt, [`2026-10-20-remote-sandbox-sessions-homelab-handoff.md`](2026-10-20-remote-sandbox-sessions-homelab-handoff.md): `stage-agmux`, the git-ignored build context, Dockerfile `COPY`, Ansible assert + prune, launcher label/env/adapter install, image `/etc/tmux.conf`. Before sending it, re-check its Contract section against what Tasks 1, 5 and 6 shipped.
 - **Folding `agmux-hub` into `agmux hub serve`** (spec §4.9, "if cheap"): halves the image layer, but changes how the hub is spawned (`hub-spawn.ts`, `AGMUX_HUB_BIN`). Worth its own small plan once Phase 1 runs in a real sandbox.
 - **Phase 2** (attach, N1/N2, reap) and **Phase 3** (control, final sync on sandbox finish).
