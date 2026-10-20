@@ -242,3 +242,113 @@ test("GET /sessions rejects invalid sort/order/status with 400", async () => {
   expect((await fetch(`${url}/sessions?status=bogus`)).status).toBe(400);
   server.stop();
 });
+
+// --- replication / remote rows ---
+
+const HOST_SYNCED = {
+  event_id: "h-synced-1", ts: new Date().toISOString(),
+  session_id: "00000000-0000-0000-0000-000000000000",
+  kind: "host.synced", version: 1, host: "gw/sbx",
+  payload: {
+    remote: "gw/sbx", transport: { kind: "openshell", gateway: "gw", target: "sbx", bin: "openshell" },
+    cursor: 1, db_id: "db1", agmux_version: "0.1.0", replication: 1, rejected: 0,
+  },
+};
+const REMOTE_SID = "0190a3e0-0000-7000-8000-000000000009";
+const remoteRegistered = {
+  event_id: "r-reg-1", ts: new Date().toISOString(), session_id: REMOTE_SID,
+  kind: "session.registered", version: 1, host: "gw/sbx",
+  payload: { agent_kind: "claude", tmux_session: "main", tmux_window: "1", tmux_pane: "%3",
+    cwd: "/tmp", profile: null, agent_version: null, parent: null, native_session_id: null, pid: 42 },
+} as any;
+
+function post(url: string, body: unknown) {
+  return fetch(`${url}/ingest`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+test("GET /health includes db_id", async () => {
+  const { server, url, store } = makeServer();
+  const body = (await (await fetch(`${url}/health`)).json()) as { db_id: string };
+  expect(body.db_id).toBe(store.dbId());
+  server.stop();
+});
+
+test("GET /events?after_id returns exportable records in id order with last_id", async () => {
+  const { server, url } = makeServer();
+  await post(url, startedEv);
+  const r = await fetch(`${url}/events?after_id=0`);
+  expect(r.status).toBe(200);
+  const body = (await r.json()) as { records: { id: number; ev: { event_id: string } }[]; last_id: number };
+  expect(body.records.length).toBeGreaterThan(0);
+  const ids = body.records.map((x) => x.id);
+  expect([...ids].sort((a, b) => a - b)).toEqual(ids);
+  expect(body.last_id).toBe(ids[ids.length - 1]!);
+  const after = (await (await fetch(`${url}/events?after_id=${body.last_id}`)).json()) as { records: unknown[] };
+  expect(after.records).toHaveLength(0);
+  server.stop();
+});
+
+test("GET /events?after_id rejects invalid after_id and limit", async () => {
+  const { server, url } = makeServer();
+  for (const q of ["after_id=abc", "after_id=-1", "after_id=1.5", "after_id="]) {
+    const r = await fetch(`${url}/events?${q}`);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: "invalid_after_id" });
+  }
+  for (const q of ["limit=0", "limit=-3", "limit=x", "limit=1.5"]) {
+    const r = await fetch(`${url}/events?after_id=0&${q}`);
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: "invalid_limit" });
+  }
+  server.stop();
+});
+
+test("GET /events?after_id honours limit and clamps to 5000", async () => {
+  const { server, url } = makeServer();
+  await post(url, [startedEv, { ...startedEv, event_id: "01HZ7P0K8WVQH8WGS8X9DC9F2Q", kind: "session.heartbeat",
+    payload: { pid_alive: true, winsize: { rows: 40, cols: 100 } } }]);
+  const one = (await (await fetch(`${url}/events?after_id=0&limit=1`)).json()) as { records: unknown[] };
+  expect(one.records).toHaveLength(1);
+  const big = await fetch(`${url}/events?after_id=0&limit=999999`);
+  expect(big.status).toBe(200);
+  server.stop();
+});
+
+test("GET /sessions?locality filters local vs remote; invalid -> 400", async () => {
+  const { server, url, store } = makeServer();
+  store.append(HOST_SYNCED as any);
+  store.appendReplicated(remoteRegistered, "gw/sbx");
+  await post(url, startedEv);
+  const remote = (await (await fetch(`${url}/sessions?locality=remote`)).json()) as { sessions: { session_id: string }[] };
+  expect(remote.sessions.map((s) => s.session_id)).toEqual([REMOTE_SID]);
+  const local = (await (await fetch(`${url}/sessions?locality=local`)).json()) as { sessions: { session_id: string }[] };
+  expect(local.sessions.map((s) => s.session_id)).toEqual([startedEv.session_id]);
+  const byHost = (await (await fetch(`${url}/sessions?host=gw/*`)).json()) as { sessions: { session_id: string }[] };
+  expect(byHost.sessions.map((s) => s.session_id)).toEqual([REMOTE_SID]);
+  const bad = await fetch(`${url}/sessions?locality=x`);
+  expect(bad.status).toBe(400);
+  expect(await bad.json()).toEqual({ error: "invalid_locality" });
+  server.stop();
+});
+
+test("GET /hosts lists a host after host.synced", async () => {
+  const { server, url, store } = makeServer();
+  store.append(HOST_SYNCED as any);
+  const body = (await (await fetch(`${url}/hosts`)).json()) as { hosts: { host: string; last_sync_ok: boolean }[] };
+  expect(body.hosts).toHaveLength(1);
+  expect(body.hosts[0]!.host).toBe("gw/sbx");
+  expect(body.hosts[0]!.last_sync_ok).toBe(true);
+  server.stop();
+});
+
+test("POST /ingest rejects host.* kinds with reserved_kind", async () => {
+  const { server, url, store } = makeServer();
+  const r = await post(url, HOST_SYNCED);
+  expect(r.status).toBe(400);
+  expect(await r.json()).toEqual({ error: "reserved_kind" });
+  expect(store.listHosts()).toHaveLength(0);
+  // also rejected inside a batch
+  const r2 = await post(url, [{ ...HOST_SYNCED, kind: "host.removed", event_id: "h2", payload: { remote: "gw/sbx" } }]);
+  expect(r2.status).toBe(400);
+  server.stop();
+});
