@@ -18,6 +18,8 @@ export type AgentKind = (typeof AGENT_KINDS)[number];
 
 export type SessionOrigin = "wrapper" | "native";
 
+export type Locality = "local" | "remote";
+
 export interface SessionRow {
   session_id: string;
   agent_kind: AgentKind;
@@ -47,6 +49,13 @@ export interface SessionRow {
   // liveness). Drives origin-aware status computation. Defaults to "wrapper" for
   // rows that predate the native-first migration.
   origin: SessionOrigin;
+  // Remote = the row's host has a row in the hosts projection (replicated from
+  // a remote hub). pid / tmux_* are null on remote rows: they are only
+  // meaningful on the host that produced them. sync_stale = that host's last
+  // sync failed; last_sync_ts = its last successful sync (null for local rows).
+  remote?: boolean;
+  sync_stale?: boolean;
+  last_sync_ts?: string | null;
   // Joined from the session_usage projection (null = no usage row yet, i.e. the
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.
@@ -117,6 +126,7 @@ export function expandStatusFilter(value: string): SessionStatus[] | null {
 // function that derives `status` for every query, so the two cannot disagree.
 export type StatusRule =
   | "terminal"          // stored ended/lost, reported as-is
+  | "host-removed"      // live row whose remote host was removed → lost
   | "heartbeat-stale"   // wrapper row with no heartbeat for LOST_THRESHOLD_MS → lost
   | "working-timeout"   // running with no evidence of work for WORKING_TIMEOUT_MS → idle
   | "unseen"            // idle, but the last attention event is newer than the last seen → done

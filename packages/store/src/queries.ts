@@ -1,5 +1,5 @@
 import type { Database } from "bun:sqlite";
-import type { EventEnvelope, SessionRow, SessionStatus, StatusDecision } from "@agmux/protocol";
+import type { EventEnvelope, Locality, SessionRow, SessionStatus, StatusDecision } from "@agmux/protocol";
 import { LIVE_STATUSES } from "@agmux/protocol";
 import { deriveStatus } from "./lost.ts";
 
@@ -11,12 +11,14 @@ const ROW_SELECT = `SELECT s.*, u.turn_count,
        a.attention_ts, a.attention_kind, a.title, a.title_activity, a.title_ts,
        sn.seen_ts, sn.seen_source,
        m.name AS meta_name, m.name_source AS meta_name_source,
-       m.git_branch, m.git_repo, m.git_remote, m.git_root
+       m.git_branch, m.git_repo, m.git_remote, m.git_root,
+       h.host AS remote_host, h.last_sync_ok, h.last_sync_ts, h.removed_ts AS host_removed_ts
   FROM sessions s
   LEFT JOIN session_usage u ON u.session_id = s.session_id
   LEFT JOIN session_activity a ON a.session_id = s.session_id
   LEFT JOIN session_seen sn ON sn.session_id = s.session_id
-  LEFT JOIN session_meta m ON m.session_id = s.session_id`;
+  LEFT JOIN session_meta m ON m.session_id = s.session_id
+  LEFT JOIN hosts h ON h.host = s.host`;
 
 // The session's human-readable name: what the agent reported, else the name in
 // its terminal title. The title only counts when it parsed as an agent title
@@ -28,6 +30,8 @@ function displayName(raw: any): { name: string | null; name_source: string | nul
 }
 
 function decodeRow(raw: any): SessionRow {
+  // pid / tmux coords only mean something on the host that produced them.
+  const remote = raw.remote_host != null;
   return {
     session_id: raw.session_id,
     agent_kind: raw.agent_kind,
@@ -37,11 +41,11 @@ function decodeRow(raw: any): SessionRow {
     args: JSON.parse(raw.args_json),
     env_overrides: JSON.parse(raw.env_json),
     cwd: raw.cwd,
-    pid: raw.pid,
-    tmux_session: raw.tmux_session,
-    tmux_window: raw.tmux_window,
-    tmux_pane: raw.tmux_pane,
-    tmux_socket: raw.tmux_socket ?? null,
+    pid: remote ? null : raw.pid,
+    tmux_session: remote ? null : raw.tmux_session,
+    tmux_window: remote ? null : raw.tmux_window,
+    tmux_pane: remote ? null : raw.tmux_pane,
+    tmux_socket: remote ? null : (raw.tmux_socket ?? null),
     host: raw.host,
     project: raw.project,
     parent_session_id: raw.parent_session_id,
@@ -71,26 +75,35 @@ function decodeRow(raw: any): SessionRow {
     git_repo: raw.git_repo ?? null,
     git_remote: raw.git_remote ?? null,
     git_root: raw.git_root ?? null,
+    remote,
+    sync_stale: remote && !raw.last_sync_ok,
+    last_sync_ts: remote ? (raw.last_sync_ts ?? null) : null,
   };
 }
 
-function storedRow(db: Database, sid: string): SessionRow | null {
+// A removed host only matters to status derivation; it is not part of SessionRow.
+function derive(row: SessionRow, raw: any, now: Date) {
+  return deriveStatus({ ...row, host_removed_ts: raw.host_removed_ts ?? null }, now);
+}
+
+function storedRow(db: Database, sid: string): { row: SessionRow; raw: any } | null {
   const raw = db.query<any, [string]>(`${ROW_SELECT} WHERE s.session_id = ?`).get(sid);
-  return raw ? decodeRow(raw) : null;
+  return raw ? { row: decodeRow(raw), raw } : null;
 }
 
 export function getSessionRaw(db: Database, sid: string, now: Date): SessionRow | null {
-  const r = storedRow(db, sid);
-  if (!r) return null;
-  r.status = deriveStatus(r, now).status;
-  return r;
+  const st = storedRow(db, sid);
+  if (!st) return null;
+  st.row.status = derive(st.row, st.raw, now).status;
+  return st.row;
 }
 
 // `agmux explain`: the derived status plus every input that produced it.
 export function explainSession(db: Database, sid: string, now: Date): StatusDecision | null {
-  const r = storedRow(db, sid);
-  if (!r) return null;
-  const d = deriveStatus(r, now);
+  const st = storedRow(db, sid);
+  if (!st) return null;
+  const r = st.row;
+  const d = derive(r, st.raw, now);
   return {
     session_id: r.session_id,
     status: d.status,
@@ -117,6 +130,8 @@ export interface ListSessionsOpts {
   statuses?: readonly SessionStatus[];  // post-computation filter; wins over `live`
   agent_kind?: string;
   profile?: string;
+  host?: string;                        // SQLite GLOB on the row's host, e.g. "gw/*"
+  locality?: Locality;
   since?: string;
   limit?: number;
   sort?: "started" | "activity";
@@ -130,6 +145,8 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (opts.agent_kind) { where.push("agent_kind = ?"); params.push(opts.agent_kind); }
   if (opts.profile)    { where.push("profile = ?");    params.push(opts.profile); }
   if (opts.since)      { where.push("start_ts >= ?");  params.push(opts.since); }
+  if (opts.host)       { where.push("s.host GLOB ?");  params.push(opts.host); }
+  if (opts.locality)   { where.push(opts.locality === "remote" ? "h.host IS NOT NULL" : "h.host IS NULL"); }
 
   // Whitelist-mapped ORDER BY — caller input never reaches the SQL string.
   const sortCol = opts.sort === "activity" ? "COALESCE(s.last_heartbeat_ts, s.start_ts)" : "s.start_ts";
@@ -148,8 +165,9 @@ export function listSessions(db: Database, opts: ListSessionsOpts): SessionRow[]
   if (!statuses) params.push(limit);
   const raws = db.query<any, any[]>(sql).all(...(params as any[]));
   const now = opts.now ?? new Date();
-  let rows = raws.map(decodeRow).map((r) => {
-    r.status = deriveStatus(r, now).status;
+  let rows = raws.map((raw) => {
+    const r = decodeRow(raw);
+    r.status = derive(r, raw, now).status;
     return r;
   });
   if (statuses) rows = rows.filter((r) => statuses.includes(r.status)).slice(0, limit);
@@ -221,6 +239,7 @@ export function listLiveNativeSessions(db: Database, host: string): { session_id
   return db.query<{ session_id: string; pid: number }, [string]>(
     `SELECT session_id, pid FROM sessions
        WHERE origin = 'native' AND pid IS NOT NULL AND host = ?
+         AND NOT EXISTS (SELECT 1 FROM hosts h WHERE h.host = sessions.host)
          AND status IN ('idle', 'running', 'waiting')`,
   ).all(host);
 }

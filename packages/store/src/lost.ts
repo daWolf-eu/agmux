@@ -29,6 +29,9 @@ export interface RowForDerive extends RowForLostCheck {
   title_ts?: string | null;
   attention_ts?: string | null;
   seen_ts?: string | null;
+  // Set when the row's remote host was removed (hosts.removed_ts).
+  host_removed_ts?: string | null;
+  host?: string;
 }
 
 export interface Derived {
@@ -53,6 +56,7 @@ export function isUnseen(row: Pick<RowForDerive, "attention_ts" | "seen_ts">): b
 // The single derivation of the status every consumer sees, from the stored
 // projection status. Rules, in order:
 //   1. ended/lost are final.
+//   1b. a live row on a removed remote host is lost.
 //   2. a wrapper row whose heartbeat went stale is lost.
 //   3. running with no evidence of work for WORKING_TIMEOUT_MS decays to idle —
 //      the turn ended without a Stop we could see (interrupt, crash, missed hook).
@@ -63,6 +67,12 @@ export function deriveStatus(row: RowForDerive, now: Date = new Date()): Derived
   const lastWork = maxTs(row.status_ts, row.activity_ts, row.title_ts);
   if (TERMINAL_STATUSES.includes(row.status)) {
     return { status: row.status, rule: "terminal", reason: `stored status is ${row.status}`, last_work_ts: lastWork };
+  }
+  if (row.host_removed_ts) {
+    return {
+      status: "lost", rule: "host-removed", last_work_ts: lastWork,
+      reason: `host ${row.host} removed at ${row.host_removed_ts}`,
+    };
   }
   const eff = computeEffectiveStatus(row, now);
   if (eff === "lost") {
