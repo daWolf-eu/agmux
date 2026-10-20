@@ -1,7 +1,7 @@
 import { describe, expect, spyOn, test } from "bun:test";
 import { Store } from "@agmux/store";
 import {
-  IDLE_TIMEOUT_MS, KILL_GRACE_MS, MAX_BACKOFF_MS, spawnProcess, splitLines, startFollower,
+  IDLE_TIMEOUT_MS, KILL_GRACE_MS, MAX_BACKOFF_MS, abortableReader, spawnProcess, splitLines, startFollower,
   type FollowerStatus, type ProcHandle,
 } from "../src/sync/follower.ts";
 import type { Transport } from "../src/sync/transport.ts";
@@ -28,6 +28,7 @@ const keepalive = () => JSON.stringify({ keepalive: TS });
 // A wedged child ignores every signal: its lines never end and it never exits.
 class FakeProc implements ProcHandle {
   killed = 0;
+  released = false;   // the follower called return() on the lines iterator
   signals: string[] = [];
   private queue: string[] = [];
   private wake: (() => void) | null = null;
@@ -42,11 +43,16 @@ class FakeProc implements ProcHandle {
   get lines(): AsyncIterable<string> {
     const self = this;
     return (async function* () {
-      for (;;) {
-        while (self.queue.length) yield self.queue.shift()!;
-        if (self.done) return;
-        await new Promise<void>((r) => { self.wake = r; });
-        self.wake = null;
+      let finished = false;
+      try {
+        for (;;) {
+          while (self.queue.length) yield self.queue.shift()!;
+          if (self.done) { finished = true; return; }
+          await new Promise<void>((r) => { self.wake = r; });
+          self.wake = null;
+        }
+      } finally {
+        if (!finished) self.released = true;
       }
     })();
   }
@@ -219,6 +225,7 @@ describe("startFollower", () => {
     await until(() => h.backoffs().length === 1, "backoff");
     expect(h.procs[0]!.killed).toBe(1);
     expect(h.f.status()).toMatchObject({ cursor: 0, lastError: "no replication header" });
+    expect(h.procs[0]!.released).toBe(true);
     expect(h.store.listEvents()).toHaveLength(0);
     await h.f.stop();
   });
@@ -365,6 +372,43 @@ describe("startFollower", () => {
     await h.f.stop();
     await h.advance(INTERVAL);
     expect(h.procs).toHaveLength(1);
+  });
+});
+
+describe("abortableReader", () => {
+  async function* count(n: number) { for (let i = 0; i < n; i++) yield i; }
+
+  test("holds at most one waiter over a long stream", async () => {
+    const r = abortableReader(count(10_000));
+    let seen = 0;
+    let max = 0;
+    for (;;) {
+      const p = r.next();
+      max = Math.max(max, r.waiting());
+      const s = await p;
+      if (s.kind !== "value") break;
+      seen++;
+    }
+    expect(seen).toBe(10_000);
+    expect(max).toBe(1);
+    expect(r.waiting()).toBe(0);
+  });
+
+  test("abort settles the read in flight and every later read; release returns the iterator", async () => {
+    let returned = false;
+    const it: AsyncIterator<number> = {
+      next: () => new Promise(() => {}),   // a wedged pipe
+      return: async () => { returned = true; return { done: true, value: undefined }; },
+    };
+    const r = abortableReader(it);
+    const p = r.next();
+    r.abort();
+    expect(await p).toEqual({ kind: "aborted" });
+    expect(await r.next()).toEqual({ kind: "aborted" });
+    expect(r.waiting()).toBe(0);
+    r.release();
+    await turn();
+    expect(returned).toBe(true);
   });
 });
 

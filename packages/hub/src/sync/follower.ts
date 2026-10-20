@@ -69,6 +69,39 @@ const defaultDeps: FollowerDeps = {
   }),
 };
 
+export type ReadStep<T> = { kind: "value"; value: T } | { kind: "done" } | { kind: "aborted" };
+
+// One read at a time from an async iterator; abort() settles the read in flight.
+// Each next() registers one waiter that is dropped when it settles, so nothing
+// accumulates per item over a long-lived stream (unlike racing every read
+// against one shared abort promise). `waiting()` exposes the count for tests.
+export function abortableReader<T>(it: AsyncIterator<T>) {
+  const waiters = new Set<(s: ReadStep<T>) => void>();
+  let aborted = false;
+  return {
+    next(): Promise<ReadStep<T>> {
+      return new Promise<ReadStep<T>>((resolve, reject) => {
+        if (aborted) return resolve({ kind: "aborted" });
+        const settle = (s: ReadStep<T>) => { waiters.delete(settle); resolve(s); };
+        waiters.add(settle);
+        it.next().then(
+          (r) => settle(r.done ? { kind: "done" } : { kind: "value", value: r.value }),
+          (e) => { waiters.delete(settle); reject(e); },
+        );
+      });
+    },
+    abort(): void {
+      aborted = true;
+      for (const w of [...waiters]) w({ kind: "aborted" });
+    },
+    // Releases the iterator (generator / stream reader) after an early end; fire and forget.
+    release(): void {
+      try { void Promise.resolve(it.return?.()).catch(() => {}); } catch { /* already finished */ }
+    },
+    waiting: () => waiters.size,
+  };
+}
+
 type Failed = { kind: "failed"; error: string; permanent: boolean };
 type Outcome =
   | Failed
@@ -183,19 +216,18 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   // aborted (watchdog, stop). An abort never waits for stdout EOF: a wedged child
   // or a grandchild holding the pipe must not block the next attempt.
   async function read(p: ProcHandle): Promise<Outcome | null> {
-    let abort!: (out: Outcome) => void;
-    const aborted = new Promise<{ abort: Outcome }>((r) => { abort = (out) => r({ abort: out }); });
+    const reader = abortableReader(p.lines[Symbol.asyncIterator]());
+    let abortOut: Outcome | null = null;
+    const abort = (out: Outcome) => { abortOut ??= out; reader.abort(); };
     abortAttempt = abort;
     let lastLineMs = deps.nowMs();
     const endWatchdog = watchdog(() => lastLineMs, abort);
-    const it = p.lines[Symbol.asyncIterator]();
+    let eof = false;
     try {
       for (;;) {
-        const next = it.next();
-        next.catch(() => {});   // may settle after an abort, unobserved
-        const r = await Promise.race([next, aborted]);
-        if ("abort" in r) return r.abort;
-        if (r.done) return null;
+        const r = await reader.next();
+        if (r.kind === "aborted") return abortOut;
+        if (r.kind === "done") { eof = true; return null; }
         lastLineMs = deps.nowMs();
         const out = onLine(r.value);
         if (out) return out;
@@ -205,6 +237,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     } finally {
       abortAttempt = null;
       endWatchdog();
+      if (!eof) reader.release();
     }
   }
 
