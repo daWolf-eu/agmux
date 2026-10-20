@@ -1,0 +1,181 @@
+import {
+  NO_SESSION_ID, type HostRemovedPayload, type HostSyncedPayload, type HostSyncFailedPayload, type ReplicationHeader,
+} from "@agmux/protocol";
+import type { Store } from "@agmux/store";
+import type { RemoteConfig } from "./config.ts";
+import { openshellDiscovery, runCapture, type DiscoveredNode, type Discovery } from "./discovery.ts";
+import { startFollower, type Follower, type FollowerStatus } from "./follower.ts";
+import { openshellTransport, type Transport } from "./transport.ts";
+
+// Per [[remote]]: discover sandboxes every `interval` s and keep exactly one
+// follower per discovered sandbox. Follower status becomes the host ledger —
+// log-derived host.* events the `hosts` projection is built from:
+//   host.synced       ok-state flips to ok; a moved cursor, debounced to CURSOR_FLUSH_MS; follower stop
+//   host.sync_failed  permanent error, or failing for > STALE_AFTER_INTERVALS; once per distinct error
+//   host.removed      the sandbox is gone from a successful listing
+
+export const CURSOR_FLUSH_MS = 10_000;
+export const STALE_AFTER_INTERVALS = 3;
+
+export interface SyncOptions { store: Store; remotes: RemoteConfig[]; consumer: string; log(s: string): void }
+export interface SyncDeps {
+  discoveryFor?(r: RemoteConfig): Discovery;
+  transportFor?(r: RemoteConfig): Transport;
+  follower?: typeof startFollower;
+  nowMs?(): number;
+  newId?(): string;
+}
+
+interface NodeState {
+  remote: RemoteConfig; node: DiscoveredNode; transport: Transport; follower: Follower;
+  ok: boolean;                  // last ledger write said "synced" (false until the first header)
+  flushedCursor: number; lastFlushMs: number;
+  reportedError: string | null; // last error written as host.sync_failed
+}
+
+const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+// Returns stop: stops every follower, flushes moved cursors and clears the timers.
+export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<void> {
+  const discoveryFor = deps.discoveryFor ?? ((r) => openshellDiscovery(r, (argv) => runCapture(argv)));
+  const transportFor = deps.transportFor ?? openshellTransport;
+  const follow = deps.follower ?? startFollower;
+  const nowMs = deps.nowMs ?? (() => Date.now());
+  const newId = deps.newId ?? (() => crypto.randomUUID());
+
+  const nodes = new Map<string, NodeState>();   // by host, across all remotes
+  const removals = new Map<string, Promise<void>>(); // by host, while in flight
+  const timers: ReturnType<typeof setInterval>[] = [];
+  let stopped = false;
+
+  function append(host: string, kind: string, payload: unknown): void {
+    try {
+      o.store.append({
+        event_id: newId(), ts: new Date(nowMs()).toISOString(), session_id: NO_SESSION_ID,
+        kind, version: 1, host, payload, dedup_key: null,
+      });
+    } catch (e) {
+      o.log(`sync: ${host}: writing ${kind} failed: ${errMsg(e)}`);
+    }
+  }
+
+  function writeSynced(ns: NodeState, s: FollowerStatus, h: ReplicationHeader): void {
+    const payload: HostSyncedPayload = {
+      remote: ns.remote.name, transport: ns.transport.spec(ns.node.target), cursor: s.cursor,
+      db_id: h.db_id, agmux_version: h.agmux, replication: h.replication, rejected: s.rejected,
+    };
+    append(ns.node.host, "host.synced", payload);
+    Object.assign(ns, { ok: true, flushedCursor: s.cursor, lastFlushMs: nowMs(), reportedError: null });
+  }
+
+  // Runs on every follower change and on every discovery tick (which makes the
+  // debounce and the staleness check fire even when the follower is quiet).
+  function ledger(ns: NodeState, s: FollowerStatus): void {
+    const now = nowMs();
+    if (s.connected && s.header) {
+      const flushDue = s.cursor !== ns.flushedCursor && now - ns.lastFlushMs >= CURSOR_FLUSH_MS;
+      if (!ns.ok || flushDue) writeSynced(ns, s, s.header);
+      return;
+    }
+    ns.ok = false;
+    if (s.lastError === null || s.lastError === ns.reportedError) return;
+    const staleMs = STALE_AFTER_INTERVALS * ns.remote.interval * 1000;
+    if (s.permanent || (s.failingSinceMs !== null && now - s.failingSinceMs > staleMs)) {
+      const payload: HostSyncFailedPayload = { remote: ns.remote.name, error: s.lastError };
+      append(ns.node.host, "host.sync_failed", payload);
+      ns.reportedError = s.lastError;
+      o.log(`sync: ${ns.node.host}: ${s.lastError}`);
+    }
+  }
+
+  function start(r: RemoteConfig, node: DiscoveredNode): void {
+    const row = o.store.getHost(node.host);
+    const cursor = row?.cursor ?? 0;
+    const transport = transportFor(r);
+    let ns: NodeState | undefined;
+    const follower = follow({
+      store: o.store, node, transport, agmuxBin: r.agmux_bin, consumer: o.consumer,
+      cursor, dbId: row?.db_id ?? null, intervalMs: r.interval * 1000,
+      onChange: (s) => { if (ns && !stopped && nodes.get(node.host) === ns) ledger(ns, s); },
+    });
+    ns = { remote: r, node, transport, follower, ok: false, flushedCursor: cursor, lastFlushMs: nowMs(), reportedError: null };
+    nodes.set(node.host, ns);
+  }
+
+  // Stops the follower and writes a final host.synced if the cursor moved since the last flush.
+  async function stopNode(ns: NodeState): Promise<void> {
+    await ns.follower.stop();
+    const s = ns.follower.status();
+    if (s.header && s.cursor !== ns.flushedCursor) writeSynced(ns, s, s.header);
+  }
+
+  async function remove(r: RemoteConfig, host: string): Promise<void> {
+    const ns = nodes.get(host);
+    if (ns) { nodes.delete(host); await stopNode(ns); }
+    const row = o.store.getHost(host);
+    if (row?.remote !== r.name || row.removed_ts !== null) return;
+    const payload: HostRemovedPayload = { remote: r.name };
+    append(host, "host.removed", payload);
+    o.log(`sync: ${host}: removed (gone from ${r.name})`);
+  }
+
+  function reconcile(r: RemoteConfig, listed: DiscoveredNode[]): void {
+    const seen = new Set(listed.map((n) => n.host));
+    // A host still being removed is (re)started by a later tick.
+    for (const n of listed) if (!nodes.has(n.host) && !removals.has(n.host)) start(r, n);
+    const gone = new Set<string>();
+    for (const [host, ns] of nodes) if (ns.remote === r && !seen.has(host)) gone.add(host);
+    for (const row of o.store.listHosts()) {
+      if (row.remote === r.name && row.removed_ts === null && !seen.has(row.host)) gone.add(row.host);
+    }
+    for (const host of gone) {
+      if (removals.has(host)) continue;
+      const p = remove(r, host)
+        .catch((e) => o.log(`sync: ${host}: removal failed: ${errMsg(e)}`))
+        .finally(() => removals.delete(host));
+      removals.set(host, p);
+    }
+  }
+
+  function runRemote(r: RemoteConfig): void {
+    const discovery = discoveryFor(r);
+    let busy = false;
+    let lastError: string | null = null;
+    const tick = async () => {
+      if (busy || stopped) return;
+      busy = true;
+      try {
+        for (const ns of nodes.values()) if (ns.remote === r) ledger(ns, ns.follower.status());
+        let listed: DiscoveredNode[];
+        try {
+          listed = await discovery.list();
+        } catch (e) {
+          const msg = errMsg(e);
+          if (msg !== lastError) o.log(`sync: ${r.name}: discovery failed: ${msg}`);
+          lastError = msg;
+          return;
+        }
+        lastError = null;
+        if (!stopped) reconcile(r, listed);
+      } catch (e) {
+        o.log(`sync: ${r.name}: ${errMsg(e)}`);   // never crash the hub
+      } finally {
+        busy = false;
+      }
+    };
+    void tick();
+    timers.push(setInterval(() => void tick(), r.interval * 1000));
+  }
+
+  for (const r of o.remotes) runRemote(r);
+
+  return async () => {
+    if (stopped) return;
+    stopped = true;
+    for (const t of timers) clearInterval(t);
+    const all = [...nodes.values()];
+    nodes.clear();
+    await Promise.all([...removals.values(), ...all.map((ns) => stopNode(ns).catch((e) =>
+      o.log(`sync: ${ns.node.host}: stop failed: ${errMsg(e)}`)))]);
+  };
+}
