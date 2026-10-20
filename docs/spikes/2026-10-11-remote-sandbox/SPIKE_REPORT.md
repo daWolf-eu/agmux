@@ -101,6 +101,41 @@ between, which then doubles as the drop test.
 
 _Result: pending._
 
+## Phase 1 smoke test (2026-10-20)
+
+Real gateway `ai-sandbox` (server 0.0.116, client 0.0.116; a 0.1.3 client cannot talk to it,
+the workspace field is misparsed), workbench image `openshell-workbench:e797e53b7f50`,
+binaries uploaded (no image change), stub agent `stub-agent-loop.sh` (one turn / 20 s), Mac
+side an isolated hub from the branch under a temp HOME. Script: `phase1-smoke.sh`.
+
+**Blocker found and fixed (R19/R20):** `exec --no-tty` does not start the remote command
+until the local stdin reaches EOF (`(sleep 6) | openshell … exec -- sh -c 'echo hi'` prints
+at +6 s; a never-closed pipe never starts it). Design change 1 above is wrong for 0.0.116:
+the follower now spawns with stdin closed; the remote side is then orphaned when the Mac
+process dies (re-verified: a follower survived its killed exec for 140 s+), so the remote
+follower is bounded by the consumer lock (replaced on reconnect) and
+`--max-duration 3600` (exit 75 = planned rotation; 75 survives the transport).
+
+| Check | Result |
+|---|---|
+| Discovery (`--selector agmux=1`), `AGMUX_HOST` via create `--env` | ✓ |
+| First sync after Mac hub start | ≈2 s; `ls --remote` shows `⇄ agmux-smoke`, pid/tmux masked; `ls --local` excludes it |
+| Live updates | turn counts equal on both sides within seconds |
+| `kill` / `attach` on the remote row | refused, exit 2; `attach --placement` → "no tmux pane", exit 1 (known minor) |
+| Status-line chip | `⇄ ` prefix |
+| Stream killed (Mac side) | reconnect, catch-up from cursor, 262 = 262 events, no duplicates; old remote follower replaced |
+| Mac hub stopped / restarted | remote follower orphaned, then replaced by the new hub's follower (exactly one) |
+| Idle stream (keepalives only) | 16 min, no reconnect on either side |
+| Sandbox without `AGMUX_HOST` | `hub status`: stale + "create the sandbox with --env AGMUX_HOST=ai-sandbox/agmux-nohost"; follower backs off to the cap |
+| Sandbox deleted | session `lost` / rule `host-removed` after 8 s (2 listings) |
+| Same name recreated | old session `lost` / `host-reset` (db 3a867427 → 41e2e208), new session live |
+| Discovery error (bad gateway env) | shown in `hub status` (`remote … error: Unknown gateway …`) |
+
+**Not covered:** Mac sleep / network loss (only simulated by killing the stream), a gateway or
+VM restart, idle gaps beyond 16 min, real Claude hooks (needs a logged-in sandbox from the
+launcher), arm64. Minor UX finding: for an idle but healthy sandbox `hub status` says
+"last sync 16m ago" — the timestamp only moves with the cursor.
+
 ## Open
 
 - Real Claude through the hooks: `wi-sag-280` claude is not logged in (provider attached or
@@ -117,6 +152,8 @@ _Result: pending._
 - `view.sh` — N1 view, link-window variant, with fixes 2 and 3.
 - `longstream.ts` — long-lived `exec` stream logger.
 - `n1-manual.sh` — manual N1 check in a real terminal.
+- `stub-agent-loop.sh` — stub agent that runs one turn every `STUB_INTERVAL` s (phase 1 smoke).
+- `phase1-smoke.sh` — phase 1 smoke test: `setup` / `check` / `teardown`.
 
 ## Left in place (clean up when done)
 
