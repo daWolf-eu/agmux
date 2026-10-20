@@ -83,7 +83,7 @@ export const COLUMNS: Record<ColumnKey, ColDef> = {
 
 // Squeeze order when the row is wider than the pane: the least identifying
 // columns give way first, the name last.
-const SHRINK_ORDER: ColumnKey[] = ["activity", "tmux", "project", "profile", "branch", "repo", "host", "name"];
+export const SHRINK_ORDER: ColumnKey[] = ["activity", "tmux", "project", "profile", "branch", "repo", "host", "name"];
 
 // Column separation: the glyph hugs the name it qualifies (1 space); every
 // other column gets a wide 5-space gutter so the columns read apart at a glance.

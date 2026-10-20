@@ -19,9 +19,9 @@ function exitStr(r: SessionRow): string {
 }
 
 // Remote rows add when the replica last synced and whether it has gone stale.
-function hostDetail(r: SessionRow): string {
+export function hostDetail(r: SessionRow, now: number = Date.now()): string {
   let s = r.host;
-  if (r.remote && r.last_sync_ts) s += ` · last sync ${relTime(r.last_sync_ts, Date.now())}`;
+  if (r.remote && r.last_sync_ts) s += ` · last sync ${relTime(r.last_sync_ts, now)} ago`;
   if (r.remote && r.sync_stale) s += " · stale";
   return s;
 }

@@ -107,7 +107,7 @@ async function statusOut(hosts: unknown[] | "fail"): Promise<string[]> {
 
 test("status: ok host line", async () => {
   const out = await statusOut([hostRow({})]);
-  expect(out).toContain("remote sb1  gw/sb  ok  last sync 30s  agmux 0.2.0  cursor 42");
+  expect(out).toContain("remote sb1  gw/sb  ok  last sync 30s ago  agmux 0.2.0  cursor 42");
 });
 
 test("status: stale host with rejected and error; never-synced", async () => {

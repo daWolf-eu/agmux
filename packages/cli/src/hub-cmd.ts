@@ -52,7 +52,7 @@ async function fetchHosts(port: number | null, fetchImpl: typeof fetch): Promise
 
 function hostLines(h: HostRow, now: number): string[] {
   const state = h.removed_ts ? "removed" : !h.last_sync_ok ? "stale" : "ok";
-  const sync = h.last_sync_ts ? relTime(h.last_sync_ts, now) : "never";
+  const sync = h.last_sync_ts ? `${relTime(h.last_sync_ts, now)} ago` : "never";
   let line = `remote ${h.remote}  ${h.host}  ${state}  last sync ${sync}  agmux ${h.agmux_version ?? "?"}  cursor ${h.cursor}`;
   if (h.rejected > 0) line += `  rejected ${h.rejected}`;
   if (state !== "ok" && h.last_error) line += `  error: ${h.last_error}`;

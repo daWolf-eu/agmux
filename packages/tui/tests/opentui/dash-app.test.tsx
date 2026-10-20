@@ -715,19 +715,23 @@ test("r cycles locality all → local → remote and filters client-side", async
   let f = captureCharFrame();
   expect(f).toContain("mine");
   expect(f).toContain("theirs");
+  expect(f).not.toContain("[local]");
+  expect(f).not.toContain("[remote]");
 
   await act(async () => { mockInput.pressKey("r"); });
   await renderOnce();
   f = captureCharFrame();
   expect(f).toContain("mine");
   expect(f).not.toContain("theirs");
-  expect(f).toContain("local");
+  expect(f).toContain("[local]");
+  expect(f).not.toContain("[remote]");
 
   await act(async () => { mockInput.pressKey("r"); });
   await renderOnce();
   f = captureCharFrame();
   expect(f).not.toContain("mine");
   expect(f).toContain("theirs");
-  expect(f).toContain("remote");
+  expect(f).toContain("[remote]");
+  expect(f).not.toContain("[local]");
   renderer.destroy();
 });

@@ -76,11 +76,20 @@ test("formatTable renders '-' for sessions without metadata", () => {
   expect(cells[1]).toBe("-");
 });
 
-test("formatTable: no HOST column without remote rows; with one, after NAME, '-' for local", () => {
-  const local = formatTable([mkRow()], false);
-  expect(local[0]).not.toContain("HOST");
-  const lines = formatTable([mkRow({ session_id: "l" }), mkRow({ session_id: "r", remote: true, host: "os/sbx-1" })], false);
-  expect(lines[0]!.split(/\s+/).slice(0, 3)).toEqual(["ID", "NAME", "HOST"]);
-  expect(lines[1]).toMatch(/\s-\s/);
-  expect(lines[2]).toContain("⇄ sbx-1");
+test("formatTable without remote rows is byte-identical to the pre-HOST layout", () => {
+  const rows = [mkRow({ session_id: "aaaa", name: "fix", git_repo: "agmux", git_branch: "main", last_tool: "Edit", last_tool_detail: "x.ts", tmux_session: "w", tmux_window: "1" })];
+  expect(formatTable(rows, false)).toEqual([
+    "ID    NAME  AGENT   PROFILE  STATUS   TURNS  ACTIVITY         REPO   BRANCH  PID  TMUX  START        LAST_SEEN  ",
+    "aaaa  fix   claude  -        running  -      tool: Edit x.ts  agmux  main    1    w:1   06-11 10:00  06-11 10:00",
+  ]);
+});
+
+test("formatTable with a remote row: HOST right after NAME; local cell is exactly '-'", () => {
+  const lines = formatTable([mkRow({ session_id: "l", name: "loc" }), mkRow({ session_id: "r", name: "rem", remote: true, host: "os/sbx-1" })], false);
+  const col = lines[0]!.indexOf("HOST");
+  expect(lines[0]!.indexOf("NAME")).toBeLessThan(col);
+  expect(lines[0]!.slice(0, col).trim().split(/\s+/)).toEqual(["ID", "NAME"]);
+  const hostCell = (l: string) => l.slice(col, col + "HOST".length).trimEnd();
+  expect(hostCell(lines[1]!)).toBe("-");
+  expect(lines[2]!.slice(col)).toStartWith("⇄ sbx-1");
 });
