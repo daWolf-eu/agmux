@@ -15,7 +15,7 @@
 - Foundation §14 holds: hub binds `127.0.0.1` only; event log is truth (projections rebuildable via `--rebuild-projections`); schema evolves additively, unknown kinds stored raw; nothing invents session identity.
 - Remote host name: `AGMUX_HOST` overrides `os.hostname()` everywhere agmux stamps `host`.
 - Cursor = remote `events.id` (rowid), never `ts`. Replication is **pull only**, Mac → remote via the transport.
-- Follower spawn: `openshell -g <gw> sandbox exec -n <sbx> --no-tty -- <agmux> events --follow --after <cursor> --consumer <id>` with **stdin a pipe that is never closed** (spike: closing stdin orphans the remote side).
+- Follower spawn: `openshell -g <gw> sandbox exec -n <sbx> --no-tty -- <agmux> events --follow --after <cursor> --consumer <id> --max-duration 3600` with **stdin closed** (smoke test R19: an open stdin keeps 0.0.116 from starting the command; the remote side is bounded by the consumer lock + max-duration).
 - Loop prevention: a node exports only events it ingested itself (`events.source IS NULL`).
 - Replicated events are untrusted: validate like ingest (`validateEnvelope` + `validateKnownPayload`), never execute or shell-interpolate anything from them.
 - `session.seen` is Mac-local; never sent back.

@@ -54,6 +54,13 @@ dies**. N1 views must be reaped explicitly.
      <tag>` (N1: kill the view session — verified to free the orphaned client; N2: kill
      the recorded client pid). The next attach with the same tag reaps first, covering
      Mac crash/sleep. Spec §8.1.
+   - **Correction 2026-10-20 (real-sandbox smoke test, openshell 0.0.116):** a stdin pipe
+     held open **blocks** the `--no-tty` remote command: it starts only once the local
+     stdin reaches EOF (`(sleep 6) | … exec --no-tty -- sh -c 'echo hi; sleep 2; echo
+     there'` prints `hi` at +6 s; a never-closed Bun pipe prints nothing, ever; `/dev/null`
+     starts at once and streams). The rule is now **closed stdin + a bounded remote
+     follower**: `agmux events --follow --max-duration 3600` plus the consumer lock. Spec
+     §10 R19.
 2. **`destroy-unattached` must be set at attach time.** Set on the fresh, never-attached
    view session, it fires as soon as `kill-window -t V:^` runs and the view is gone
    before `attach-session` (3.7c). Fix: `attach-session -t V \; set -t V destroy-unattached on`.

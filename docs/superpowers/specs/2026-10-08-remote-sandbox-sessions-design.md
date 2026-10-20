@@ -63,7 +63,7 @@ one sandbox at a time. Attention signals (blocked on a prompt, done) never reach
 | Shell into a sandbox: `openshell -g <gw> sandbox exec -n <name> --tty -- <cmd>`; `sandbox connect` attaches to main (`sleep`) and looks like a hang | homelab handoff "Gotchas" |
 | `sandbox exec` round trip Mac → `ai-sandbox` 20–30 ms; propagates exit code (death by signal → 1) | spike #9 |
 | `exec --no-tty` streams stdout line by line; idle `openshell exec` = 13 MB RSS on the Mac; 20 concurrent execs fine | spike #10, #11 |
-| Remote side of an `exec` dies with the local CLI only for `--no-tty` with local stdin held open; closed stdin or `--tty` ⇒ remote orphaned | spike, design change 1 |
+| Remote side of an `exec` dies with the local CLI only for `--no-tty` with local stdin held open; closed stdin or `--tty` ⇒ remote orphaned. But at 0.0.116 `--no-tty` starts the remote command only at local stdin EOF, so a held-open stdin means it never runs | spike, design change 1; smoke test 2026-10-20 (R19) |
 | Sandbox hostname = container id; create-time `--env` reaches `exec` processes and tmux panes, image `ENV` does not | spike #6, #7 |
 | Bun `fetch` to `127.0.0.1` works under the sandbox proxy env (`NO_PROXY` covers loopback); hub outlives the `exec` that spawned it | spike #3 |
 | `sandbox list -o json` → `[{name, id, phase, labels, …}]`; `create --label k=v` (repeatable); `list --selector k=v,…`; no label edit on an existing sandbox at 0.0.116 | homelab `ai-platform.md`, `sag-sandbox-create`, spike #8 |
@@ -112,11 +112,14 @@ remote store (authoritative for its sessions)          Mac hub (sole writer of M
 - **Streaming is the primary mode.** `agmux events --follow --after <n>` keeps one
   long-lived `exec` per source emitting NDJSON as events happen; on drop, reconnect with
   the last cursor (backlog pitch 08: snapshot + dedup, no replay).
-- **Follower lifetime (spike).** The puller spawns `openshell … exec --no-tty` with a
-  **stdin pipe it never closes**: only then does the remote follower die with the local
-  process. With stdin closed up front the remote follower is orphaned and keeps running.
-  As a second guard, `events --follow --consumer <id>` takes a per-consumer lock in the
-  remote state dir and replaces (terminates) a previous follower holding it.
+- **Follower lifetime (spike, corrected by R19).** The puller spawns `openshell … exec
+  --no-tty` with **stdin closed**: at 0.0.116 the remote command starts only once the
+  local stdin reaches EOF, so a held-open pipe means no replication at all. Closed stdin
+  orphans the remote follower when the local process dies, so it is bounded twice:
+  `events --follow --consumer <id>` takes a per-consumer lock in the remote state dir and
+  replaces (terminates) a previous follower holding it, and `--max-duration 3600` ends
+  every remote follower after an hour (exit 0; the puller reconnects at once from its
+  cursor).
 - **Polling is a fallback only** (source where `--follow` keeps failing): exponential
   backoff from `interval` up to a cap, longer for sources whose last event is old.
 - **Consumers never trigger sync.** `dash`, `ls`, `watch`, the status line and notifyd
@@ -334,7 +337,7 @@ around). Rules:
   Optional: make `agmux hub` the sandbox main process instead of `sleep infinity`.
 - Mac: one puller per discovered sandbox:
   `openshell -g <gw> sandbox exec -n <sbx> --no-tty -- agmux events --follow --after <cursor>`,
-  stdin an open pipe (§4.2 follower lifetime).
+  stdin closed, `--max-duration 3600` (§4.2 follower lifetime).
 
 **Liveness:** in-sandbox sweep, same pid namespace — works unchanged.
 
@@ -678,6 +681,7 @@ Refinements made while implementing; the code is authoritative.
 - R11: `host.synced` is flushed on connected-to-failing, and on stop only for an ok host; `host.removed` needs 2 consecutive successful listings without the node (`sync-loop.ts`).
 - R13b: "last sync" renders as `<rel> ago` only for short durations (`tui/src/shared/reltime.ts` `syncAge`, used by `hub status` and dash detail).
 - R14: `sanitizeRemoteText` (`protocol/src/host.ts`) strips control chars from sandbox text, applied at the writer and at the sink (`hub-cmd.ts`).
+- R19 (real-sandbox smoke test, openshell 0.0.116, `ai-sandbox`): `exec --no-tty` starts the remote command only when the local stdin reaches EOF. `(sleep 6) | openshell … exec --no-tty -- sh -c 'echo hi; sleep 2; echo there'` prints `hi` at +6 s and `there` at +8 s; `Bun.spawn(argv, {stdin: "pipe"})` with the pipe never closed prints nothing, ever; stdin `/dev/null` starts at once and streams line by line. So the follower spawns with `stdin: "ignore"` and passes `--max-duration 3600` (`FOLLOW_MAX_DURATION_S`); a child exiting 0 after a valid header is a planned rotation (immediate respawn with `--after <cursor>`, no failure, no backoff). The orphan bound is the consumer lock plus max-duration (`hub/src/sync/follower.ts`, `cli/src/events-cmd.ts`). `tests/e2e/fake-openshell.sh` drains stdin before running the command, as a regression guard.
 - R17: replicated rows carry the source store's `db_id` (schema v10 `events.source_db` / `sessions.source_db`); a live row whose `source_db` differs from `hosts.db_id` derives `lost` with rule `host-reset`, so a sandbox recreated under the same name never resurrects old sessions (`store/src/lost.ts`).
 - Final review: ingest accepts only a canonical UUID `session_id` and an `[A-Za-z0-9-]{1,64}` `event_id`; ids reach shell/tmux strings only as `[0-9a-f-]`, agent text in tmux formats has every `#` doubled (`hub/src/sync/ingest.ts`, `cli/src/notifier.ts`, `tui/src/shared/statusline.ts`). Session text is printed through `stripControls` at every display sink. A stream line is capped at 1 MiB, `/ingest` bodies too (413). `GET /hosts` adds the in-memory per-remote discovery state for `hub status`. A node ingests only after its `host.synced` was written.
 
