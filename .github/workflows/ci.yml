@@ -16,3 +16,11 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
       - run: bun test
+      # The sandboxes need Linux binaries: keep them compiling.
+      - name: Build linux binaries
+        run: |
+          bun install --os='*' --cpu='*'
+          for t in x64 arm64; do
+            bun build --compile --target=bun-linux-$t packages/cli/bin/agmux.ts --outfile /tmp/agmux-linux-$t
+            bun build --compile --target=bun-linux-$t packages/hub/bin/agmux-hub.ts --outfile /tmp/agmux-hub-linux-$t
+          done
