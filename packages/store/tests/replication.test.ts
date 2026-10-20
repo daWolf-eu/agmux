@@ -82,3 +82,14 @@ test("dbId is stable across reopen and differs between stores", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("dbId is cached on the instance after the first read (no transaction per /health)", () => {
+  const s = Store.openInMemory();
+  const id = s.dbId();
+  const db = s.rawDb();
+  const orig = db.transaction.bind(db);
+  let tx = 0;
+  db.transaction = ((fn: any) => { tx++; return orig(fn); }) as typeof db.transaction;
+  expect(s.dbId()).toBe(id);
+  expect(tx).toBe(0);
+});

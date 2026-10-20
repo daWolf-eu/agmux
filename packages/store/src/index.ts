@@ -8,6 +8,7 @@ import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
   private db: Database;
+  private cachedDbId: string | null = null;
   private constructor(db: Database) {
     this.db = db;
     runMigrations(db);
@@ -85,15 +86,16 @@ export class Store {
     return { records, last_id: records.length ? records[records.length - 1]!.id : afterId };
   }
 
-  /** Stable per-store identity, minted on first use. */
+  /** Stable per-store identity, minted on first use; cached (it never changes for a file). */
   dbId(): string {
-    return this.db.transaction(() => {
+    this.cachedDbId ??= this.db.transaction(() => {
       const row = this.db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key = 'db_id'`).get();
       if (row) return row.value;
       const id = crypto.randomUUID();
       this.db.query(`INSERT INTO _meta(key, value) VALUES ('db_id', ?)`).run(id);
       return id;
     }).immediate();
+    return this.cachedDbId;
   }
 
   getHost(host: string): HostRow | null { return getHost(this.db, host); }

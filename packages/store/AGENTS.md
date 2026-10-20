@@ -6,7 +6,7 @@ SQLite event log + projections. Everything is derived from `events`; `rebuildPro
 
 - `events.source TEXT`: NULL = ingested on this host; `<host>` = replicated in from that host. Gates export (`listExportable`) and is the loop-prevention rule.
 - `hosts` table: projection of `host.*` events (`src/hosts.ts`), keyed by `host`: `remote, transport (JSON), last_sync_ts, last_sync_ok, last_error, cursor, db_id, agmux_version, replication, rejected, removed_ts`.
-- `_meta('db_id')`: random UUID minted on first `Store.dbId()` (inside an immediate transaction), stable for the life of the file. The sync cursor is only meaningful against one `db_id`.
+- `_meta('db_id')`: random UUID minted on first `Store.dbId()` (inside an immediate transaction), stable for the life of the file and cached on the `Store` instance after the first read. The sync cursor is only meaningful against one `db_id`.
 - v10: `events.source_db` / `sessions.source_db`: the source store's `db_id` (its incarnation) for replicated rows, NULL for local ones. `sessions.source_db` follows the latest replicated event applied to the session (`applySourceDb`; `rebuildProjections` replays it from `events.source_db`).
 
 ## `appendReplicated(ev, source, sourceDb)`
