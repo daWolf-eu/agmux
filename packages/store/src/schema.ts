@@ -142,3 +142,16 @@ CREATE TABLE IF NOT EXISTS session_meta (
   name_ts     TEXT
 );
 `;
+
+// Remote hosts: `events.source` marks rows replicated in from another host
+// (NULL = ingested here; such rows are never re-exported). `hosts` is a
+// projection of host.* events written by the hub's sync loop.
+export const SCHEMA_V9 = `
+ALTER TABLE events ADD COLUMN source TEXT;
+CREATE TABLE IF NOT EXISTS hosts (
+  host TEXT PRIMARY KEY, remote TEXT NOT NULL, transport TEXT,
+  last_sync_ts TEXT, last_sync_ok INTEGER NOT NULL DEFAULT 1, last_error TEXT,
+  cursor INTEGER NOT NULL DEFAULT 0, db_id TEXT, agmux_version TEXT, replication INTEGER,
+  rejected INTEGER NOT NULL DEFAULT 0, removed_ts TEXT
+);
+`;

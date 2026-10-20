@@ -1,8 +1,9 @@
 import { Database } from "bun:sqlite";
-import type { EventEnvelope, SessionRow, StatusDecision } from "@agmux/protocol";
+import type { EventEnvelope, HostRow, ReplicationRecord, SessionRow, StatusDecision } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
 import { applyEventToProjection } from "./project.ts";
 import { getSessionRaw, explainSession, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
+import { getHost, listHosts } from "./hosts.ts";
 import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
 
 export class Store {
@@ -42,6 +43,59 @@ export class Store {
     });
     return tx();
   }
+
+  /**
+   * Ingest an event replicated from another host. Idempotent on event_id; the
+   * source's dedup_key is dropped (it only has meaning on the source) and the
+   * row is tagged so it is never re-exported. A duplicate does not re-apply
+   * the projection. Returns true if inserted.
+   */
+  appendReplicated(ev: EventEnvelope, source: string): boolean {
+    return this.db.transaction(() => {
+      const r = this.db.query(`
+        INSERT INTO events (event_id, ts, session_id, kind, version, payload, host, dedup_key, source)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        ON CONFLICT(event_id) DO NOTHING
+      `).run(
+        ev.event_id, ev.ts, ev.session_id, ev.kind, ev.version,
+        JSON.stringify(ev.payload), ev.host, source,
+      );
+      if (r.changes === 0) return false;
+      applyEventToProjection(this.db, ev);
+      return true;
+    })();
+  }
+
+  /** Locally-ingested events after rowid `afterId`, oldest first (replicated rows excluded). */
+  listExportable(afterId: number, limit: number): { records: ReplicationRecord[]; last_id: number } {
+    const rows = this.db.query<any, [number, number]>(`
+      SELECT id, event_id, ts, session_id, kind, version, payload, host, dedup_key
+      FROM events WHERE id > ? AND source IS NULL ORDER BY id ASC LIMIT ?
+    `).all(afterId, limit);
+    const records: ReplicationRecord[] = rows.map((r) => ({
+      id: r.id,
+      ev: {
+        event_id: r.event_id, ts: r.ts, session_id: r.session_id, kind: r.kind,
+        version: r.version, host: r.host, payload: JSON.parse(r.payload),
+        ...(r.dedup_key != null ? { dedup_key: r.dedup_key } : {}),
+      },
+    }));
+    return { records, last_id: records.length ? records[records.length - 1]!.id : afterId };
+  }
+
+  /** Stable per-store identity, minted on first use. */
+  dbId(): string {
+    return this.db.transaction(() => {
+      const row = this.db.query<{ value: string }, []>(`SELECT value FROM _meta WHERE key = 'db_id'`).get();
+      if (row) return row.value;
+      const id = crypto.randomUUID();
+      this.db.query(`INSERT INTO _meta(key, value) VALUES ('db_id', ?)`).run(id);
+      return id;
+    }).immediate();
+  }
+
+  getHost(host: string): HostRow | null { return getHost(this.db, host); }
+  listHosts(): HostRow[] { return listHosts(this.db); }
 
   /**
    * Resolve a wire envelope to a canonical session and append it. Native-form
@@ -85,6 +139,7 @@ export class Store {
       this.db.exec(`DELETE FROM session_activity`);
       this.db.exec(`DELETE FROM session_seen`);
       this.db.exec(`DELETE FROM session_meta`);
+      this.db.exec(`DELETE FROM hosts`);
       const rows = this.db.query<any, []>(
         `SELECT event_id, ts, session_id, kind, version, payload, host FROM events ORDER BY id ASC`
       ).all();

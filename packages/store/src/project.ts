@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { EventEnvelope } from "@agmux/protocol";
+import { applyHostEvent } from "./hosts.ts";
 
 export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
   switch (ev.kind) {
@@ -63,6 +64,11 @@ export function applyEventToProjection(db: Database, ev: EventEnvelope): void {
       return;
     case "session.seen":
       applySessionSeen(db, ev);
+      return;
+    case "host.synced":
+    case "host.sync_failed":
+    case "host.removed":
+      applyHostEvent(db, ev);
       return;
     // prompt.sent and compaction are known but log-only: stored in the event
     // log, no projection effect. (A compaction_count column is a deferred option.)

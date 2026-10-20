@@ -1,6 +1,7 @@
 import type { AgentKind } from "./session.ts";
 import type { UsageReport, CapabilityMap } from "./telemetry.ts";
 import type { TitleActivity } from "./title.ts";
+import type { HostSyncedPayload, HostSyncFailedPayload, HostRemovedPayload } from "./host.ts";
 
 export const EVENT_KINDS_MVP = [
   "session.started",
@@ -261,6 +262,10 @@ export type PromptSentEvent = EventEnvelope<PromptSentPayload> & { kind: "prompt
 export type CompactionEvent = EventEnvelope<CompactionPayload> & { kind: "compaction" };
 export type AdapterAttachedEvent = EventEnvelope<AdapterAttachedPayload> & { kind: "session.adapter_attached" };
 
+export type HostSyncedEvent = EventEnvelope<HostSyncedPayload> & { kind: "host.synced" };
+export type HostSyncFailedEvent = EventEnvelope<HostSyncFailedPayload> & { kind: "host.sync_failed" };
+export type HostRemovedEvent = EventEnvelope<HostRemovedPayload> & { kind: "host.removed" };
+
 export type KnownEvent =
   | SessionStartedEvent
   | SessionHeartbeatEvent
@@ -281,4 +286,7 @@ export type KnownEvent =
   | SessionMetadataEvent
   | PromptSentEvent
   | CompactionEvent
-  | AdapterAttachedEvent;
+  | AdapterAttachedEvent
+  | HostSyncedEvent
+  | HostSyncFailedEvent
+  | HostRemovedEvent;

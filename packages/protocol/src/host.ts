@@ -1,4 +1,5 @@
 import * as os from "node:os";
+import type { EventEnvelope } from "./events.ts";
 import { AGMUX_HOST_ENV } from "./env.ts";
 
 const HOST_NAME_RE = /^[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)?$/;
@@ -17,3 +18,29 @@ export function resolveHost(
   const v = env[AGMUX_HOST_ENV];
   return v && isValidHostName(v) ? v : hostname;
 }
+
+// Session id carried by host-level events that belong to no session.
+export const NO_SESSION_ID = "00000000-0000-0000-0000-000000000000";
+
+export const EVENT_KINDS_HOST = ["host.synced", "host.sync_failed", "host.removed"] as const;
+export type HostEventKind = (typeof EVENT_KINDS_HOST)[number];
+
+export interface TransportSpec { kind: "openshell"; gateway: string; target: string; bin: string }
+
+export interface HostSyncedPayload {
+  remote: string; transport: TransportSpec; cursor: number; db_id: string;
+  agmux_version: string; replication: number; rejected: number;
+}
+export interface HostSyncFailedPayload { remote: string; error: string }
+export interface HostRemovedPayload { remote: string }
+
+export interface HostRow {
+  host: string; remote: string; transport: TransportSpec | null;
+  last_sync_ts: string | null; last_sync_ok: boolean; last_error: string | null;
+  cursor: number; db_id: string | null; agmux_version: string | null;
+  replication: number | null; rejected: number; removed_ts: string | null;
+}
+
+export const REPLICATION_VERSION = 1;
+export interface ReplicationHeader { replication: number; agmux: string; db_id: string; host: string }
+export interface ReplicationRecord { id: number; ev: EventEnvelope }
