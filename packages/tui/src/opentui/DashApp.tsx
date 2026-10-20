@@ -7,6 +7,7 @@ import type { Actions, AttachRequest, Handoff, PreviewMode, PreviewSource, Usage
 import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from "../shared/sort.ts";
 import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
+import { matchesLocality, nextLocality, type LocalityFilter } from "../shared/locality.ts";
 import { yankFields } from "../shared/yank.ts";
 import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
 import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
@@ -31,6 +32,8 @@ export interface DashAppProps {
   defaultPreview: PreviewMode;
   intervalMs: number;
   initialGroup?: ActivityGroup;
+  // Client-side local/remote filter (key `r`); the feeds are not narrowed by it.
+  initialLocality?: LocalityFilter;
   onHandoff: (h: Handoff) => void;
   onQuit: () => void;
   // best-effort active pane id from the parent tmux client (Task 15); null when unknown
@@ -74,6 +77,8 @@ export function DashApp(props: DashAppProps) {
 
   const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
 
+  const [locality, setLocality] = useState<LocalityFilter>(props.initialLocality ?? "all");
+
   // Feed → rows via useSyncExternalStore (synchronous notify; same as Ink path).
   // `subscribe` changes identity with the group, so React tears the old feed
   // down and starts the new group's query; the previous rows stay on screen
@@ -106,8 +111,8 @@ export function DashApp(props: DashAppProps) {
   const attachCtx = props.attachCtx ?? NO_ATTACH_CTX;
 
   const visible = useMemo(
-    () => sortRows(groupRows(searchRows(rows ?? [], search), group), sortKey),
-    [rows, search, group, sortKey],
+    () => sortRows(groupRows(searchRows((rows ?? []).filter((r) => matchesLocality(r, locality)), search), group), sortKey),
+    [rows, search, group, sortKey, locality],
   );
   // Spinner frame for running rows — the timer only runs while something is running.
   const anyRunning = useMemo(() => (rows ?? []).some((r) => r.status === "running"), [rows]);
@@ -244,6 +249,7 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "G") { setSelectedId(visible[visible.length - 1]?.session_id ?? null); return; }
     if (key.name === "s") { setSortKey((k) => nextSort(k, columns)); return; }
     if (key.name === "f") { setGroup((g) => nextGroup(g)); return; }
+    if (key.name === "r") { setLocality((l) => nextLocality(l)); return; }
     if (key.name === "p") { setShowPreview((v) => !v); return; }
     if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
     if (key.name === "/") { setSearch(""); setSearching(true); return; }
@@ -271,7 +277,7 @@ export function DashApp(props: DashAppProps) {
 
   return (
     <box style={{ flexDirection: "column", width: "100%", height: "100%" }}>
-      <HeaderBar rows={rows ?? []} connected={!error} hubUrl={hubUrl} group={group} frame={frame} />
+      <HeaderBar rows={rows ?? []} connected={!error} hubUrl={hubUrl} group={group} locality={locality} frame={frame} />
       <text> </text>
       <box style={{ flexDirection: "row", flexGrow: 1, minHeight: 0 }}>
         <box style={{ flexGrow: 1, minHeight: 0, paddingLeft: 1, paddingRight: 1 }}>

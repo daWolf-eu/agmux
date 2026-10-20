@@ -116,7 +116,7 @@ status = "open"     # active | open | closed | comma-separated statuses
 locality = "all"    # all | local | remote (flags: --local, --remote, --host <glob>)
 ```
 
-`dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `f` filter · `/` search · `tab` preview tab ·
+`dash` keys: `j/k` move · `g/G` top/bottom · `s` sort · `f` filter · `r` all/local/remote · `/` search · `tab` preview tab ·
 `p` show/hide preview · `⏎` attach (switch-client) · `A` attach to… (pick where it opens) · `x` kill · `y` yank field ·
 `u` mark read · `?` help · `q` quit. The footer lists the everyday ones; `?` has all.
 
@@ -129,7 +129,7 @@ Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `
 
 `columns` picks the table columns and their order (default
 `["glyph", "name", "repo", "branch", "last_seen"]`); available: `glyph`, `name`, `repo`,
-`branch`, `last_seen`, `id`, `agent`, `profile`, `tmux`, `turns`, `activity`, `project`.
+`branch`, `last_seen`, `id`, `agent`, `profile`, `tmux`, `turns`, `activity`, `project`, `host` (remote sessions' `⇄ host`; opt-in).
 `header = true` shows the column-title row (default off). Columns are content-sized and
 squeezed to fit the pane (activity/tmux/project/profile first, then branch, repo, name).
 A squeezed branch keeps its name over its prefix: `feature/`, `feat/`, `bugfix/`, `bug/`,

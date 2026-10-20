@@ -128,3 +128,25 @@ test("dash passes attach settings to the actions and the matching attachCtx to t
   expect(seenSettings).toBe(settings);
   expect((seenCtx as { terminalWindow: boolean }).terminalWindow).toBe(true);
 });
+
+test("dash group queries drop locality (the client filters) but keep host", async () => {
+  let captured: any = null;
+  const deps = {
+    isTTY: () => true,
+    runManageImpl: async (o: any) => { captured = o; return 0; },
+    makeSourceImpl: () => ({ async mirror() { return ""; }, async usage() { return null; } }),
+    makeActionsImpl: () => ({ async attach() { return null; }, async kill() {}, async resume() { return null; } }),
+    errOut: () => {},
+  };
+  await dashCmd(
+    { hubUrl: "http://h", wrapBin: "agmux-wrap", intervalMs: 1000, preview: "mirror", popup: false,
+      limit: 50, sort: "started", asc: false, reverse: false, status: "open", groups,
+      locality: "remote", host: "sbx-*" } as any,
+    deps as any,
+  );
+  for (const g of ["open", "closed", "all"]) {
+    expect(captured.groupQueries[g].query.has("locality")).toBe(false);
+    expect(captured.groupQueries[g].query.get("host")).toBe("sbx-*");
+  }
+  expect(captured.initialLocality).toBe("remote");
+});

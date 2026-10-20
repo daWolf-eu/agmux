@@ -138,7 +138,7 @@ const FIELD_STYLE: Record<string, ColumnStyle> = {
 function fieldValue(r: SessionRow, key: string, caps: Caps): string {
   switch (key) {
     case "glyph": return statusGlyph(r).glyph;
-    case "name": return clip(COLUMNS.name.text(r, 0), caps.name);
+    case "name": return (r.remote ? "⇄ " : "") + clip(COLUMNS.name.text(r, 0), caps.name);
     case "repo": return r.git_repo ?? "";
     case "branch": return r.git_branch ? abbreviateBranch(r.git_branch, BRANCH_MAX) : "";
     case "tmux_session": return r.tmux_session ? abbreviate(r.tmux_session, caps.session) : "";

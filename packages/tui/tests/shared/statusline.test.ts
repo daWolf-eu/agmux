@@ -274,3 +274,13 @@ test("a width too small for anything still keeps the filter chip", () => {
   expect(out).toContain(`range=user|${FILTER_TOKEN}`);
   expect(out).not.toContain("range=user|@s");
 });
+
+test("a remote chip prefixes the name with ⇄, counted by the width fit; escaping still applies", () => {
+  const f = { ...OPTS, format: "{name}" };
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌⇄ fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix" })], f))).toBe("▌fix ");
+  expect(formatStatusLine([mkRow({ name: "a #[fg=red]", remote: true })], f)).toContain("⇄ a ##[fg=red]");
+  const rows = [mkRow({ name: "x".repeat(24), remote: true })];
+  const out = formatStatusLine(rows, { ...f, width: 14 });
+  expect(statusWidth(chips(out))).toBeLessThanOrEqual(14);
+});

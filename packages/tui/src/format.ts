@@ -1,4 +1,5 @@
 import type { SessionRow } from "@agmux/protocol";
+import { hostLabel } from "./shared/locality.ts";
 
 const ACTIVITY_MAX = 40;
 const NAME_MAX = 32;
@@ -23,10 +24,13 @@ export function activityCell(r: SessionRow): string {
 }
 
 export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
-  const header = ["ID", "NAME", "AGENT", "PROFILE", "STATUS", "TURNS", "ACTIVITY", "REPO", "BRANCH", "PID", "TMUX", "START", "LAST_SEEN"];
+  // HOST only appears once a remote row does; without one the output is unchanged.
+  const withHost = rows.some((r) => r.remote);
+  const header = ["ID", "NAME", ...(withHost ? ["HOST"] : []), "AGENT", "PROFILE", "STATUS", "TURNS", "ACTIVITY", "REPO", "BRANCH", "PID", "TMUX", "START", "LAST_SEEN"];
   const data = rows.map((r) => [
     r.session_id.slice(0, 23),
     clip(r.name, NAME_MAX),
+    ...(withHost ? [r.remote ? hostLabel(r) : "-"] : []),
     r.agent_kind,
     r.profile ?? "-",
     r.status,

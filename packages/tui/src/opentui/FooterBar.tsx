@@ -8,6 +8,7 @@ const HINTS: { key: string; label: string; drop?: number }[] = [
   { key: "j/k", label: "move", drop: 7 },
   { key: "s", label: "sort" },
   { key: "f", label: "filter", drop: 3 },
+  { key: "r", label: "host", drop: 3.5 },
   { key: "/", label: "search", drop: 6 },
   { key: "⏎", label: "attach" },
   { key: "A", label: "attach…", drop: 4 },

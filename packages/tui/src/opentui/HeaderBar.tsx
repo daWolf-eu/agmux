@@ -2,6 +2,7 @@
 import { TextAttributes } from "@opentui/core";
 import type { SessionRow } from "@agmux/protocol";
 import type { ActivityGroup } from "../shared/group.ts";
+import type { LocalityFilter } from "../shared/locality.ts";
 import { STATUS_COLORS, TONES, statusTone, toneGlyph, type StatusTone } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
 
@@ -17,7 +18,7 @@ function summaryTone(r: SessionRow): StatusTone {
 // `rows` here is the current group's fetched set before search/sort narrowing.
 // Each group queries the hub separately, so the counts describe what this
 // group's query returned — in `open` the closed count is 0 by construction.
-export function HeaderBar(props: { rows: SessionRow[]; connected: boolean; hubUrl: string; group: ActivityGroup; frame: number }) {
+export function HeaderBar(props: { rows: SessionRow[]; connected: boolean; hubUrl: string; group: ActivityGroup; locality: LocalityFilter; frame: number }) {
   const { rows } = props;
   const counts = new Map<StatusTone, number>();
   for (const r of rows) counts.set(summaryTone(r), (counts.get(summaryTone(r)) ?? 0) + 1);
@@ -29,6 +30,7 @@ export function HeaderBar(props: { rows: SessionRow[]; connected: boolean; hubUr
         <span fg={MOCHA.mauve}>agmux dash</span>
         {"  "}
         <span fg={MOCHA.sky}>[{props.group}]</span>
+        {props.locality !== "all" && <span fg={MOCHA.sky}>{` [${props.locality}]`}</span>}
         {"  "}
         <span fg={props.connected ? MOCHA.blue : MOCHA.red}>{props.connected ? "● connected" : "◌ reconnecting"}</span>
       </text>

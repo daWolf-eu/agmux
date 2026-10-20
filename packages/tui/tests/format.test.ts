@@ -75,3 +75,12 @@ test("formatTable renders '-' for sessions without metadata", () => {
   const cells = formatTable([mkRow()], false)[1]!.split(/\s{2,}/);
   expect(cells[1]).toBe("-");
 });
+
+test("formatTable: no HOST column without remote rows; with one, after NAME, '-' for local", () => {
+  const local = formatTable([mkRow()], false);
+  expect(local[0]).not.toContain("HOST");
+  const lines = formatTable([mkRow({ session_id: "l" }), mkRow({ session_id: "r", remote: true, host: "os/sbx-1" })], false);
+  expect(lines[0]!.split(/\s+/).slice(0, 3)).toEqual(["ID", "NAME", "HOST"]);
+  expect(lines[1]).toMatch(/\s-\s/);
+  expect(lines[2]).toContain("⇄ sbx-1");
+});

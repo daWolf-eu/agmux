@@ -2,6 +2,7 @@
 import type { SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
+import { relTime } from "../shared/reltime.ts";
 import { tmuxTarget } from "../shared/yank.ts";
 import { MOCHA, FAINT_SCROLLBAR } from "../shared/palette.ts";
 
@@ -17,6 +18,14 @@ function exitStr(r: SessionRow): string {
   return "-";
 }
 
+// Remote rows add when the replica last synced and whether it has gone stale.
+function hostDetail(r: SessionRow): string {
+  let s = r.host;
+  if (r.remote && r.last_sync_ts) s += ` · last sync ${relTime(r.last_sync_ts, Date.now())}`;
+  if (r.remote && r.sync_stale) s += " · stale";
+  return s;
+}
+
 // Full technical detail — no truncation. Long values wrap inside the scrollbox.
 function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
   const r = props.row;
@@ -29,7 +38,7 @@ function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
     ["Origin", r.origin],
     ["TMUX", tmuxTarget(r) || "—"],
     ["PID", r.pid == null ? "-" : String(r.pid)],
-    ["Host", r.host],
+    ["Host", hostDetail(r)],
     ["Project", r.project ?? "-"],
     ["CWD", r.cwd],
     ["Command", [r.command, ...r.args].join(" ")],

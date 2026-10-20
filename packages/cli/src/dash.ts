@@ -32,10 +32,12 @@ function statusFor(g: ActivityGroup): string | undefined {
 }
 
 function buildGroupQueries(opts: DashOpts): Record<ActivityGroup, GroupQuery> {
+  // Locality is filtered client-side (key `r`), so the feeds must not narrow by it; `host` stays server-side.
+  const { locality: _locality, ...rest } = opts;
   const out = {} as Record<ActivityGroup, GroupQuery>;
   for (const g of GROUPS) {
     out[g] = {
-      query: buildLsQuery({ ...opts, status: statusFor(g), limit: opts.groups[g].limit }),
+      query: buildLsQuery({ ...rest, status: statusFor(g), limit: opts.groups[g].limit }),
       intervalMs: opts.groups[g].intervalMs,
     };
   }
@@ -61,6 +63,7 @@ export async function dashCmd(
     intervalMs: opts.intervalMs,
     defaultPreview: opts.preview,
     initialGroup: initialGroup(opts.status),
+    initialLocality: opts.locality ?? "all",
     source: deps.makeSourceImpl(opts.hubUrl),
     actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup, attach),
     attachCtx: attachCtxFor(attach, process.env, opts.popup),

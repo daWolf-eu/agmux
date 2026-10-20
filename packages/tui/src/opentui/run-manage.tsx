@@ -9,6 +9,7 @@ import { activePaneId } from "./attached.ts";
 import { tmuxSocketFromEnv } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
+import type { LocalityFilter } from "../shared/locality.ts";
 import type { ColumnKey } from "../shared/columns.ts";
 import type { AttachCtx } from "../shared/attach-targets.ts";
 
@@ -27,6 +28,7 @@ export interface RunManageOpts {
   intervalMs: number;   // preview refresh cadence
   defaultPreview: PreviewMode;
   initialGroup?: ActivityGroup;
+  initialLocality?: LocalityFilter;
   source: PreviewSource;
   actions: Actions;
   columns?: ColumnKey[];
@@ -65,6 +67,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
       hubUrl={o.hubUrl}
       defaultPreview={o.defaultPreview}
       initialGroup={o.initialGroup ?? "open"}
+      initialLocality={o.initialLocality ?? "all"}
       intervalMs={o.intervalMs}
       columns={o.columns}
       showHeader={o.showHeader}

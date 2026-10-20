@@ -502,14 +502,14 @@ test("the footer legend shows the everyday keys only, one blank line above it", 
       hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
       onHandoff={() => {}} onQuit={() => {}}
     />,
-    { width: 140, height: 20 },
+    { width: 150, height: 20 },
   );
   await renderOnce();
   const lines = captureCharFrame().split("\n");
   const i = lines.findIndex((l) => l.includes("[⏎] attach"));
   expect(i).toBeGreaterThan(0);
   const footer = lines[i]!;
-  for (const hint of ["[A] attach…", "[j/k] move", "[s] sort", "[f] filter", "[/] search", "[y] yank", "[tab] preview", "[p] panel", "[?] help", "[q] quit"])
+  for (const hint of ["[A] attach…", "[j/k] move", "[s] sort", "[f] filter", "[r] host", "[/] search", "[y] yank", "[tab] preview", "[p] panel", "[?] help", "[q] quit"])
     expect(footer).toContain(hint);
   for (const hidden of ["top/bottom", "kill", "mark read"]) expect(footer).not.toContain(hidden);
   expect(lines[i - 1]!.trim()).toBe("");
@@ -695,5 +695,39 @@ test("escape closes the attach popup; Enter still uses the default (no request)"
   await act(async () => { (mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
   await renderOnce();
   expect(reqs).toEqual([undefined]);
+  renderer.destroy();
+});
+
+test("r cycles locality all → local → remote and filters client-side", async () => {
+  const rows = [
+    mkRow({ session_id: "agx-local0001", name: "mine" }),
+    mkRow({ session_id: "agx-remote001", name: "theirs", remote: true, host: "os/sbx" }),
+  ];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      initialLocality="all" onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  let f = captureCharFrame();
+  expect(f).toContain("mine");
+  expect(f).toContain("theirs");
+
+  await act(async () => { mockInput.pressKey("r"); });
+  await renderOnce();
+  f = captureCharFrame();
+  expect(f).toContain("mine");
+  expect(f).not.toContain("theirs");
+  expect(f).toContain("local");
+
+  await act(async () => { mockInput.pressKey("r"); });
+  await renderOnce();
+  f = captureCharFrame();
+  expect(f).not.toContain("mine");
+  expect(f).toContain("theirs");
+  expect(f).toContain("remote");
   renderer.destroy();
 });

@@ -1,12 +1,13 @@
 import type { SessionRow } from "@agmux/protocol";
 import { relTime } from "./reltime.ts";
 import { activityCell } from "../format.ts";
+import { hostLabel } from "./locality.ts";
 
 // Every column the dash can show, in no particular order. The visible set and
 // its order come from `[dash] columns` (DEFAULT_COLUMNS when unset).
 export const COLUMN_KEYS = [
   "glyph", "name", "repo", "branch", "last_seen",
-  "id", "agent", "profile", "tmux", "turns", "activity", "project",
+  "id", "agent", "profile", "tmux", "turns", "activity", "project", "host",
 ] as const;
 export type ColumnKey = (typeof COLUMN_KEYS)[number];
 
@@ -76,12 +77,13 @@ export const COLUMNS: Record<ColumnKey, ColDef> = {
     key: "activity", header: "ACTIVITY", align: "left", style: "sub", max: 40, min: 8,
     text: (r) => { const a = activityCell(r); return a === "-" ? "" : a; },
   },
+  host: { key: "host", header: "HOST", align: "left", style: "sub", max: 28, min: 8, text: hostLabel },
   project: { key: "project", header: "PROJECT", align: "left", style: "sub", max: 24, min: 6, text: (r) => r.project ?? "" },
 };
 
 // Squeeze order when the row is wider than the pane: the least identifying
 // columns give way first, the name last.
-const SHRINK_ORDER: ColumnKey[] = ["activity", "tmux", "project", "profile", "branch", "repo", "name"];
+const SHRINK_ORDER: ColumnKey[] = ["activity", "tmux", "project", "profile", "branch", "repo", "host", "name"];
 
 // Column separation: the glyph hugs the name it qualifies (1 space); every
 // other column gets a wide 5-space gutter so the columns read apart at a glance.

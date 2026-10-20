@@ -89,3 +89,12 @@ test("branch is the accent column; other optional columns stay secondary text", 
   expect(COLUMNS.repo.style).toBe("faint");
   for (const k of ["id", "agent", "profile", "tmux", "turns", "activity", "project"] as const) expect(COLUMNS[k].style).toBe("sub");
 });
+
+test("host column: blank for local rows, hostLabel for remote, not a default, shrinks before name", async () => {
+  const { COLUMNS, DEFAULT_COLUMNS, COLUMN_KEYS } = await import("../../src/shared/columns.ts");
+  expect(COLUMN_KEYS).toContain("host");
+  expect(DEFAULT_COLUMNS).not.toContain("host");
+  expect(COLUMNS.host.header).toBe("HOST");
+  expect(COLUMNS.host.text(mkRow(), 0)).toBe("");
+  expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("⇄ sbx");
+});
