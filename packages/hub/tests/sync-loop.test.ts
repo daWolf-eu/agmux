@@ -46,8 +46,12 @@ const ticks = () => new Promise<void>((r) => setTimeout(r, 50));
 
 function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
   let now = 1_000_000;
-  let listing: DiscoveredNode[] | Error = [];
+  // "hang": a `sandbox list` that never returns. `once` entries are served before `listing`.
+  type Listing = DiscoveredNode[] | Error | "hang";
+  let listing: Listing = [];
+  const once: Listing[] = [];
   let lists = 0;
+  let hangs = 0;
   const store = o.store ?? Store.openInMemory();
   const hostEvents: EventEnvelope[] = [];
   const orig = store.append.bind(store);
@@ -55,7 +59,13 @@ function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
   const followers: FakeFollower[] = [];
   const logs: string[] = [];
   const discovery: Discovery = {
-    list: async () => { lists++; if (listing instanceof Error) throw listing; return listing; },
+    list: async () => {
+      lists++;
+      const l = once.shift() ?? listing;
+      if (l === "hang") { hangs++; return new Promise<never>(() => {}); }
+      if (l instanceof Error) throw l;
+      return l;
+    },
   };
   let id = 0;
   const stop = startSync({ store, remotes: o.remotes ?? [remote], consumer: "mac", log: (s) => logs.push(s) }, {
@@ -67,8 +77,10 @@ function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
   });
   return {
     store, followers, logs, stop, hostEvents,
-    setListing: (l: DiscoveredNode[] | Error) => { listing = l; },
+    setListing: (l: Listing) => { listing = l; },
+    listOnce: (...l: Listing[]) => { once.push(...l); },
     lists: () => lists,
+    hangs: () => hangs,
     advance: (ms: number) => { now += ms; },
     now: () => now,
     kinds: () => hostEvents.map((e) => e.kind),
@@ -110,8 +122,10 @@ describe("startSync", () => {
     await until(() => h.followers.length === 2, "followers");
     h.of("gw/a").emit({ connected: true, header: hdr, dbId: "db-1", cursor: 0 });
     expect(h.kinds()).toEqual(["host.synced"]);
+    const before = h.lists();
     h.setListing([node("b")]);
     await until(() => h.kinds().includes("host.removed"), "host.removed");
+    expect(h.lists()).toBeGreaterThanOrEqual(before + 2);
     await ticks();
     expect(h.kinds()).toEqual(["host.synced", "host.removed"]);
     const removed = h.hostEvents[1]!;
@@ -133,6 +147,21 @@ describe("startSync", () => {
     await until(() => h.kinds().includes("host.removed"), "host.removed");
     await ticks();
     expect(h.hostEvents.map((e) => [e.kind, e.host])).toEqual([["host.removed", "gw/old"]]);
+    await h.stop();
+  });
+
+  test("a single miss does not remove", async () => {
+    const h = harness();
+    h.setListing([node("a"), node("b")]);
+    await until(() => h.followers.length === 2, "followers");
+    h.of("gw/a").emit({ connected: true, header: hdr, dbId: "db-1" });
+    // Missed, seen, missed: never two consecutive misses.
+    h.listOnce([node("b")], [node("a"), node("b")], [node("b")]);
+    const before = h.lists();
+    await until(() => h.lists() > before + 5, "ticks");
+    expect(h.kinds()).toEqual(["host.synced"]);
+    expect(h.of("gw/a").stopped).toBe(0);
+    expect(h.followers.length).toBe(2);
     await h.stop();
   });
 
@@ -208,6 +237,51 @@ describe("startSync", () => {
     expect(h.kinds()).toEqual(["host.synced", "host.sync_failed", "host.sync_failed", "host.synced"]);
     expect(h.store.getHost("gw/a")?.last_sync_ok).toBe(true);
     await h.stop();
+  });
+
+  test("a hung discovery does not delay stale detection", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    h.setListing("hang");
+    const f = h.of("gw/a");
+    f.emit({ connected: true, header: hdr, dbId: "db-1" });
+    f.emit({ connected: false, lastError: "stream ended", failingSinceMs: h.now() });
+    await until(() => h.hangs() === 1, "hung listing");
+    h.advance(STALE_MS + 1);
+    await until(() => h.kinds().includes("host.sync_failed"), "sync_failed");
+    expect(h.kinds()).toEqual(["host.synced", "host.sync_failed"]);
+    await h.stop();
+  });
+
+  test("cursor moved then disconnect flushes the cursor once, at the transition", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    f.emit({ connected: true, header: hdr, dbId: "db-1", cursor: 0 });
+    for (let i = 1; i <= 5; i++) f.emit({ cursor: i });
+    f.emit({ connected: false, lastError: "stream ended", failingSinceMs: h.now() });
+    f.emit({ lastError: "exited 255 before replication header" });
+    await ticks();
+    expect(h.hostEvents.map((e) => [e.kind, (e.payload as any).cursor])).toEqual([["host.synced", 0], ["host.synced", 5]]);
+    await h.stop();
+    expect(h.hostEvents.length).toBe(2);
+  });
+
+  test("stop on a failing host writes no host.synced", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    f.emit({ connected: true, header: hdr, dbId: "db-1", cursor: 0 });
+    f.emit({ connected: false, lastError: "stream ended", failingSinceMs: h.now() });
+    h.advance(STALE_MS + 1);
+    await until(() => h.kinds().includes("host.sync_failed"), "sync_failed");
+    f.emit({ cursor: 3 });   // e.g. a db reset while failing: the cursor moved, the host is not ok
+    await h.stop();
+    expect(h.kinds()).toEqual(["host.synced", "host.sync_failed"]);
+    expect(h.store.getHost("gw/a")).toMatchObject({ last_sync_ok: false, last_error: "stream ended", cursor: 0 });
   });
 
   test("permanent error is reported immediately", async () => {

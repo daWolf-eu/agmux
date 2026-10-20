@@ -10,12 +10,15 @@ import { openshellTransport, type Transport } from "./transport.ts";
 // Per [[remote]]: discover sandboxes every `interval` s and keep exactly one
 // follower per discovered sandbox. Follower status becomes the host ledger —
 // log-derived host.* events the `hosts` projection is built from:
-//   host.synced       ok-state flips to ok; a moved cursor, debounced to CURSOR_FLUSH_MS; follower stop
+//   host.synced       ok-state flips to ok; a moved cursor, debounced to CURSOR_FLUSH_MS and flushed
+//                     when a connected follower starts failing or is stopped (never while failing)
 //   host.sync_failed  permanent error, or failing for > STALE_AFTER_INTERVALS; once per distinct error
-//   host.removed      the sandbox is gone from a successful listing
+//   host.removed      the sandbox is missing from REMOVE_AFTER_MISSES consecutive successful listings
 
 export const CURSOR_FLUSH_MS = 10_000;
 export const STALE_AFTER_INTERVALS = 3;
+// A transient empty listing (exit 0) must not flap a sandbox's sessions to lost.
+export const REMOVE_AFTER_MISSES = 2;
 
 export interface SyncOptions { store: Store; remotes: RemoteConfig[]; consumer: string; log(s: string): void }
 export interface SyncDeps {
@@ -77,6 +80,9 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
       if (!ns.ok || flushDue) writeSynced(ns, s, s.header);
       return;
     }
+    // Connected → failing: persist the progress made on the connection that just ended.
+    // (Not on a db reset, where the stale header's db_id no longer matches.)
+    if (ns.ok && s.header && s.header.db_id === s.dbId && s.cursor !== ns.flushedCursor) writeSynced(ns, s, s.header);
     ns.ok = false;
     if (s.lastError === null || s.lastError === ns.reportedError) return;
     const staleMs = STALE_AFTER_INTERVALS * ns.remote.interval * 1000;
@@ -102,11 +108,12 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
     nodes.set(node.host, ns);
   }
 
-  // Stops the follower and writes a final host.synced if the cursor moved since the last flush.
+  // Stops the follower; if it was healthy and its cursor moved since the last flush,
+  // writes a final host.synced. A failing host is left failing (its stale overlay stays).
   async function stopNode(ns: NodeState): Promise<void> {
     await ns.follower.stop();
     const s = ns.follower.status();
-    if (s.header && s.cursor !== ns.flushedCursor) writeSynced(ns, s, s.header);
+    if (ns.ok && s.connected && s.header && s.cursor !== ns.flushedCursor) writeSynced(ns, s, s.header);
   }
 
   async function remove(r: RemoteConfig, host: string): Promise<void> {
@@ -119,17 +126,22 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
     o.log(`sync: ${host}: removed (gone from ${r.name})`);
   }
 
-  function reconcile(r: RemoteConfig, listed: DiscoveredNode[]): void {
+  // misses: per host, how many consecutive successful listings of this remote lacked it.
+  function reconcile(r: RemoteConfig, listed: DiscoveredNode[], misses: Map<string, number>): void {
     const seen = new Set(listed.map((n) => n.host));
     // A host still being removed is (re)started by a later tick.
     for (const n of listed) if (!nodes.has(n.host) && !removals.has(n.host)) start(r, n);
-    const gone = new Set<string>();
-    for (const [host, ns] of nodes) if (ns.remote === r && !seen.has(host)) gone.add(host);
+    const missing = new Set<string>();
+    for (const [host, ns] of nodes) if (ns.remote === r && !seen.has(host)) missing.add(host);
     for (const row of o.store.listHosts()) {
-      if (row.remote === r.name && row.removed_ts === null && !seen.has(row.host)) gone.add(row.host);
+      if (row.remote === r.name && row.removed_ts === null && !seen.has(row.host)) missing.add(row.host);
     }
-    for (const host of gone) {
-      if (removals.has(host)) continue;
+    for (const host of misses.keys()) if (!missing.has(host)) misses.delete(host);
+    for (const host of missing) {
+      const n = (misses.get(host) ?? 0) + 1;
+      misses.set(host, n);
+      if (n < REMOVE_AFTER_MISSES || removals.has(host)) continue;
+      misses.delete(host);
       const p = remove(r, host)
         .catch((e) => o.log(`sync: ${host}: removal failed: ${errMsg(e)}`))
         .finally(() => removals.delete(host));
@@ -139,13 +151,12 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
 
   function runRemote(r: RemoteConfig): void {
     const discovery = discoveryFor(r);
+    const misses = new Map<string, number>();
     let busy = false;
     let lastError: string | null = null;
-    const tick = async () => {
-      if (busy || stopped) return;
+    const discover = async () => {
       busy = true;
       try {
-        for (const ns of nodes.values()) if (ns.remote === r) ledger(ns, ns.follower.status());
         let listed: DiscoveredNode[];
         try {
           listed = await discovery.list();
@@ -156,15 +167,25 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
           return;
         }
         lastError = null;
-        if (!stopped) reconcile(r, listed);
+        if (!stopped) reconcile(r, listed, misses);
       } catch (e) {
         o.log(`sync: ${r.name}: ${errMsg(e)}`);   // never crash the hub
       } finally {
         busy = false;
       }
     };
-    void tick();
-    timers.push(setInterval(() => void tick(), r.interval * 1000));
+    // The ledger pass runs every tick, even while a slow `sandbox list` is still in flight.
+    const tick = () => {
+      if (stopped) return;
+      try {
+        for (const ns of nodes.values()) if (ns.remote === r) ledger(ns, ns.follower.status());
+      } catch (e) {
+        o.log(`sync: ${r.name}: ${errMsg(e)}`);
+      }
+      if (!busy) void discover();
+    };
+    tick();
+    timers.push(setInterval(tick, r.interval * 1000));
   }
 
   for (const r of o.remotes) runRemote(r);

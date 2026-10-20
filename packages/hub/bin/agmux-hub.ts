@@ -57,7 +57,11 @@ const consumer = resolveHost().replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64) || 
 const stopSync = startSync({ store, remotes, consumer, log: (s) => console.log(s) });
 
 const SYNC_STOP_TIMEOUT_MS = 3_000;
+let shuttingDown = false;
 const shutdown = async () => {
+  // A second signal must not cut the bounded sync stop short.
+  if (shuttingDown) return;
+  shuttingDown = true;
   stopSweep();
   // Before releasing the lock (single writer); bounded so a stuck follower can't hang the exit.
   await Promise.race([stopSync().catch(() => {}), new Promise((r) => setTimeout(r, SYNC_STOP_TIMEOUT_MS))]);
