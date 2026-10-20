@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { AGMUX_VERSION, REPLICATION_VERSION, type ReplicationHeader, type ReplicationRecord } from "@agmux/protocol";
-import { isProcessAlive } from "@agmux/hub";
+import { EXPORT_MAX_LIMIT, isProcessAlive } from "@agmux/hub";
 
 // `agmux events`: the remote side of replication. Streams this host's exportable
 // event log as NDJSON (header, records, keepalives) for the Mac's follower.
@@ -36,7 +36,10 @@ export function parseEventsArgs(argv: string[]): EventsArgs {
     const n = Number(v);
     if (a === "--after") after = n;
     else if (n < 1) return { kind: "error", message: "events: --limit must be positive" };
-    else limit = n;
+    else if (n > EXPORT_MAX_LIMIT) {
+      // The hub clamps page size; a larger limit would make a clamped full page look short.
+      return { kind: "error", message: `events: --limit must be at most ${EXPORT_MAX_LIMIT}` };
+    } else limit = n;
   }
   if (after === null) return { kind: "error", message: "events: --after <n> is required" };
   return { kind: "ok", follow, after, consumer, limit };

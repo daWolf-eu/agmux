@@ -5,7 +5,7 @@ import { validateIngestEnvelope, validateKnownPayload, AGMUX_VERSION, expandStat
 import type { SessionStatus, Locality } from "@agmux/protocol";
 
 const EXPORT_DEFAULT_LIMIT = 500;
-const EXPORT_MAX_LIMIT = 5000;
+export const EXPORT_MAX_LIMIT = 5000;
 
 export interface CreateServerOpts {
   store: Store;

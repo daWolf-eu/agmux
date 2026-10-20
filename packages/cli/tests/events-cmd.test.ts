@@ -17,6 +17,8 @@ test("parse: flags", () => {
     .toEqual({ kind: "ok", follow: true, after: 7, consumer: "mac.1_a-b", limit: 20 });
   expect(parseEventsArgs(["--after", "0", "--limit", "0"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--limit", "x"]).kind).toBe("error");
+  expect(parseEventsArgs(["--after", "0", "--limit", "5001"]).kind).toBe("error");
+  expect(parseEventsArgs(["--after", "0", "--limit", "5000"]).kind).toBe("ok");
   expect(parseEventsArgs(["--after", "0", "--consumer", "../x"]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--consumer", "a".repeat(65)]).kind).toBe("error");
   expect(parseEventsArgs(["--after", "0", "--bogus"]).kind).toBe("error");
