@@ -44,6 +44,7 @@
       "dependencies": {
         "@agmux/protocol": "workspace:*",
         "@agmux/store": "workspace:*",
+        "smol-toml": "^1.3.0",
       },
       "devDependencies": {
         "@agmux/adapters": "workspace:*",
