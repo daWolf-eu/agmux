@@ -51,6 +51,12 @@ The single source of truth for the running version is
   notice instead of a silent no-op.
 - dash: `y` yanks a field of the selected session to the system clipboard via a
   digit-prefixed popup (autodetects pbcopy/wl-copy/xclip/xsel, OSC 52 fallback).
+- Remote sandbox sessions (phase 1, read-only): `[[remote]]` in `config.toml` makes the
+  hub pull the event logs of OpenShell sandboxes (`agmux events --follow` over
+  `sandbox exec`, schema v9: `events.source`, `hosts`). Sandboxes need `AGMUX_HOST`.
+  Remote sessions appear in `ls`/`dash`/status line (`⇄ host`, `?` when stale);
+  `ls --remote|--local|--host <glob>`, `[ls] locality`, dash `host` column and `r` key,
+  sync state in `agmux hub status` and `inspect`. Gone sandboxes turn `lost`.
 
 ### Changed
 - dash restyle: no pane borders or titles — whitespace plus a faint vertical rule
@@ -83,6 +89,9 @@ The single source of truth for the running version is
   default (was `all`).
 - `agmux seen` resolves id prefixes against open sessions; `--all` marks every
   `done` session seen.
+- `attach`, `resume` and `kill` refuse remote sessions; their `pid` and tmux coordinates
+  are not exposed. Text replicated from sandboxes is stripped of control characters
+  before it is stored or printed.
 
 ### Fixed
 - tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the

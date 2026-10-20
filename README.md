@@ -477,6 +477,26 @@ Environment overrides:
 - `AGMUX_HUB_BIN`, `AGMUX_WRAP_BIN` — paths for `agmux` to spawn the hub / wrapper from. Defaults assume the binaries are on `PATH`.
 - `AGMUX_TMUX_SESSION` — tmux session name used by the wrapper (default `agmux`). Override for test isolation.
 
+## Remote sandboxes
+
+Agent sessions inside OpenShell sandboxes show up next to local ones. Each sandbox runs its own agmux (binary + hub + adapter hooks); the local hub pulls their event logs over `openshell sandbox exec` and stores them read-only. Configure the pull in `~/.config/agmux/config.toml`:
+
+```toml
+[[remote]]
+name = "ai-sandbox"        # config/display key
+gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandbox>
+# transport = "openshell"  # only one for now
+# selector = "agmux=1"     # sandbox label selector
+# interval = 5             # seconds: discovery period and reconnect backoff base
+# openshell_bin = "openshell"
+# agmux_bin = "agmux"      # path inside the sandbox
+```
+
+- The sandbox must be created with `AGMUX_HOST=<gateway>/<sandbox>` in its environment, or the stream is refused (`agmux hub status` shows the fix).
+- `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. The opt-in `host` column and the status-line chips mark remote sessions with `⇄ <sandbox>` (`?` while the sync is stale).
+- `agmux hub status` lists each remote's sync state; `agmux inspect <id>` adds the host.
+- Remote sessions are read-only for now: `attach`, `resume` and `kill` refuse them, and `pid` / tmux coordinates are not shown.
+
 ## Troubleshooting
 
 - **`agmux: command not found`** — the binaries aren't on your `PATH`. Re-check the symlink step, or point `AGMUX_HUB_BIN` / `AGMUX_WRAP_BIN` at the `dist/` paths.
@@ -486,7 +506,7 @@ Environment overrides:
 
 ## Status & roadmap
 
-Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Not yet built: subagent spawning, multi-host, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
+Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Remote sandbox sessions (OpenShell) are visible read-only. Not yet built: subagent spawning, remote attach/kill, other transports, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
 
 ## Contributing
 

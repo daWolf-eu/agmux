@@ -20,11 +20,16 @@
 - **Style.** Everything visual is a template in `StatusLineStyle` (`DEFAULT_STYLE` = the look above); `fill()` substitutes `{key}` and skips tmux `#{…}`. Ranges are added outside the template. Sources and precedence (tmux `@agmux-statusline-*` > `config.toml` > default) live in `cli/src/statusline-style.ts`; a new template key needs an entry in `TMUX_STYLE_OPTIONS`, `lineStyle()` (config parsing) and the README styling table.
 - **Width.** `opts.width` (cells; unset = no limit) makes `fitLine` shrink every `{name}` by one shared cap from `NAME_MAX` down to `NAME_MIN` (9), then fold the last chips into the `+N` — tmux clips status-left/right from the end, where the filter chip is. `statusWidth` measures a tmux format (styles free, `##` = one cell). The budget comes from `cli/src/statusline-width.ts` (`readTmuxWidth`: `@agmux-statusline-width`, else the `-length` of the side holding `@agmux-chips` capped at the narrowest client, less the rest of that side; `status2` → client width), re-read by `notifyd` each tick and by `agmux statusline` / the filter click.
 - **Placement** is `agmux.tmux`'s job: it sets `@agmux-chips` (`#(cat <cache>)`) and points `status-format[1]` / `status-right` at `#{E:@agmux-chips}`, or (`inline`) leaves that to the user.
+- **Remote chips:** a remote session's `{name}` gets a `⇄ ` prefix (`statusline.ts`); click → same token path as local chips (remote attach is not supported yet, the cli refuses).
 - Agent-reported text goes through `escapeStyles` (`#[` → `##[`) — names must never open a tmux style.
 
 ## Table columns (`shared/columns.ts`)
 
 `COLUMNS` is the registry; `[dash] columns` (validated in `cli/src/parse-dash.ts` against `COLUMN_KEYS`) picks and orders them, default `DEFAULT_COLUMNS`. Sorting (`shared/sort.ts`) cycles through the visible columns; last-seen newest-first is always the tie-break.
+
+### Remote sessions: `host` column and locality
+
+`host` (`HOST`, opt-in, not in `DEFAULT_COLUMNS`; shrinks after `repo`) renders `hostLabel` from `shared/locality.ts`: `⇄ <sandbox>` (part after the first `/`), `? <host>` when `sync_stale`, `""` for local rows. The `r` key cycles `LOCALITY_CYCLE` (`all → local → remote`) **client-side** (`matchesLocality` over the fetched rows; the header shows `[local]`/`[remote]`). `[dash] locality` / `--local` / `--remote` only seed the initial value. `cli/src/dash.ts` strips `locality` from the opts used for group/count queries so the activity-group counts stay unfiltered. `agmux ls` has a `HOST` column only when remote rows are present.
 
 ### Adding a column
 

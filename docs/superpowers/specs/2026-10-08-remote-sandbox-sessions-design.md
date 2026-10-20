@@ -1,7 +1,7 @@
 # Remote Sandbox Sessions — Design
 
 **Date:** 2026-10-08
-**Status:** draft, review round 1 incorporated — topology **S** chosen (§5); §6 kept as the
+**Status:** Phase 1 (visibility) implemented 2026-10-20 (see §10 implementation notes). Design: draft, review round 1 incorporated — topology **S** chosen (§5); §6 kept as the
 considered alternative. Phase 0 spike findings (2026-10-11,
 [`SPIKE_REPORT.md`](../../spikes/2026-10-11-remote-sandbox/SPIKE_REPORT.md)) folded in.
 **Builds on:** foundation §2 (B), §3 host-agent role, §7 remote attach, §11 security;
@@ -656,6 +656,28 @@ hook in `sag-sandbox-finish`.
 
 **Later (own specs).** SSH transport + static discovery (§4.8); cross-host comms via
 Mac-routed downstream replication (§4.8); per-gateway relay if stream count demands it.
+
+### Phase 1 implementation notes
+
+Refinements made while implementing; the code is authoritative.
+
+1. Host naming is discovery's job: `<gateway>/<sandbox>` (`hub/src/sync/discovery.ts`); `[[remote]].name` is only a config key. Resolves §4.1 vs §4.8.
+2. Poll fallback = follower reconnect with exponential backoff, `interval` to 300 s (`hub/src/sync/follower.ts`).
+3. `host.*` events use `session_id = NO_SESSION_ID` and `host` = the subject host (`protocol/src/host.ts`).
+4. Remote rows are read-only: the query layer nulls `pid`/`tmux_*` (`store/src/queries.ts` `decodeRow`); `attach`/`resume`/`kill` refuse (`cli/src/remote-guard.ts`).
+5. Strict ingest: reject wrong `host`, foreign `session_id`, `host.*` kinds; a header with another `host` fails the stream (`hub/src/sync/ingest.ts`).
+6. `db_id` in `_meta` and in the header; a change resets the cursor to 0 (`store/src/index.ts` `dbId`, `follower.ts` `onHeader`).
+7. `dedup_key` is not replicated (stored NULL) (`Store.appendReplicated`).
+8. Cursor flush is debounced to 10 s (`host.synced`), plus on stream end / connected-to-failing (`hub/src/sync/sync-loop.ts`).
+9. `agmux events --follow` polls the hub every 500 ms, keepalive after 15 s idle; the follower's watchdog is 60 s (`cli/src/events-cmd.ts`, `follower.ts`).
+10. Dash `host` column is opt-in; `r` cycles locality client-side (`tui/src/shared/locality.ts`, `cli/src/dash.ts`).
+- R2: `agmux events --limit` defaults to 500 and is capped at the hub's 5000 page max.
+- R3: the sandbox-side consumer id is `resolveHost()` sanitized to `[A-Za-z0-9._-]`, 64 chars (`hub/bin/agmux-hub.ts`).
+- R8: `/ingest` rejects `host.*` with 400 `reserved_kind` (`hub/src/server.ts`).
+- R10: ingest also rejects with `append failed` when the store throws; reasons are capped at 300 chars (`ingest.ts`).
+- R11: `host.synced` is flushed on connected-to-failing, and on stop only for an ok host; `host.removed` needs 2 consecutive successful listings without the node (`sync-loop.ts`).
+- R13b: "last sync" renders as `<rel> ago` only for short durations (`tui/src/shared/reltime.ts` `syncAge`, used by `hub status` and dash detail).
+- R14: `sanitizeRemoteText` (`protocol/src/host.ts`) strips control chars from sandbox text, applied at the writer and at the sink (`hub-cmd.ts`).
 
 ## 11. Open questions / verify list
 
