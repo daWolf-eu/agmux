@@ -735,3 +735,26 @@ test("r cycles locality all → local → remote and filters client-side", async
   expect(f).not.toContain("[local]");
   renderer.destroy();
 });
+
+test("x on a remote row shows the refusal as a notice instead of the kill confirm", async () => {
+  const killed: string[] = [];
+  const actions: Actions = { ...noActions, async kill(row) { killed.push(row.session_id); } };
+  const rows = [mkRow({ session_id: "0198abcd-remote", status: "running", remote: true, host: "gw/sbx" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("x"); });
+  await renderOnce();
+  const frame = captureCharFrame();
+  expect(frame).toContain("kill: 0198abcd runs on gw/sbx; remote kill is not supported yet");
+  await act(async () => { mockInput.pressKey("y"); });
+  await renderOnce();
+  expect(killed).toEqual([]);
+  renderer.destroy();
+});

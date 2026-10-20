@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, type SessionRow } from "@agmux/protocol";
+import { ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, stripControls, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
 import type { Actions, AttachRequest, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from "../shared/sort.ts";
@@ -254,7 +254,15 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "tab") { setMode((m) => TABS[(TABS.indexOf(m) + 1) % TABS.length]!); return; }
     if (key.name === "/") { setSearch(""); setSearching(true); return; }
     if (key.name === "return" && selected) { openRow(selected); return; }
-    if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) { setConfirmKill(selected); return; }
+    if (key.name === "x" && selected && LIVE_STATUSES.includes(selected.status)) {
+      // Read-only on this machine (same words as the cli's remote guard).
+      if (selected.remote) {
+        setNotice(stripControls(`kill: ${selected.session_id.slice(0, 8)} runs on ${selected.host}; remote kill is not supported yet`));
+        return;
+      }
+      setConfirmKill(selected);
+      return;
+    }
     // Mark the highlighted row seen (dismiss). One-way: there is no backing
     // "mark unread" event, so this only ever moves a row from unread → read
     // (see dash-actions.markSeen).
