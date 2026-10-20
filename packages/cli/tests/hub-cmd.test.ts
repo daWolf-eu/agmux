@@ -76,3 +76,60 @@ test("unknown subcommand returns exit 2 with usage", async () => {
   expect(rc).toBe(2);
   expect(out.join("\n")).toContain("usage: agmux hub");
 });
+
+// --- host sync lines ---
+const NOW = Date.parse("2026-10-20T12:00:00Z");
+function hostRow(over: Record<string, unknown>) {
+  return {
+    host: "gw/sb", remote: "sb1", transport: null, last_sync_ts: "2026-10-20T11:59:30Z", last_sync_ok: true,
+    last_error: null, cursor: 42, db_id: "d", agmux_version: "0.2.0", replication: 1, rejected: 0, removed_ts: null,
+    ...over,
+  };
+}
+function withHosts(hosts: unknown[] | "fail"): typeof fetch {
+  return (async (url: string) => {
+    if (String(url).endsWith("/hosts")) {
+      if (hosts === "fail") throw new Error("boom");
+      return new Response(JSON.stringify({ hosts }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ ok: true, version: "0.2.0-dev" }), { status: 200 });
+  }) as unknown as typeof fetch;
+}
+async function statusOut(hosts: unknown[] | "fail"): Promise<string[]> {
+  const out: string[] = [];
+  const code = await runHubCmd(["status"], base({
+    readPid: () => 111, readPort: () => 5000, isAlive: () => true,
+    fetchImpl: withHosts(hosts), out: (s) => out.push(s), nowMs: () => NOW,
+  }));
+  expect(code).toBe(0);
+  return out;
+}
+
+test("status: ok host line", async () => {
+  const out = await statusOut([hostRow({})]);
+  expect(out).toContain("remote sb1  gw/sb  ok  last sync 30s  agmux 0.2.0  cursor 42");
+});
+
+test("status: stale host with rejected and error; never-synced", async () => {
+  const out = await statusOut([hostRow({ last_sync_ok: false, last_sync_ts: null, rejected: 3, last_error: "unreachable" })]);
+  expect(out).toContain("remote sb1  gw/sb  stale  last sync never  agmux 0.2.0  cursor 42  rejected 3  error: unreachable");
+});
+
+test("status: removed host omits error", async () => {
+  const out = await statusOut([hostRow({ removed_ts: "2026-10-20T11:00:00Z", last_sync_ok: false, last_error: "x" })]);
+  const line = out.find((l) => l.startsWith("remote "))!;
+  expect(line).toContain("  removed  ");
+  expect(line).toContain("error: x");
+});
+
+test("status: newer replication note", async () => {
+  const out = await statusOut([hostRow({ replication: 2 })]);
+  expect(out).toContain("note: gw/sb runs a newer replication format (2); update agmux");
+});
+
+test("status: /hosts failure or empty list prints no host lines", async () => {
+  for (const h of ["fail", []] as const) {
+    const out = await statusOut(h as unknown[] | "fail");
+    expect(out.some((l) => l.startsWith("remote "))).toBe(false);
+  }
+});

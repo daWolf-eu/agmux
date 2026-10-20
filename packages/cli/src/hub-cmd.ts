@@ -1,6 +1,7 @@
 import * as path from "node:path";
 import { readPortFile, readPidFile, isProcessAlive } from "@agmux/hub";
-import { AGMUX_VERSION } from "@agmux/protocol";
+import { AGMUX_VERSION, REPLICATION_VERSION, type HostRow } from "@agmux/protocol";
+import { relTime } from "@agmux/tui";
 import { ensureHubRunning } from "./hub-spawn.ts";
 
 // `agmux hub status|restart` — explicit, no automatic behavior. The hub is a
@@ -36,6 +37,32 @@ async function runningVersion(port: number | null, fetchImpl: typeof fetch): Pro
   } catch { return null; }
 }
 
+async function fetchHosts(port: number | null, fetchImpl: typeof fetch): Promise<HostRow[]> {
+  if (!port) return [];
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 500);
+    const r = await fetchImpl(`http://127.0.0.1:${port}/hosts`, { signal: ctrl.signal });
+    clearTimeout(t);
+    if (!r.ok) return [];
+    const j = (await r.json()) as { hosts?: HostRow[] };
+    return j.hosts ?? [];
+  } catch { return []; }
+}
+
+function hostLines(h: HostRow, now: number): string[] {
+  const state = h.removed_ts ? "removed" : !h.last_sync_ok ? "stale" : "ok";
+  const sync = h.last_sync_ts ? relTime(h.last_sync_ts, now) : "never";
+  let line = `remote ${h.remote}  ${h.host}  ${state}  last sync ${sync}  agmux ${h.agmux_version ?? "?"}  cursor ${h.cursor}`;
+  if (h.rejected > 0) line += `  rejected ${h.rejected}`;
+  if (state !== "ok" && h.last_error) line += `  error: ${h.last_error}`;
+  const lines = [line];
+  if (h.replication != null && h.replication > REPLICATION_VERSION) {
+    lines.push(`note: ${h.host} runs a newer replication format (${h.replication}); update agmux`);
+  }
+  return lines;
+}
+
 export async function runHubCmd(args: string[], deps: HubCmdDeps): Promise<number> {
   const sub = args[0];
   const self = deps.selfVersion ?? AGMUX_VERSION;
@@ -61,6 +88,9 @@ export async function runHubCmd(args: string[], deps: HubCmdDeps): Promise<numbe
     deps.out(`installed: agmux ${self}`);
     if (ver && ver !== self) {
       deps.out(`note: running hub is version ${ver}; run 'agmux hub restart' to roll to ${self}`);
+    }
+    for (const h of await fetchHosts(port, fetchImpl)) {
+      for (const l of hostLines(h, nowMs())) deps.out(l);
     }
     return 0;
   }
