@@ -8,7 +8,7 @@ function base(over: Partial<HubCmdDeps>): HubCmdDeps {
     readPid: () => null, readPort: () => null, isAlive: () => false,
     kill: () => {}, ensureHub: async () => "http://127.0.0.1:0",
     fetchImpl: (async () => new Response("{}", { status: 200 })) as unknown as typeof fetch,
-    sleep: async () => {}, nowMs: () => 0,
+    sleep: async () => {}, nowMs: () => 0, loadRemotes: () => [],
     ...over,
   };
 }
@@ -86,20 +86,21 @@ function hostRow(over: Record<string, unknown>) {
     ...over,
   };
 }
-function withHosts(hosts: unknown[] | "fail"): typeof fetch {
+function withHosts(hosts: unknown[] | "fail", remotes?: unknown[]): typeof fetch {
   return (async (url: string) => {
     if (String(url).endsWith("/hosts")) {
       if (hosts === "fail") throw new Error("boom");
-      return new Response(JSON.stringify({ hosts }), { status: 200 });
+      return new Response(JSON.stringify(remotes ? { hosts, remotes } : { hosts }), { status: 200 });
     }
     return new Response(JSON.stringify({ ok: true, version: "0.2.0-dev" }), { status: 200 });
   }) as unknown as typeof fetch;
 }
-async function statusOut(hosts: unknown[] | "fail"): Promise<string[]> {
+async function statusOut(hosts: unknown[] | "fail", over: Partial<HubCmdDeps> & { remotes?: unknown[] } = {}): Promise<string[]> {
   const out: string[] = [];
+  const { remotes, ...rest } = over;
   const code = await runHubCmd(["status"], base({
     readPid: () => 111, readPort: () => 5000, isAlive: () => true,
-    fetchImpl: withHosts(hosts), out: (s) => out.push(s), nowMs: () => NOW,
+    fetchImpl: withHosts(hosts, remotes), out: (s) => out.push(s), nowMs: () => NOW, ...rest,
   }));
   expect(code).toBe(0);
   return out;
@@ -140,4 +141,34 @@ test("status: /hosts failure or empty list prints no host lines", async () => {
     const out = await statusOut(h as unknown[] | "fail");
     expect(out.some((l) => l.startsWith("remote "))).toBe(false);
   }
+});
+
+test("status: one line per remote before the host lines, with discovery age and error", async () => {
+  const out = await statusOut([hostRow({})], { remotes: [
+    { name: "lab", gateway: "gw", last_discovery_ts: "2026-10-20T11:59:55Z", nodes: 1 },
+    { name: "lab2", gateway: "gw2", last_discovery_ts: null, nodes: 0, last_discovery_error: "openshell: not found\x1b[2J" },
+    { name: "lab3", gateway: "gw3", last_discovery_ts: "2026-10-20T11:59:55Z", nodes: 3 },
+  ] });
+  const i = out.indexOf("remote lab  gateway gw  1 sandbox  last discovery 5s ago");
+  expect(i).toBeGreaterThan(-1);
+  expect(out[i + 1]).toBe("remote lab2  gateway gw2  0 sandboxes  last discovery never  error: openshell: not found [2J");
+  expect(out[i + 2]).toBe("remote lab3  gateway gw3  3 sandboxes  last discovery 5s ago");
+  expect(out.findIndex((l) => l.startsWith("remote sb1  gw/sb"))).toBeGreaterThan(i + 2);
+});
+
+test("status: the hub's config error is printed once", async () => {
+  const out = await statusOut([], { remotes: [{ config_error: "/c.toml: bad\nline" }], loadRemotes: () => { throw new Error("/c.toml: bad\nline"); } });
+  expect(out.filter((l) => l.includes("remote sync disabled"))).toEqual(["remote sync disabled: /c.toml: bad line"]);
+});
+
+test("status: a config broken since the hub started is a note", async () => {
+  const out = await statusOut([], { remotes: [], loadRemotes: () => { throw new Error("interval must be a number >= 0.1"); } });
+  expect(out).toContain("note: [[remote]] config is invalid; 'agmux hub restart' would disable sync: interval must be a number >= 0.1");
+});
+
+test("status: a config error is printed even when no hub is running", async () => {
+  const out: string[] = [];
+  await runHubCmd(["status"], base({ out: (s) => out.push(s), loadRemotes: () => { throw new Error("/c.toml: Invalid TOML"); } }));
+  expect(out).toContain("hub: not running");
+  expect(out).toContain("remote sync disabled: /c.toml: Invalid TOML");
 });

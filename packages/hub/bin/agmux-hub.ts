@@ -2,14 +2,14 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_CONFIG_SUBPATH, resolveHost } from "@agmux/protocol";
+import { AGMUX_CONFIG_SUBPATH, resolveHost, type RemoteSyncState } from "@agmux/protocol";
 import { Store } from "@agmux/store";
 import { createServer } from "../src/server.ts";
 import { drainQueueDir } from "../src/drain.ts";
 import { atomicWritePortFile, writePidFile, acquireSingletonLock } from "../src/bootstrap.ts";
 import { startNativeLivenessSweep } from "../src/liveness.ts";
 import { loadRemotes, type RemoteConfig } from "../src/sync/config.ts";
-import { startSync } from "../src/sync/sync-loop.ts";
+import { startSync, type SyncHandle } from "../src/sync/sync-loop.ts";
 
 const stateDir = path.join(os.homedir(), ".agmux");
 fs.mkdirSync(path.join(stateDir, "queue"), { recursive: true });
@@ -33,7 +33,9 @@ if (!lock) {
 }
 
 const store = Store.open(path.join(stateDir, "agmux.sqlite"));
-const server = createServer({ store, port: 0 });
+// Set below, once the config is read; `hub status` shows it (stdio is not visible).
+let syncState: () => RemoteSyncState[] = () => [];
+const server = createServer({ store, port: 0, remotes: () => syncState() });
 const drainRes = drainQueueDir(path.join(stateDir, "queue"), store);
 if (drainRes.eventsIngested > 0) {
   console.log(`drained ${drainRes.eventsIngested} events from ${drainRes.filesDrained} file(s)`);
@@ -47,14 +49,17 @@ const stopSweep = startNativeLivenessSweep(store, resolveHost());
 
 // A broken [[remote]] config disables sync; it never takes the hub down.
 let remotes: RemoteConfig[] = [];
+let configError: string | null = null;
 try {
   remotes = loadRemotes(path.join(os.homedir(), AGMUX_CONFIG_SUBPATH));
 } catch (e) {
-  console.error(`agmux-hub: remote sync disabled: ${e instanceof Error ? e.message : String(e)}`);
+  configError = e instanceof Error ? e.message : String(e);
+  console.error(`agmux-hub: remote sync disabled: ${configError}`);
 }
 // The sandbox-side `agmux events --consumer` id: [A-Za-z0-9._-]{1,64}.
 const consumer = resolveHost().replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64) || "agmux-hub";
-const stopSync = startSync({ store, remotes, consumer, log: (s) => console.log(s) });
+const sync: SyncHandle = startSync({ store, remotes, consumer, log: (s) => console.log(s) });
+syncState = () => (configError !== null ? [{ config_error: configError }] : sync.remotes());
 
 const SYNC_STOP_TIMEOUT_MS = 3_000;
 let shuttingDown = false;
@@ -64,7 +69,7 @@ const shutdown = async () => {
   shuttingDown = true;
   stopSweep();
   // Before releasing the lock (single writer); bounded so a stuck follower can't hang the exit.
-  await Promise.race([stopSync().catch(() => {}), new Promise((r) => setTimeout(r, SYNC_STOP_TIMEOUT_MS))]);
+  await Promise.race([sync.stop().catch(() => {}), new Promise((r) => setTimeout(r, SYNC_STOP_TIMEOUT_MS))]);
   try { fs.unlinkSync(path.join(stateDir, "hub.pid")); } catch {}
   try { fs.unlinkSync(path.join(stateDir, "hub.port")); } catch {}
   lock.release();

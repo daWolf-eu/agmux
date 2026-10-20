@@ -369,3 +369,14 @@ test("POST /ingest rejects a body over 1 MiB with 413 (with and without content-
   expect(ok.status).toBe(202);
   server.stop();
 });
+
+test("GET /hosts carries the sync loop's remotes (empty without one)", async () => {
+  const { server, url } = makeServer();
+  expect(((await (await fetch(`${url}/hosts`)).json()) as { remotes: unknown[] }).remotes).toEqual([]);
+  server.stop();
+  const state = [{ name: "lab", gateway: "gw", last_discovery_ts: null, nodes: 0 }];
+  const s2 = createServer({ store: Store.openInMemory(), port: 0, remotes: () => state });
+  const body = (await (await fetch(`http://${s2.hostname}:${s2.port}/hosts`)).json()) as { hosts: unknown[]; remotes: unknown[] };
+  expect(body).toEqual({ hosts: [], remotes: state });
+  s2.stop();
+});

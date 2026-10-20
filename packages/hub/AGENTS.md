@@ -12,7 +12,7 @@ The hub is the per-host query daemon (`src/server.ts`) and, on a machine with `[
 - Anything else is an `invalid` line: counted in `rejected`, never fatal.
 - **Line cap:** `splitLines` (`sync/follower.ts`) scans each byte once and holds at most `MAX_LINE_BYTES` (1 MiB) of a line; a longer one is dropped up to its `\n` and becomes `invalid line: too long` (the `LINE_TOO_LONG` sentinel). The source side caps too: `POST /ingest` bodies over `INGEST_MAX_BODY_BYTES` (1 MiB, `Bun.serve` `maxRequestBodySize`) get 413.
 
-Hub side: `GET /events?after_id=<n>&limit=<n>` → `{records, last_id}` (default page `EXPORT_DEFAULT_LIMIT` 500, clamped to `EXPORT_MAX_LIMIT` 5000; `agmux events --limit` rejects > 5000 because a clamped full page would look short). `GET /health` carries `db_id`; `GET /hosts` = the `hosts` projection.
+Hub side: `GET /events?after_id=<n>&limit=<n>` → `{records, last_id}` (default page `EXPORT_DEFAULT_LIMIT` 500, clamped to `EXPORT_MAX_LIMIT` 5000; `agmux events --limit` rejects > 5000 because a clamped full page would look short). `GET /health` carries `db_id`; `GET /hosts` = `{hosts, remotes}`: the `hosts` projection plus the sync loop's in-memory `RemoteSyncState[]` (`createServer({remotes})`; additive, `[]` without a sync loop).
 
 ## Cursor and `db_id`
 
@@ -36,7 +36,8 @@ Per `[[remote]]`: every `interval` s, `Discovery.list()` → one follower per di
 - **`host.synced`:** on becoming ok (first header / recovery), and when the cursor moved, debounced to `CURSOR_FLUSH_MS` (10 s). Also flushed on the connected→failing transition and on stop/removal, **only** if the node was ok and connected (a failing host's stale overlay must not be cleared). Not flushed on a `db_id` reset.
 - **`host.sync_failed`:** permanent error immediately; transient error once failing longer than `STALE_AFTER_INTERVALS` (3) x `interval`. Once per distinct error. `error` is `sanitizeRemoteText`ed.
 - **`host.removed`:** the node is absent from `REMOVE_AFTER_MISSES` (2) consecutive *successful* listings (a failed listing counts as nothing; one empty listing must not flap sessions to lost). Stops the follower, then appends only if the row belongs to that remote and is not already removed. A node that reappears is restarted and the next `host.synced` clears `removed_ts` (rows of a previous incarnation stay `lost` via `host-reset`).
-- `startSync` returns `stop()`; `bin/agmux-hub.ts` bounds it to 3 s and ignores a second signal (`shuttingDown`) so the lock is released exactly once. A broken `[[remote]]` config disables sync only (logged), never the hub.
+- `startSync` returns `SyncHandle {stop(), remotes()}`; `bin/agmux-hub.ts` bounds `stop` to 3 s and ignores a second signal (`shuttingDown`) so the lock is released exactly once. A broken `[[remote]]` config disables sync only, never the hub.
+- **Visible state:** the hub runs with stdio ignored, so its log lines go nowhere. `remotes()` = per remote `{name, gateway, last_discovery_ts, last_discovery_error?, nodes}` (error `sanitizeRemoteText`ed, cleared by the next good listing); a config that failed to load is a single `{config_error}` entry. `agmux hub status` prints one `remote <name>  gateway <gw>  <n> sandbox(es)  last discovery <age>[  error: …]` line per remote before the host lines, `remote sync disabled: <error>` for a config error, and runs `loadRemotes` itself so a broken config shows while the hub is down (or as a `note:` when it broke after the hub started).
 
 ## Validation of replicated events (`sync/ingest.ts`)
 
@@ -61,7 +62,7 @@ Reject-reason prefixes (stable, tests pin them): `invalid envelope`, `host event
 
 ## Config (`sync/config.ts`)
 
-`[[remote]]` in `~/.config/agmux/config.toml`; only the `remote` key is parsed (a broken `[profiles.*]` can't affect the hub). Unknown keys are errors.
+`[[remote]]` in `~/.config/agmux/config.toml`, read once at hub start (`agmux hub restart` after editing); only the `remote` key is parsed (a broken `[profiles.*]` can't affect the hub). Unknown keys are errors; a TOML syntax error is reported as `<config path>: <error>`.
 
 | key | default | notes |
 |---|---|---|
@@ -69,7 +70,7 @@ Reject-reason prefixes (stable, tests pin them): `invalid envelope`, `host event
 | `transport` | `openshell` | only `openshell` for now |
 | `gateway` | required | same charset; becomes the host prefix |
 | `selector` | `agmux=1` | passed to `sandbox list --selector` |
-| `interval` | `5` | seconds, > 0; discovery period and backoff base |
+| `interval` | `5` | seconds, >= `MIN_INTERVAL_S` (0.1); discovery period and backoff base |
 | `openshell_bin` | `openshell` | |
 | `agmux_bin` | `agmux` | path of the binary inside the sandbox |
 

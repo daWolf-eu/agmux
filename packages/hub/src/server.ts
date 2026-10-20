@@ -1,6 +1,6 @@
 import type { Server } from "bun";
 import type { Store } from "@agmux/store";
-import type { IngestEnvelope } from "@agmux/protocol";
+import type { IngestEnvelope, RemoteSyncState } from "@agmux/protocol";
 import { validateIngestEnvelope, validateKnownPayload, AGMUX_VERSION, expandStatusFilter } from "@agmux/protocol";
 import type { SessionStatus, Locality } from "@agmux/protocol";
 
@@ -15,6 +15,8 @@ export interface CreateServerOpts {
   store: Store;
   port: number;     // 0 → ephemeral
   hostname?: string; // default 127.0.0.1
+  // In-memory sync state for GET /hosts (absent = no sync loop, e.g. in a sandbox).
+  remotes?: () => RemoteSyncState[];
 }
 
 export function createServer(opts: CreateServerOpts): Server<undefined> {
@@ -112,7 +114,8 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
       }
 
       if (m === "GET" && url.pathname === "/hosts") {
-        return Response.json({ hosts: store.listHosts() });
+        // `remotes` is additive: older clients read `hosts` only.
+        return Response.json({ hosts: store.listHosts(), remotes: opts.remotes?.() ?? [] });
       }
 
       if (m === "GET" && url.pathname === "/events") {

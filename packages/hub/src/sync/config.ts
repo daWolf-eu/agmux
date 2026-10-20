@@ -7,6 +7,8 @@ export interface RemoteConfig {
 }
 
 const NAME_RE = /^[A-Za-z0-9._-]+$/;
+// Discovery period and backoff base: below this, `sandbox list` would run in a hot loop.
+export const MIN_INTERVAL_S = 0.1;
 const KEYS = new Set(["name", "transport", "gateway", "selector", "interval", "openshell_bin", "agmux_bin"]);
 
 function str(t: Record<string, unknown>, key: string, def: string | undefined, fail: (m: string) => never): string {
@@ -35,7 +37,9 @@ function parseOne(t: unknown, i: number, seen: Set<string>): RemoteConfig {
   const gateway = str(tbl, "gateway", undefined, fail);
   if (!NAME_RE.test(gateway)) return fail("invalid gateway (allowed: A-Z a-z 0-9 . _ -)");
   const interval = tbl.interval ?? 5;
-  if (typeof interval !== "number" || !Number.isFinite(interval) || interval <= 0) return fail("interval must be a positive number");
+  if (typeof interval !== "number" || !Number.isFinite(interval) || interval < MIN_INTERVAL_S) {
+    return fail(`interval must be a number >= ${MIN_INTERVAL_S}`);
+  }
   return {
     name, transport, gateway, interval,
     selector: str(tbl, "selector", "agmux=1", fail),
@@ -56,6 +60,11 @@ export function parseRemotes(raw: unknown): RemoteConfig[] {
 // Missing file or section → [].
 export function loadRemotes(configPath: string): RemoteConfig[] {
   if (!fs.existsSync(configPath)) return [];
-  const root = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  let root: Record<string, unknown>;
+  try {
+    root = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  } catch (e) {
+    throw new Error(`${configPath}: ${e instanceof Error ? e.message : String(e)}`);
+  }
   return parseRemotes(root.remote);
 }

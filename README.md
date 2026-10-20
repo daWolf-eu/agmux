@@ -487,14 +487,14 @@ name = "ai-sandbox"        # config/display key
 gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandbox>
 # transport = "openshell"  # only one for now
 # selector = "agmux=1"     # sandbox label selector
-# interval = 5             # seconds: discovery period and reconnect backoff base
+# interval = 5             # seconds (>= 0.1): discovery period and reconnect backoff base
 # openshell_bin = "openshell"
 # agmux_bin = "agmux"      # path inside the sandbox
 ```
 
 - The sandbox must be created with `AGMUX_HOST=<gateway>/<sandbox>` in its environment, or the stream is refused (`agmux hub status` shows the fix).
 - `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. The opt-in `host` column and the status-line chips mark remote sessions with `⇄ <sandbox>` (`?` while the sync is stale).
-- `agmux hub status` lists each remote's sync state; `agmux inspect <id>` adds the host.
+- `agmux hub status` lists each remote (gateway, sandbox count, last discovery and its error), each sandbox's sync state, and a broken `[[remote]]` config (also while the hub is down); `agmux inspect <id>` adds the host.
 - Remote sessions are read-only for now: `attach`, `resume` and `kill` refuse them, and `pid` / tmux coordinates are not shown.
 
 ## Troubleshooting

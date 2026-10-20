@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { NO_SESSION_ID, type EventEnvelope, type ReplicationHeader } from "@agmux/protocol";
+import { NO_SESSION_ID, type EventEnvelope, type RemoteSyncState, type ReplicationHeader } from "@agmux/protocol";
 import { Store } from "@agmux/store";
 import type { RemoteConfig } from "../src/sync/config.ts";
 import type { DiscoveredNode, Discovery } from "../src/sync/discovery.ts";
@@ -68,7 +68,7 @@ function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
     },
   };
   let id = 0;
-  const stop = startSync({ store, remotes: o.remotes ?? [remote], consumer: "mac", log: (s) => logs.push(s) }, {
+  const sync = startSync({ store, remotes: o.remotes ?? [remote], consumer: "mac", log: (s) => logs.push(s) }, {
     discoveryFor: () => discovery,
     transportFor: () => transport,
     follower: ((fo: FollowerOptions) => { const f = new FakeFollower(fo); followers.push(f); return f; }) as any,
@@ -76,7 +76,7 @@ function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
     newId: () => `ev-${++id}`,
   });
   return {
-    store, followers, logs, stop, hostEvents,
+    store, followers, logs, stop: sync.stop, remotes: sync.remotes, hostEvents,
     setListing: (l: Listing) => { listing = l; },
     listOnce: (...l: Listing[]) => { once.push(...l); },
     lists: () => lists,
@@ -343,6 +343,19 @@ describe("startSync", () => {
     const lists = h.lists();
     await ticks();
     expect(h.lists()).toBe(lists);
+  });
+
+  test("remotes() reports each remote's last discovery, its error and its node count", async () => {
+    const h = harness();
+    const st = () => h.remotes()[0] as Extract<RemoteSyncState, { name: string }>;
+    expect(h.remotes()).toEqual([{ name: "lab", gateway: "gw", last_discovery_ts: null, nodes: 0 }]);
+    h.setListing(new Error("openshell: \x1b[31mgateway unreachable"));
+    await until(() => "last_discovery_error" in st(), "failed discovery");
+    expect(st()).toMatchObject({ last_discovery_ts: new Date(h.now()).toISOString(), last_discovery_error: "openshell: [31mgateway unreachable", nodes: 0 });
+    h.setListing([node("a"), node("b")]);
+    await until(() => st().nodes === 2, "listing");
+    expect(st().last_discovery_error).toBeUndefined();
+    await h.stop();
   });
 
   test("no remotes → no timers, stop resolves", async () => {

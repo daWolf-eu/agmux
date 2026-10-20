@@ -1,5 +1,6 @@
 import {
-  NO_SESSION_ID, sanitizeRemoteText, type HostRemovedPayload, type HostSyncedPayload, type HostSyncFailedPayload, type ReplicationHeader,
+  NO_SESSION_ID, sanitizeRemoteText, type HostRemovedPayload, type HostSyncedPayload, type HostSyncFailedPayload,
+  type RemoteSyncState, type ReplicationHeader,
 } from "@agmux/protocol";
 import type { Store } from "@agmux/store";
 import type { RemoteConfig } from "./config.ts";
@@ -38,8 +39,13 @@ interface NodeState {
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-// Returns stop: stops every follower, flushes moved cursors and clears the timers.
-export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<void> {
+// stop: stops every follower, flushes moved cursors and clears the timers.
+// remotes: per-remote discovery state (the hub's stdio is not visible anywhere).
+export interface SyncHandle { stop(): Promise<void>; remotes(): RemoteSyncState[] }
+
+interface DiscoveryState { last_discovery_ts: string | null; last_discovery_error?: string }
+
+export function startSync(o: SyncOptions, deps: SyncDeps = {}): SyncHandle {
   const discoveryFor = deps.discoveryFor ?? ((r) => openshellDiscovery(r, (argv) => runCapture(argv)));
   const transportFor = deps.transportFor ?? openshellTransport;
   const follow = deps.follower ?? startFollower;
@@ -49,6 +55,7 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
   const nodes = new Map<string, NodeState>();   // by host, across all remotes
   const removals = new Map<string, Promise<void>>(); // by host, while in flight
   const timers: ReturnType<typeof setInterval>[] = [];
+  const discoveries = new Map<RemoteConfig, DiscoveryState>();
   let stopped = false;
 
   function append(host: string, kind: string, payload: unknown): void {
@@ -152,6 +159,8 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
   function runRemote(r: RemoteConfig): void {
     const discovery = discoveryFor(r);
     const misses = new Map<string, number>();
+    const state: DiscoveryState = { last_discovery_ts: null };
+    discoveries.set(r, state);
     let busy = false;
     let lastError: string | null = null;
     const discover = async () => {
@@ -164,9 +173,12 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
           const msg = errMsg(e);
           if (msg !== lastError) o.log(`sync: ${r.name}: discovery failed: ${msg}`);
           lastError = msg;
+          Object.assign(state, { last_discovery_ts: new Date(nowMs()).toISOString(), last_discovery_error: sanitizeRemoteText(msg) });
           return;
         }
         lastError = null;
+        state.last_discovery_ts = new Date(nowMs()).toISOString();
+        delete state.last_discovery_error;
         if (!stopped) reconcile(r, listed, misses);
       } catch (e) {
         o.log(`sync: ${r.name}: ${errMsg(e)}`);   // never crash the hub
@@ -190,7 +202,12 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
 
   for (const r of o.remotes) runRemote(r);
 
-  return async () => {
+  const remotes = (): RemoteSyncState[] => o.remotes.map((r) => ({
+    name: r.name, gateway: r.gateway, ...discoveries.get(r)!,
+    nodes: [...nodes.values()].filter((ns) => ns.remote === r).length,
+  }));
+
+  const stop = async () => {
     if (stopped) return;
     stopped = true;
     for (const t of timers) clearInterval(t);
@@ -199,4 +216,5 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): () => Promise<vo
     await Promise.all([...removals.values(), ...all.map((ns) => stopNode(ns).catch((e) =>
       o.log(`sync: ${ns.node.host}: stop failed: ${errMsg(e)}`)))]);
   };
+  return { stop, remotes };
 }

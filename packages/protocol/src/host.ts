@@ -41,6 +41,13 @@ export interface HostRow {
   replication: number | null; rejected: number; removed_ts: string | null;
 }
 
+// In-memory per-[[remote]] sync state of a running hub (GET /hosts `remotes`):
+// what `hub status` needs when setup fails before any `hosts` row exists. A
+// broken config yields one `{config_error}` entry instead.
+export type RemoteSyncState =
+  | { config_error: string }
+  | { name: string; gateway: string; last_discovery_ts: string | null; last_discovery_error?: string; nodes: number };
+
 export const REPLICATION_VERSION = 1;
 
 // Text that reaches a terminal (session names, branches, cwd, tool details —

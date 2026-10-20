@@ -56,7 +56,8 @@ The single source of truth for the running version is
   `sandbox exec`, schema v9: `events.source`, `hosts`; v10: `source_db`). Sandboxes need `AGMUX_HOST`.
   Remote sessions appear in `ls`/`dash`/status line (`⇄ host`, `?` when stale);
   `ls --remote|--local|--host <glob>`, `[ls] locality`, dash `host` column and `r` key,
-  sync state in `agmux hub status` and `inspect`. Gone sandboxes turn `lost`, and so do
+  sync state in `agmux hub status` (per remote: last discovery and its error, a broken
+  config even while the hub is down) and `inspect`. Gone sandboxes turn `lost`, and so do
   the old sessions of a sandbox recreated under the same name.
 
 ### Changed
