@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import { stripControls, type SessionRow } from "@agmux/protocol";
 import { relTime } from "./reltime.ts";
 import { activityCell } from "../format.ts";
 import { hostLabel } from "./locality.ts";
@@ -50,7 +50,7 @@ function tmuxText(r: SessionRow): string {
   return r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "";
 }
 
-export const COLUMNS: Record<ColumnKey, ColDef> = {
+const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
   // The cell is a width placeholder; SessionTable draws the (animated) glyph.
   glyph: { key: "glyph", header: "", align: "left", style: "state", text: () => " " },
   name: { key: "name", header: "NAME", align: "left", style: "state", max: 40, min: 12, text: nameText },
@@ -80,6 +80,12 @@ export const COLUMNS: Record<ColumnKey, ColDef> = {
   host: { key: "host", header: "HOST", align: "left", style: "sub", max: 28, min: 8, text: hostLabel },
   project: { key: "project", header: "PROJECT", align: "left", style: "sub", max: 24, min: 6, text: (r) => r.project ?? "" },
 };
+
+// Cell text reaches the terminal: names, branches, tool details of remote rows
+// come from a sandbox, so no column may emit a control character.
+export const COLUMNS = Object.fromEntries(
+  Object.entries(RAW_COLUMNS).map(([k, d]) => [k, { ...d, text: (r: SessionRow, now: number) => stripControls(d.text(r, now)) }]),
+) as Record<ColumnKey, ColDef>;
 
 // Squeeze order when the row is wider than the pane: the least identifying
 // columns give way first, the name last.

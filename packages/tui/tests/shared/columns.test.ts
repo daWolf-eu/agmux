@@ -104,3 +104,16 @@ test("host gives way before name in SHRINK_ORDER", async () => {
   expect(SHRINK_ORDER.indexOf("host")).toBeGreaterThanOrEqual(0);
   expect(SHRINK_ORDER.indexOf("host")).toBeLessThan(SHRINK_ORDER.indexOf("name"));
 });
+
+const HOSTILE = "evil\x1b]52;c;ZXZpbA==\x07\nname";
+const CTRL = /[\u0000-\u001f\u007f-\u009f]/;
+
+test("every column's text has control characters replaced (remote text is untrusted)", () => {
+  const r = mkRow({
+    name: HOSTILE, git_repo: HOSTILE, git_branch: HOSTILE, project: HOSTILE, profile: HOSTILE,
+    tmux_session: HOSTILE, tmux_window: "1", status: "running", last_tool: HOSTILE, last_tool_detail: HOSTILE,
+    remote: true, host: `gw/${HOSTILE}`,
+  });
+  for (const k of COLUMN_KEYS) expect(COLUMNS[k].text(r, NOW)).not.toMatch(CTRL);
+  expect(COLUMNS.name.text(r, NOW)).toBe("evil ]52;c;ZXZpbA==  name");
+});

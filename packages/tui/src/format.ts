@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import { stripControls, type SessionRow } from "@agmux/protocol";
 import { hostLabel } from "./shared/locality.ts";
 
 const ACTIVITY_MAX = 40;
@@ -44,7 +44,7 @@ export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
     r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
     short(r.start_ts),
     short(r.last_heartbeat_ts ?? r.start_ts),
-  ]);
+  ].map(stripControls));   // remote text is untrusted: no escapes or newlines in a cell
   // -r flips data rows only — the header stays on top.
   if (reverse) data.reverse();
   const widths = header.map((h, i) =>

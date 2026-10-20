@@ -53,3 +53,10 @@ test("tmuxTarget is empty without a session and joins when present", () => {
   expect(tmuxTarget(mkRow({ tmux_session: "s", tmux_window: "w" }))).toBe("s:w");
   expect(tmuxTarget(mkRow({ tmux_session: "s", tmux_window: "w", tmux_pane: "%2" }))).toBe("s:w %2");
 });
+
+test("yank values carry no control characters (a pasted newline would run a command)", () => {
+  const evil = "/tmp\x1b]52;c;ZXZpbA==\x07\nrm -rf ~";
+  const f = yankFields(mkRow({ cwd: evil, project: evil, command: evil }));
+  for (const x of f) expect(x.value).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+  expect(f.find((x) => x.label === "CWD")!.value).toBe("/tmp ]52;c;ZXZpbA==  rm -rf ~");
+});

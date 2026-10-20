@@ -43,11 +43,19 @@ export interface HostRow {
 
 export const REPLICATION_VERSION = 1;
 
+// Text that reaches a terminal (session names, branches, cwd, tool details —
+// replicated from sandboxes, so untrusted): C0, DEL and C1 controls become a
+// space, so no escape sequence or newline survives. Same length, nothing else
+// changes; events stay verbatim, this runs at the display sinks.
+export function stripControls(s: string): string {
+  return s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ");
+}
+
 // Remote-supplied text (stderr tails, versions, host names) is untrusted: strip
 // control characters (terminal escapes, newlines) and cap the length before it is
 // stored or printed.
 export function sanitizeRemoteText(s: string, max = 300): string {
-  const t = s.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").replace(/\s+/g, " ").trim();
+  const t = stripControls(s).replace(/\s+/g, " ").trim();
   return t.length > max ? `${t.slice(0, max)}…` : t;
 }
 export interface ReplicationHeader { replication: number; agmux: string; db_id: string; host: string }

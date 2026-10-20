@@ -95,7 +95,9 @@ The single source of truth for the running version is
   ids reach the notifier click action and status-line ranges only as `[0-9a-f-]`, and
   every `#` of agent text is doubled for tmux (no `#{…}`/`#(…)` from a session name).
   Sync errors and versions from sandboxes are stripped of control characters before
-  they are stored or printed.
+  they are stored or printed; session text (name, title, repo, branch, cwd, tool) is
+  stored verbatim and printed with control characters replaced by `ls`, `watch`, `dash`
+  (table, detail, yank), `explain` and the status line.
 
 ### Fixed
 - tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the

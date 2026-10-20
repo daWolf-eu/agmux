@@ -299,3 +299,11 @@ test("no tmux format survives in agent text: every # is doubled", () => {
   expect(out).toContain("a ##{host} ##(id) ##x");
   expect(statusWidth("a ##{host}")).toBe(9);
 });
+
+test("status-line fields carry no control characters", () => {
+  const evil = "x\x1b]52;c;ZXZpbA==\x07\ny";
+  const out = formatStatusLine([mkRow({ name: evil, git_repo: evil, git_branch: evil, project: evil, last_tool: evil, remote: true })],
+    { ...OPTS, format: "{name} {repo} {branch} {project} {last_tool}" });
+  expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+  expect(out).toContain("⇄ x ]52;c;ZXZpbA== y");
+});

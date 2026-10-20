@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import { stripControls, type SessionRow } from "@agmux/protocol";
 
 export interface YankField {
   label: string;
@@ -31,5 +31,6 @@ export function yankFields(row: SessionRow): YankField[] {
     ["Profile", row.profile ?? ""],
     ["Parent ID", row.parent_session_id ?? ""],
   ];
-  return raw.map(([label, value]) => ({ label, value, empty: value.trim() === "" }));
+  // Shown in the popup and pasted into shells: no control characters (remote text is untrusted).
+  return raw.map(([label, v]) => { const value = stripControls(v); return { label, value, empty: value.trim() === "" }; });
 }

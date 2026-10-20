@@ -23,3 +23,11 @@ test("hostDetail: no ago after yesterday", () => {
   expect(hostDetail(mkRow({ remote: true, host: "os/sbx", last_sync_ts: "2026-06-19T09:00:00.000Z" }), NOW))
     .toBe("os/sbx · last sync yesterday");
 });
+
+test("detailFields replaces control characters in every value", async () => {
+  const { detailFields } = await import("../../src/opentui/PreviewPane.tsx");
+  const evil = "x\x1b]52;c;ZXZpbA==\x07\ny";
+  const f = detailFields(mkRow({ cwd: evil, project: evil, command: evil, args: [evil], profile: evil, host: evil, native_session_id: evil }), null);
+  for (const [, v] of f) expect(v).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+  expect(f.find(([k]) => k === "CWD")![1]).toBe("x ]52;c;ZXZpbA==  y");
+});

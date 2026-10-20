@@ -1,4 +1,4 @@
-import { isShellSafeId, shellSafeIdChars, type SessionRow } from "@agmux/protocol";
+import { isShellSafeId, shellSafeIdChars, stripControls, type SessionRow } from "@agmux/protocol";
 import { statusGlyph, statusTone, toneGlyph, STATUS_COLORS, type StatusTone } from "./glyph.ts";
 import { MOCHA } from "./palette.ts";
 import { abbreviateBranch, clip, COLUMNS, type ColumnStyle } from "./columns.ts";
@@ -138,7 +138,12 @@ const FIELD_STYLE: Record<string, ColumnStyle> = {
   agent_kind: "sub", last_tool: "sub",
 };
 
+// Field text is untrusted (remote rows): no control characters reach tmux.
 function fieldValue(r: SessionRow, key: string, caps: Caps): string {
+  return stripControls(rawFieldValue(r, key, caps));
+}
+
+function rawFieldValue(r: SessionRow, key: string, caps: Caps): string {
   switch (key) {
     case "glyph": return statusGlyph(r).glyph;
     case "name": return (r.remote ? "⇄ " : "") + clip(COLUMNS.name.text(r, 0), caps.name);

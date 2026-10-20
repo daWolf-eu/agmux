@@ -93,3 +93,11 @@ test("formatTable with a remote row: HOST right after NAME; local cell is exactl
   expect(hostCell(lines[1]!)).toBe("-");
   expect(lines[2]!.slice(col)).toStartWith("⇄ sbx-1");
 });
+
+test("formatTable replaces control characters in every cell: one line per row, no escapes", () => {
+  const evil = "x\x1b]52;c;ZXZpbA==\x07\ny";
+  const lines = formatTable([mkRow({ name: evil, git_repo: evil, git_branch: evil, cwd: evil, last_tool: evil, last_tool_detail: evil, profile: evil })], false);
+  expect(lines).toHaveLength(2);
+  for (const l of lines) expect(l).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+  expect(lines[1]).toContain("x ]52;c;ZXZpbA==  y");
+});

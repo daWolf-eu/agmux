@@ -42,3 +42,12 @@ describe("sanitizeRemoteText", () => {
     expect(sanitizeRemoteText("a".repeat(400)).length).toBe(301);
   });
 });
+
+describe("stripControls", () => {
+  test("C0, DEL and C1 become spaces; length and everything else kept", async () => {
+    const { stripControls } = await import("../src/host.ts");
+    const s = "a\x1b]52;c;ZXZpbA==\x07b\nc\x7fd\x9be ü";
+    expect(stripControls(s)).toBe("a ]52;c;ZXZpbA== b c d e ü");
+    expect(stripControls("x".repeat(1000)).length).toBe(1000);
+  });
+});

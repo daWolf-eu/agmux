@@ -25,7 +25,7 @@
 
 ## Table columns (`shared/columns.ts`)
 
-`COLUMNS` is the registry; `[dash] columns` (validated in `cli/src/parse-dash.ts` against `COLUMN_KEYS`) picks and orders them, default `DEFAULT_COLUMNS`. Sorting (`shared/sort.ts`) cycles through the visible columns; last-seen newest-first is always the tie-break.
+`COLUMNS` is the registry (every `text` is wrapped in `stripControls`: cell text never carries a control character; remote rows are sandbox-controlled); `[dash] columns` (validated in `cli/src/parse-dash.ts` against `COLUMN_KEYS`) picks and orders them, default `DEFAULT_COLUMNS`. Sorting (`shared/sort.ts`) cycles through the visible columns; last-seen newest-first is always the tie-break.
 
 ### Remote sessions: `host` column and locality
 

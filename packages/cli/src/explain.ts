@@ -1,4 +1,4 @@
-import type { SessionRow, StatusDecision } from "@agmux/protocol";
+import { stripControls, type SessionRow, type StatusDecision } from "@agmux/protocol";
 import { resolvePrefix } from "./id-resolve.ts";
 import { resolvePane } from "./seen.ts";
 
@@ -42,7 +42,8 @@ export function formatDecision(d: StatusDecision): string {
     lines.push(`title     ${JSON.stringify(d.title.title ?? "")} → ${d.title.activity ?? "no signal"} at ${at(d.title.ts, d.now)}`);
   }
   lines.push(`last work ${at(d.last_work_ts, d.now)}`);
-  return lines.join("\n");
+  // Names, branches, tools of remote sessions come from a sandbox (JSON.stringify keeps C1).
+  return lines.map(stripControls).join("\n");
 }
 
 // `agmux explain <id|prefix> | --pane <pane_id>`: why is it in this state?

@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/react */
-import type { SessionRow } from "@agmux/protocol";
+import { stripControls, type SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
 import { syncAge } from "../shared/reltime.ts";
@@ -9,7 +9,7 @@ import { MOCHA, FAINT_SCROLLBAR } from "../shared/palette.ts";
 const TABS: PreviewMode[] = ["mirror", "detail"];
 
 function shortHeader(row: SessionRow): string {
-  return `${row.session_id.slice(0, 13)} · ${row.agent_kind}${row.profile ? ` · ${row.profile}` : ""}`;
+  return stripControls(`${row.session_id.slice(0, 13)} · ${row.agent_kind}${row.profile ? ` · ${row.profile}` : ""}`);
 }
 
 function exitStr(r: SessionRow): string {
@@ -27,9 +27,8 @@ export function hostDetail(r: SessionRow, now: number = Date.now()): string {
 }
 
 // Full technical detail — no truncation. Long values wrap inside the scrollbox.
-function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
-  const r = props.row;
-  const u = props.usage;
+// Values reach the terminal and remote ones come from a sandbox: no control characters.
+export function detailFields(r: SessionRow, u: UsageSummary | null): [string, string][] {
   const fields: [string, string][] = [
     ["ID", r.session_id],
     ["Status", r.status],
@@ -55,6 +54,11 @@ function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
     fields.push(["Cost", `$${u.cost_usd.toFixed(4)}`]);
     fields.push(["Model", u.last_model ?? "-"]);
   }
+  return fields.map(([k, v]) => [k, stripControls(v)]);
+}
+
+function DetailBody(props: { row: SessionRow; usage: UsageSummary | null }) {
+  const fields = detailFields(props.row, props.usage);
   const lw = fields.reduce((m, [k]) => Math.max(m, k.length), 0);
   return (
     <box style={{ flexDirection: "column" }}>

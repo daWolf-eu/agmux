@@ -44,3 +44,10 @@ test("explainCmd on an unknown prefix exits 2", async () => {
   expect(await explainCmd({ idOrPrefix: "zzz", hubUrl: "http://h" }, { fetchImpl, out: () => {}, err: (s) => errs.push(s) })).toBe(2);
   expect(errs[0]).toContain("no session matches");
 });
+
+test("formatDecision prints no control characters from session text", () => {
+  const evil = "x\x1b]52;c;ZXZpbA==\x07\x9b\ny";
+  const out = formatDecision({ ...decision, last_tool: evil, meta: { ...decision.meta, git_repo: evil, git_branch: evil, name: evil } });
+  expect(out.split("\n").every((l) => !/[\u0000-\u001f\u007f-\u009f]/.test(l))).toBe(true);
+  expect(out).toContain("tool      x ]52;c;ZXZpbA==   y");
+});
