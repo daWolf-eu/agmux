@@ -44,7 +44,8 @@ function reject(reason: string): { ok: false; reason: string } {
   return { ok: false, reason: sanitizeRemoteText(reason, 299) };
 }
 
-export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedHost: string): IngestOutcome {
+// sourceDb: the db_id from the stream's header (the sandbox store's incarnation).
+export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedHost: string, sourceDb: string): IngestOutcome {
   const ev = rec.ev;
   const env = validateEnvelope(ev);
   if (!env.ok) return reject(`invalid envelope: ${env.error}`);
@@ -64,7 +65,7 @@ export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedH
   }
   // The projection can still throw on hostile input (unique constraints, deep nesting).
   try {
-    return { ok: true, appended: store.appendReplicated(ev, expectedHost) };
+    return { ok: true, appended: store.appendReplicated(ev, expectedHost, sourceDb) };
   } catch (e) {
     return reject(`append failed: ${e instanceof Error ? e.message : String(e)}`);
   }

@@ -209,8 +209,9 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
 
   function onRecord(rec: ReplicationRecord): void {
     // Sandbox output is untrusted: a record that makes the store throw is just a rejected record.
+    // Records only arrive once connected, i.e. after the header set dbId.
     let r: IngestOutcome;
-    try { r = ingestReplicated(o.store, rec, o.node.host); } catch (e) { r = { ok: false, reason: `append failed: ${errMsg(e)}` }; }
+    try { r = ingestReplicated(o.store, rec, o.node.host, st.dbId!); } catch (e) { r = { ok: false, reason: `append failed: ${errMsg(e)}` }; }
     st.cursor = Math.max(st.cursor, rec.id);
     if (!r.ok) { st.rejected++; st.lastError = `record ${rec.id}: ${r.reason}`; }
     notify();

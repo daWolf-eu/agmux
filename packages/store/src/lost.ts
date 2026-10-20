@@ -31,6 +31,10 @@ export interface RowForDerive extends RowForLostCheck {
   seen_ts?: string | null;
   // Set when the row's remote host was removed (hosts.removed_ts).
   host_removed_ts?: string | null;
+  // db_id of the store the row's last replicated event came from, and the
+  // host's current one (hosts.db_id): different = the sandbox was recreated.
+  source_db?: string | null;
+  host_db_id?: string | null;
   host?: string;
 }
 
@@ -57,6 +61,8 @@ export function isUnseen(row: Pick<RowForDerive, "attention_ts" | "seen_ts">): b
 // projection status. Rules, in order:
 //   1. ended/lost are final.
 //   1b. a live row on a removed remote host is lost.
+//   1c. a live row from an earlier incarnation of its remote host (the sandbox
+//       was recreated under the same name: new db_id) is lost.
 //   2. a wrapper row whose heartbeat went stale is lost.
 //   3. running with no evidence of work for WORKING_TIMEOUT_MS decays to idle —
 //      the turn ended without a Stop we could see (interrupt, crash, missed hook).
@@ -72,6 +78,12 @@ export function deriveStatus(row: RowForDerive, now: Date = new Date()): Derived
     return {
       status: "lost", rule: "host-removed", last_work_ts: lastWork,
       reason: `host ${row.host} removed at ${row.host_removed_ts}`,
+    };
+  }
+  if (row.source_db && row.host_db_id && row.source_db !== row.host_db_id) {
+    return {
+      status: "lost", rule: "host-reset", last_work_ts: lastWork,
+      reason: `host ${row.host} was recreated (db ${row.source_db.slice(0, 8)} → ${row.host_db_id.slice(0, 8)})`,
     };
   }
   const eff = computeEffectiveStatus(row, now);

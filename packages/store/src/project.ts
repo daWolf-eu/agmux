@@ -519,3 +519,9 @@ function applySessionSeen(db: Database, ev: EventEnvelope): void {
   const p = ev.payload as any;
   markSeen(db, ev, typeof p?.source === "string" ? p.source : "dismiss");
 }
+
+// A replicated event marks its session with the source store's db_id; the latest
+// applied event wins (deriveStatus compares it against hosts.db_id).
+export function applySourceDb(db: Database, sessionId: string, sourceDb: string): void {
+  db.query(`UPDATE sessions SET source_db = ? WHERE session_id = ?`).run(sourceDb, sessionId);
+}

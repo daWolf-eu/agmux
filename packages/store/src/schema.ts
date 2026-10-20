@@ -155,3 +155,12 @@ CREATE TABLE IF NOT EXISTS hosts (
   rejected INTEGER NOT NULL DEFAULT 0, removed_ts TEXT
 );
 `;
+
+// Source incarnation: `source_db` = the `db_id` of the store a replicated event
+// came from (NULL for local events). `sessions.source_db` follows the latest
+// replicated event applied to the session, so a session of a sandbox that was
+// recreated under the same host name (new db_id) can be told apart.
+export const SCHEMA_V10 = `
+ALTER TABLE events ADD COLUMN source_db TEXT;
+ALTER TABLE sessions ADD COLUMN source_db TEXT;
+`;

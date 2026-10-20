@@ -127,6 +127,7 @@ export function expandStatusFilter(value: string): SessionStatus[] | null {
 export type StatusRule =
   | "terminal"          // stored ended/lost, reported as-is
   | "host-removed"      // live row whose remote host was removed → lost
+  | "host-reset"        // live row from an earlier incarnation (db_id) of its remote host → lost
   | "heartbeat-stale"   // wrapper row with no heartbeat for LOST_THRESHOLD_MS → lost
   | "working-timeout"   // running with no evidence of work for WORKING_TIMEOUT_MS → idle
   | "unseen"            // idle, but the last attention event is newer than the last seen → done

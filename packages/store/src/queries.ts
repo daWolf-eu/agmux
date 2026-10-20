@@ -12,7 +12,8 @@ const ROW_SELECT = `SELECT s.*, u.turn_count,
        sn.seen_ts, sn.seen_source,
        m.name AS meta_name, m.name_source AS meta_name_source,
        m.git_branch, m.git_repo, m.git_remote, m.git_root,
-       h.host AS remote_host, h.last_sync_ok, h.last_sync_ts, h.removed_ts AS host_removed_ts
+       h.host AS remote_host, h.last_sync_ok, h.last_sync_ts, h.removed_ts AS host_removed_ts,
+       h.db_id AS host_db_id
   FROM sessions s
   LEFT JOIN session_usage u ON u.session_id = s.session_id
   LEFT JOIN session_activity a ON a.session_id = s.session_id
@@ -81,9 +82,12 @@ function decodeRow(raw: any): SessionRow {
   };
 }
 
-// A removed host only matters to status derivation; it is not part of SessionRow.
+// A removed or recreated host only matters to status derivation; it is not part of SessionRow.
 function derive(row: SessionRow, raw: any, now: Date) {
-  return deriveStatus({ ...row, host_removed_ts: raw.host_removed_ts ?? null }, now);
+  return deriveStatus({
+    ...row, host_removed_ts: raw.host_removed_ts ?? null,
+    source_db: raw.source_db ?? null, host_db_id: raw.host_db_id ?? null,
+  }, now);
 }
 
 function storedRow(db: Database, sid: string): { row: SessionRow; raw: any } | null {

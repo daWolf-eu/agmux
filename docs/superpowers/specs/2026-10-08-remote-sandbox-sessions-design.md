@@ -678,6 +678,7 @@ Refinements made while implementing; the code is authoritative.
 - R11: `host.synced` is flushed on connected-to-failing, and on stop only for an ok host; `host.removed` needs 2 consecutive successful listings without the node (`sync-loop.ts`).
 - R13b: "last sync" renders as `<rel> ago` only for short durations (`tui/src/shared/reltime.ts` `syncAge`, used by `hub status` and dash detail).
 - R14: `sanitizeRemoteText` (`protocol/src/host.ts`) strips control chars from sandbox text, applied at the writer and at the sink (`hub-cmd.ts`).
+- R17: replicated rows carry the source store's `db_id` (schema v10 `events.source_db` / `sessions.source_db`); a live row whose `source_db` differs from `hosts.db_id` derives `lost` with rule `host-reset`, so a sandbox recreated under the same name never resurrects old sessions (`store/src/lost.ts`).
 
 ## 11. Open questions / verify list
 

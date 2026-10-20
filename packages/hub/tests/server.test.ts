@@ -317,7 +317,7 @@ test("GET /events?after_id honours limit and clamps to 5000", async () => {
 test("GET /sessions?locality filters local vs remote; invalid -> 400", async () => {
   const { server, url, store } = makeServer();
   store.append(HOST_SYNCED as any);
-  store.appendReplicated(remoteRegistered, "gw/sbx");
+  store.appendReplicated(remoteRegistered, "gw/sbx", "db-1");
   await post(url, startedEv);
   const remote = (await (await fetch(`${url}/sessions?locality=remote`)).json()) as { sessions: { session_id: string }[] };
   expect(remote.sessions.map((s) => s.session_id)).toEqual([REMOTE_SID]);

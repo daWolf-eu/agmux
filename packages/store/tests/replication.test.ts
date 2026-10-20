@@ -24,22 +24,23 @@ const count = (s: Store) => s.rawDb().query<{ n: number }, []>(`SELECT COUNT(*) 
 
 test("appendReplicated stores source and applies the projection", () => {
   const s = Store.openInMemory();
-  expect(s.appendReplicated(registered("e1", "gw/sbx"), "gw/sbx")).toBe(true);
+  expect(s.appendReplicated(registered("e1", "gw/sbx"), "gw/sbx", "db-x")).toBe(true);
   expect(s.getSession(sid)).not.toBeNull();
-  const r = s.rawDb().query<any, []>(`SELECT source FROM events WHERE event_id='e1'`).get();
-  expect(r.source).toBe("gw/sbx");
+  const r = s.rawDb().query<any, []>(`SELECT source, source_db FROM events WHERE event_id='e1'`).get();
+  expect(r).toEqual({ source: "gw/sbx", source_db: "db-x" });
+  expect(s.rawDb().query(`SELECT source_db FROM sessions`).get()).toEqual({ source_db: "db-x" });
 });
 
 test("appendReplicated is idempotent on event_id", () => {
   const s = Store.openInMemory();
-  expect(s.appendReplicated(ev("e1"), "gw/sbx")).toBe(true);
-  expect(s.appendReplicated(ev("e1"), "gw/sbx")).toBe(false);
+  expect(s.appendReplicated(ev("e1"), "gw/sbx", "db-x")).toBe(true);
+  expect(s.appendReplicated(ev("e1"), "gw/sbx", "db-x")).toBe(false);
   expect(count(s)).toBe(1);
 });
 
 test("appendReplicated drops dedup_key", () => {
   const s = Store.openInMemory();
-  s.appendReplicated(ev("e1", { dedup_key: "k1" }), "gw/sbx");
+  s.appendReplicated(ev("e1", { dedup_key: "k1" }), "gw/sbx", "db-x");
   const r = s.rawDb().query<any, []>(`SELECT dedup_key FROM events WHERE event_id='e1'`).get();
   expect(r.dedup_key).toBeNull();
 });
@@ -47,7 +48,7 @@ test("appendReplicated drops dedup_key", () => {
 test("listExportable excludes replicated rows", () => {
   const s = Store.openInMemory();
   s.append(ev("e1"));
-  s.appendReplicated(ev("e2"), "gw/sbx");
+  s.appendReplicated(ev("e2"), "gw/sbx", "db-x");
   s.append(ev("e3"));
   const r = s.listExportable(0, 10);
   expect(r.records.map((x) => x.ev.event_id)).toEqual(["e1", "e3"]);

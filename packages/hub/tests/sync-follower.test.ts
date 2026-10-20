@@ -140,9 +140,9 @@ describe("startFollower", () => {
     const store = Store.openInMemory();
     let calls = 0;
     const orig = store.appendReplicated.bind(store);
-    store.appendReplicated = (ev, src) => {
+    store.appendReplicated = (ev, src, db) => {
       if (++calls === 1) throw new Error("UNIQUE constraint failed");
-      return orig(ev, src);
+      return orig(ev, src, db);
     };
     const h = harness({ store });
     await until(() => h.procs.length === 1, "spawn");
@@ -274,6 +274,8 @@ describe("startFollower", () => {
     h.last().push(header({ db_id: "db-new" }), record(1));
     await until(() => h.f.status().cursor === 1, "record");
     expect(h.procs).toHaveLength(2);
+    // Records are tagged with the incarnation they came from (the header's db_id).
+    expect(h.store.rawDb().query("SELECT source_db FROM events").all()).toEqual([{ source_db: "db-new" }]);
     await h.f.stop();
   });
 

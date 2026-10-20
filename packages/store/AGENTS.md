@@ -1,14 +1,15 @@
 # AGENTS.md — `@agmux/store`
 
-SQLite event log + projections. Everything is derived from `events`; `rebuildProjections()` replays it. Remote-session additions (schema v9) below.
+SQLite event log + projections. Everything is derived from `events`; `rebuildProjections()` replays it. Remote-session additions (schema v9, v10) below.
 
 ## Schema v9 (`src/schema.ts`)
 
 - `events.source TEXT`: NULL = ingested on this host; `<host>` = replicated in from that host. Gates export (`listExportable`) and is the loop-prevention rule.
 - `hosts` table: projection of `host.*` events (`src/hosts.ts`), keyed by `host`: `remote, transport (JSON), last_sync_ts, last_sync_ok, last_error, cursor, db_id, agmux_version, replication, rejected, removed_ts`.
 - `_meta('db_id')`: random UUID minted on first `Store.dbId()` (inside an immediate transaction), stable for the life of the file. The sync cursor is only meaningful against one `db_id`.
+- v10: `events.source_db` / `sessions.source_db`: the source store's `db_id` (its incarnation) for replicated rows, NULL for local ones. `sessions.source_db` follows the latest replicated event applied to the session (`applySourceDb`; `rebuildProjections` replays it from `events.source_db`).
 
-## `appendReplicated(ev, source)`
+## `appendReplicated(ev, source, sourceDb)`
 
 Ingest of an event pulled from another host (the caller, `hub/src/sync/ingest.ts`, validates first; see `packages/hub/AGENTS.md`).
 
@@ -31,7 +32,8 @@ Ingest of an event pulled from another host (the caller, `hub/src/sync/ingest.ts
 
 - **Masking (Decision 4):** `decodeRow` nulls `pid`, `tmux_session/window/pane/socket` for remote rows. Stored events stay verbatim. Reason: these values only mean something on the host that produced them; consumers (`kill`, `attach`, `resume`, the pid sweep, the dash preview) would act on a *local* pid or tmux pane. The CLI's remote guard is the second line of defence.
 - **`sync_stale`** = remote and `hosts.last_sync_ok = 0`. Presentation only (`?` chip/host label); status is untouched.
-- **host-removed rule:** `deriveStatus` (`src/lost.ts`) returns `lost` with rule `host-removed` for a non-terminal row whose host has `removed_ts` set. It comes before the heartbeat rule. A later `host.synced` clears `removed_ts` and the row reverts.
+- **host-removed rule:** `deriveStatus` (`src/lost.ts`) returns `lost` with rule `host-removed` for a non-terminal row whose host has `removed_ts` set. It comes before the heartbeat rule. A later `host.synced` clears `removed_ts` and the row reverts: intended only for a listing gap (same `db_id`).
+- **host-reset rule:** next, a non-terminal row whose `source_db` is set and differs from its host's current `hosts.db_id` (`h.db_id AS host_db_id` in `ROW_SELECT`) is `lost` with rule `host-reset`, reason `host <h> was recreated (db <old8> → <new8>)`. A sandbox recreated under the same name thus never resurrects the previous incarnation's sessions, with or without a `host.removed` in between. Rows without `source_db` (local, or replicated before v10) are exempt.
 - Native rows of remote hosts are never pid-swept (`listLiveNativeSessions` excludes hosts with a `hosts` row).
 
 ## Locality and host filters

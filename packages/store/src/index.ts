@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import type { EventEnvelope, HostRow, ReplicationRecord, SessionRow, StatusDecision } from "@agmux/protocol";
 import { runMigrations } from "./migrations.ts";
-import { applyEventToProjection } from "./project.ts";
+import { applyEventToProjection, applySourceDb } from "./project.ts";
 import { getSessionRaw, explainSession, listSessions, listEvents, getSessionUsage, listLiveNativeSessions, type ListSessionsOpts, type ListEventsOpts, type SessionUsageRow } from "./queries.ts";
 import { getHost, listHosts } from "./hosts.ts";
 import { resolveIngest, type IngestEnvelopeLike } from "./resolve.ts";
@@ -48,20 +48,22 @@ export class Store {
    * Ingest an event replicated from another host. Idempotent on event_id; the
    * source's dedup_key is dropped (it only has meaning on the source) and the
    * row is tagged so it is never re-exported. A duplicate does not re-apply
-   * the projection. Returns true if inserted.
+   * the projection. `sourceDb` is the source store's db_id (its incarnation).
+   * Returns true if inserted.
    */
-  appendReplicated(ev: EventEnvelope, source: string): boolean {
+  appendReplicated(ev: EventEnvelope, source: string, sourceDb: string): boolean {
     return this.db.transaction(() => {
       const r = this.db.query(`
-        INSERT INTO events (event_id, ts, session_id, kind, version, payload, host, dedup_key, source)
-        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)
+        INSERT INTO events (event_id, ts, session_id, kind, version, payload, host, dedup_key, source, source_db)
+        VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
         ON CONFLICT(event_id) DO NOTHING
       `).run(
         ev.event_id, ev.ts, ev.session_id, ev.kind, ev.version,
-        JSON.stringify(ev.payload), ev.host, source,
+        JSON.stringify(ev.payload), ev.host, source, sourceDb,
       );
       if (r.changes === 0) return false;
       applyEventToProjection(this.db, ev);
+      applySourceDb(this.db, ev.session_id, sourceDb);
       return true;
     })();
   }
@@ -147,13 +149,14 @@ export class Store {
       this.db.exec(`DELETE FROM session_meta`);
       this.db.exec(`DELETE FROM hosts`);
       const rows = this.db.query<any, []>(
-        `SELECT event_id, ts, session_id, kind, version, payload, host FROM events ORDER BY id ASC`
+        `SELECT event_id, ts, session_id, kind, version, payload, host, source_db FROM events ORDER BY id ASC`
       ).all();
       for (const r of rows) {
         applyEventToProjection(this.db, {
           event_id: r.event_id, ts: r.ts, session_id: r.session_id, kind: r.kind,
           version: r.version, host: r.host, payload: JSON.parse(r.payload),
         });
+        if (r.source_db != null) applySourceDb(this.db, r.session_id, r.source_db);
       }
     })();
   }

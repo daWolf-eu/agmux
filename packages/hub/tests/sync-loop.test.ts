@@ -282,6 +282,25 @@ describe("startSync", () => {
     expect(h.hostEvents.length).toBe(2);
   });
 
+  test("a db_id reset skips the transition flush: no host.synced pairs the old header with the reset cursor", async () => {
+    const h = harness();
+    h.setListing([node("a")]);
+    await until(() => h.followers.length === 1, "follower");
+    const f = h.of("gw/a");
+    f.emit({ connected: true, header: hdr, dbId: "db-1", cursor: 0 });
+    h.advance(CURSOR_FLUSH_MS);
+    f.emit({ cursor: 5 });
+    // The follower's reset: not connected, the stale header still db-1, cursor 0 under db-2.
+    f.emit({ connected: false, dbId: "db-2", cursor: 0 });
+    await ticks();
+    const synced = () => h.hostEvents.map((e) => [(e.payload as any).db_id, (e.payload as any).cursor]);
+    expect(synced()).toEqual([["db-1", 0], ["db-1", 5]]);
+    f.emit({ connected: true, header: { ...hdr, db_id: "db-2" }, dbId: "db-2", cursor: 0 });
+    expect(synced()).toEqual([["db-1", 0], ["db-1", 5], ["db-2", 0]]);
+    expect(h.store.getHost("gw/a")).toMatchObject({ db_id: "db-2", cursor: 0 });
+    await h.stop();
+  });
+
   test("stop on a failing host writes no host.synced", async () => {
     const h = harness();
     h.setListing([node("a")]);

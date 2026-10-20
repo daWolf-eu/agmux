@@ -16,7 +16,7 @@ Hub side: `GET /events?after_id=<n>&limit=<n>` → `{records, last_id}` (default
 
 ## Cursor and `db_id`
 
-The cursor is the sandbox's `events.id` rowid (monotonic per db). The Mac keeps it in `hosts.cursor` (via `host.synced`) and passes it as `--after`. `db_id` = random UUID minted once per store in `_meta`. If the header `db_id` differs from the stored one and the cursor is > 0 (sandbox recreated under the same name), the follower sets cursor 0, adopts the new `db_id`, and respawns immediately (`reset` outcome). The cursor never moves backwards within a connection. Re-pulled events are harmless: `appendReplicated` is idempotent on `event_id`.
+The cursor is the sandbox's `events.id` rowid (monotonic per db). The Mac keeps it in `hosts.cursor` (via `host.synced`) and passes it as `--after`. `db_id` = random UUID minted once per store in `_meta`. If the header `db_id` differs from the stored one and the cursor is > 0 (sandbox recreated under the same name), the follower sets cursor 0, adopts the new `db_id`, and respawns immediately (`reset` outcome). The cursor never moves backwards within a connection. Re-pulled events are harmless: `appendReplicated` is idempotent on `event_id`. Every record is ingested with the header's `db_id` (`ingestReplicated(store, rec, host, sourceDb)` → `events.source_db`); the old incarnation's sessions then derive `lost` / `host-reset` once the next `host.synced` carries the new `db_id` (see `packages/store/AGENTS.md`).
 
 ## Follower lifetime (`sync/follower.ts`)
 
@@ -35,12 +35,12 @@ Per `[[remote]]`: every `interval` s, `Discovery.list()` → one follower per di
 
 - **`host.synced`:** on becoming ok (first header / recovery), and when the cursor moved, debounced to `CURSOR_FLUSH_MS` (10 s). Also flushed on the connected→failing transition and on stop/removal, **only** if the node was ok and connected (a failing host's stale overlay must not be cleared). Not flushed on a `db_id` reset.
 - **`host.sync_failed`:** permanent error immediately; transient error once failing longer than `STALE_AFTER_INTERVALS` (3) x `interval`. Once per distinct error. `error` is `sanitizeRemoteText`ed.
-- **`host.removed`:** the node is absent from `REMOVE_AFTER_MISSES` (2) consecutive *successful* listings (a failed listing counts as nothing; one empty listing must not flap sessions to lost). Stops the follower, then appends only if the row belongs to that remote and is not already removed. A node that reappears is restarted and the next `host.synced` clears `removed_ts`.
+- **`host.removed`:** the node is absent from `REMOVE_AFTER_MISSES` (2) consecutive *successful* listings (a failed listing counts as nothing; one empty listing must not flap sessions to lost). Stops the follower, then appends only if the row belongs to that remote and is not already removed. A node that reappears is restarted and the next `host.synced` clears `removed_ts` (rows of a previous incarnation stay `lost` via `host-reset`).
 - `startSync` returns `stop()`; `bin/agmux-hub.ts` bounds it to 3 s and ignores a second signal (`shuttingDown`) so the lock is released exactly once. A broken `[[remote]]` config disables sync only (logged), never the hub.
 
 ## Validation of replicated events (`sync/ingest.ts`)
 
-Sandbox output is untrusted. `ingestReplicated(store, rec, expectedHost)` checks in this order; the first failure rejects the record (counted in `rejected`, `last_error = "record <id>: <reason>"`, cursor still advances):
+Sandbox output is untrusted. `ingestReplicated(store, rec, expectedHost, sourceDb)` checks in this order; the first failure rejects the record (counted in `rejected`, `last_error = "record <id>: <reason>"`, cursor still advances):
 
 1. `validateEnvelope`, then `session_id` must match `SESSION_ID_RE` (canonical UUID, not `NO_SESSION_ID`) and `event_id` `EVENT_ID_RE` (`[A-Za-z0-9-]{1,64}`) → `invalid envelope: …`. Ids reach shell/tmux command strings on the Mac (terminal-notifier `-execute`, status-line click ranges); the sinks additionally keep to `[0-9a-f-]` (`isShellSafeId` / `shellSafeIdChars`, `@agmux/protocol`).
 2. kind starts with `host.` → `host event: … is hub-local`
