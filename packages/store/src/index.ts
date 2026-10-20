@@ -108,6 +108,12 @@ export class Store {
     return this.append(r.ev);
   }
 
+  /** Host a session row belongs to, or null if the session is unknown. */
+  sessionHost(sid: string): string | null {
+    const r = this.db.query<{ host: string }, [string]>("SELECT host FROM sessions WHERE session_id = ?").get(sid);
+    return r ? r.host : null;
+  }
+
   getSession(sid: string, now: Date = new Date()): SessionRow | null {
     return getSessionRaw(this.db, sid, now);
   }
