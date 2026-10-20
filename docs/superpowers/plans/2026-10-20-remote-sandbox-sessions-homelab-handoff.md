@@ -30,7 +30,9 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 | Sandbox opt-in label | `agmux=1` (the Mac's `[[remote]] selector` default) |
 | Host identity env | `AGMUX_HOST=<gateway>/<sandbox-name>`, e.g. `ai-sandbox/wi-sag-1234`, set via `sandbox create --env`. Charset `[A-Za-z0-9._-]`, exactly one `/`. Without it, the Mac rejects the sandbox's events (host mismatch). |
 | Claude hooks | `agmux adapter install --kind claude` run inside the sandbox against its Claude config dir: pure file writes, no network |
-| Remote command the Mac runs | `agmux events --follow --after <n> --consumer <id>` via `sandbox exec --no-tty` |
+| Remote command the Mac runs | `agmux events --follow --after <n> --consumer <id> --max-duration 3600` via `sandbox exec --no-tty`, stdin closed. Exit 75 = planned hourly rotation. The image's agmux must be the same build as the Mac's (an older agmux rejects `--max-duration`). |
+| Sandbox main process | must stay alive (`sleep infinity`); a create whose command exits puts the sandbox in the Error phase |
+| OpenShell client/server version | the Mac's client must match the gateway server version: a 0.1.x client cannot talk to a 0.0.116 gateway (`workspace '\n\u{7}default' not found`). Upgrade the gateway, or keep a matching client |
 
 ### Work items
 
@@ -81,3 +83,7 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 - Any agmux daemon on the gateway host. Topology G was rejected; agmux runs only inside sandboxes.
 - Network policy / egress changes (none needed).
 - Recreating existing sandboxes (they stay agmux-less until recreated).
+
+### Already verified on the agmux side (2026-10-20 smoke test, `docs/spikes/2026-10-11-remote-sandbox/` § Phase 1 smoke test)
+
+The workbench image `openshell-workbench:e797e53b7f50` with uploaded binaries, `--label agmux=1 --env AGMUX_HOST=…` at create, and a stub agent replicate correctly to the Mac. Discovery, removal, recreation and the missing-`AGMUX_HOST` error are verified. What remains for homelab is baking the binaries in, the launcher flags, and a real logged-in Claude.
