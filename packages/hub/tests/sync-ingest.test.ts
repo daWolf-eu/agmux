@@ -22,7 +22,8 @@ describe("ingestReplicated", () => {
     const s = Store.openInMemory();
     expect(ingestReplicated(s, rec(registered(SID, HOST)), HOST)).toEqual({ ok: true, appended: true });
     expect(s.sessionHost(SID)).toBe(HOST);
-    expect(ingestReplicated(s, rec(registered(SID, HOST)), HOST)).toMatchObject({ ok: true });
+    const src = s.rawDb().query<{ source: string | null }, []>("SELECT source FROM events").all();
+    expect(src).toEqual([{ source: HOST }]);
   });
   test("duplicate event_id is not appended twice", () => {
     const s = Store.openInMemory();
@@ -58,6 +59,22 @@ describe("ingestReplicated", () => {
     const r = ingestReplicated(Store.openInMemory(), rec(registered(SID, HOST, { native_session_id: undefined })), HOST);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason.startsWith("invalid payload")).toBe(true);
+  });
+  test("append failure (UNIQUE in projection) rejects instead of throwing", () => {
+    const s = Store.openInMemory();
+    expect(ingestReplicated(s, rec(registered(SID, HOST)), HOST).ok).toBe(true);
+    const r = ingestReplicated(s, rec(registered("0190a3e0-0000-7000-8000-000000000009", HOST)), HOST);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason.startsWith("append failed")).toBe(true);
+  });
+  test("reasons lose control characters and are truncated", () => {
+    const s = Store.openInMemory();
+    const a = ingestReplicated(s, rec(registered(SID, "\x1b[31mevil")), HOST);
+    expect(a.ok).toBe(false);
+    if (!a.ok) expect(a.reason).not.toMatch(/[\u0000-\u001f\u007f]/);
+    const b = ingestReplicated(s, rec(registered(SID, "h".repeat(1000))), HOST);
+    expect(b.ok).toBe(false);
+    if (!b.ok) expect(b.reason.length).toBeLessThanOrEqual(300);
   });
   test("stores an unknown kind raw", () => {
     const ev = { ...registered(SID, HOST), kind: "future.thing", payload: { a: 1 } };

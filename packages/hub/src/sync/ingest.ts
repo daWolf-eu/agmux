@@ -38,19 +38,30 @@ export function parseStreamLine(line: string): StreamLine {
 
 export type IngestOutcome = { ok: true; appended: boolean } | { ok: false; reason: string };
 
+// Reasons flow into hosts.last_error and get displayed in a terminal: strip
+// control characters and cap the length.
+function reject(reason: string): { ok: false; reason: string } {
+  return { ok: false, reason: reason.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 300) };
+}
+
 export function ingestReplicated(store: Store, rec: ReplicationRecord, expectedHost: string): IngestOutcome {
   const ev = rec.ev;
   const env = validateEnvelope(ev);
-  if (!env.ok) return { ok: false, reason: `invalid envelope: ${env.error}` };
-  if (ev.kind.startsWith("host.")) return { ok: false, reason: `host event: ${ev.kind} is hub-local` };
-  if (ev.host !== expectedHost) return { ok: false, reason: `host mismatch: event host "${ev.host}", expected "${expectedHost}"` };
+  if (!env.ok) return reject(`invalid envelope: ${env.error}`);
+  if (ev.kind.startsWith("host.")) return reject(`host event: ${ev.kind} is hub-local`);
+  if (ev.host !== expectedHost) return reject(`host mismatch: event host "${ev.host}", expected "${expectedHost}"`);
   const p = validateKnownPayload(ev.kind, ev.payload);
-  if (!p.ok) return { ok: false, reason: `invalid payload: ${p.error}` };
+  if (!p.ok) return reject(`invalid payload: ${p.error}`);
   const owner = store.sessionHost(ev.session_id);
   if (owner !== null && owner !== expectedHost) {
-    return { ok: false, reason: `foreign session: ${ev.session_id} belongs to host "${owner}"` };
+    return reject(`foreign session: ${ev.session_id} belongs to host "${owner}"`);
   }
-  return { ok: true, appended: store.appendReplicated(ev, expectedHost) };
+  // The projection can still throw on hostile input (unique constraints, deep nesting).
+  try {
+    return { ok: true, appended: store.appendReplicated(ev, expectedHost) };
+  } catch (e) {
+    return reject(`append failed: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 export function checkHeader(h: ReplicationHeader, expectedHost: string):
