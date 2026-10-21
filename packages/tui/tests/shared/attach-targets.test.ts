@@ -75,11 +75,19 @@ test("resolvePlacement passes enabled requests, rejects disabled ones, defaults 
   expect(resolvePlacement("closed", TMUX, undefined)).toBe("new-window");
 });
 
+const RT = { session: "work", window: "@0", pane: "%0", socket: null };
+
 test("attachKind: remote rows are remote while live, none once closed", () => {
-  expect(attachKind(mkRow({ status: "running", remote: true }))).toBe("remote");
-  expect(attachKind(mkRow({ status: "ended", remote: true }))).toBe("none");
-  expect(attachKind(mkRow({ status: "lost", remote: true }))).toBe("none");
-  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true }))).toBe("remote");
+  expect(attachKind(mkRow({ status: "running", remote: true, remote_tmux: RT }))).toBe("remote");
+  expect(attachKind(mkRow({ status: "ended", remote: true, remote_tmux: RT }))).toBe("none");
+  expect(attachKind(mkRow({ status: "lost", remote: true, remote_tmux: RT }))).toBe("none");
+  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true, remote_tmux: RT }))).toBe("remote");
+});
+
+test("attachKind: a live remote row without remote_tmux (headless) has nothing to open", () => {
+  expect(attachKind(mkRow({ status: "running", remote: true }))).toBe("none");
+  expect(attachKind(mkRow({ status: "running", remote: true, remote_tmux: null }))).toBe("none");
+  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true, remote_tmux: null }))).toBe("none");
 });
 
 test("remote targets: tmux placements open, peek planned", () => {

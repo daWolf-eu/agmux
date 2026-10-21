@@ -530,8 +530,10 @@ exec tmux -u attach-session -t "$V" \; set -t "$V" destroy-unattached on
 - The outer (local) tmux owns every key; the remote pane behaves like a local pane.
 - Leave with `detach_key` (as built — §10 Phase 2 note 1; was `view_detach_key`; default `M-d`): the view is destroyed
   (`destroy-unattached`), the transport exits 0, the agent's session is untouched.
-- **Closing the local window does not end the remote client** (spike: `exec --tty` never
-  tears down the remote side, whatever the local signal). The orphaned client keeps the
+- **Closing the local window may not end the remote client** (spike, observed on openshell
+  0.0.116: `exec --tty` never tore down the remote side, whatever the local signal; on 0.1.5
+  openshell does hang up the remote side when the local client dies — SPIKE_REPORT
+  § "Phase 2 smoke test" — so there the reap is a safety net). An orphaned client keeps the
   view attached and can pin the agent window's size; the remote side cannot tell an
   orphan from a quiet viewer. So the Mac reaps explicitly, for both modes:
   - Remotely, `agmux attach --view|--full` records its tmux client pid under
@@ -698,17 +700,17 @@ Refinements made while implementing; the code is authoritative (`cli/src/remote-
 1. `[attach.remote]`, not `[remote.attach]`: `remote` is an array of tables (`[[remote]]`), so `[remote.attach]` would become a subtable of the last entry. Keys/defaults: `placement = "new-window"`, `mode = "view"`, `window_name = "⇄ {title}"`, `detach_key = "M-d"` (was `[attach] view_detach_key`).
 2. Remote coords are exposed namespaced: `SessionRow.remote_tmux {session, window, pane, socket}` and `remote_pid`, only on remote rows; `pid` / `tmux_*` stay null. Shown in `inspect` and the `ls` TMUX column; PID stays `-`.
 3. The Mac builds the attach from the replicated coords; the sandbox needs only sh + tmux (no image change). Replaces §8.1's remote `agmux attach --view|--full|--reap` with three fixed sh scripts; values are positional args after `$0` = `agmux`, validated first (`isRemoteTmux`). Stale coords: the script's window check fails with exit 3 and a message.
-4. The local pane process tags itself: `agmux attach <id> --remote-client --mode <m> --detach-key <k>`; tag `p<N>` from `$TMUX_PANE`, else `t` + 8 hex. It sets `@agmux_session_id`, `@agmux_remote=1`, `@agmux_attach_mode` on its own pane.
-5. Reap state: one line in `$HOME/.agmux/attach/<tag>`, `view <socket|-> <view>` or `full <socket|-> <pid>`. Full mode records `$$` then `exec`s tmux. Reap kills the view session, or the pid only if `ps -o comm=` is a tmux. A normal exit leaves the file; the next reap of the tag clears it.
+4. The local pane process tags itself: `agmux attach <id> --remote-client --mode <m> --detach-key <k>`; tag `p<N>` from `$TMUX_PANE`, else `t` + 8 hex. It sets `@agmux_session_id`, `@agmux_remote=1`, `@agmux_attach_mode` on its own pane and unsets them when the transport exits or on SIGHUP/SIGTERM (before the reap / failure hold). On a signal it also SIGHUPs the openshell child. A live remote row without `remote_tmux` (headless) has nothing to attach. New-session placement names the session `agmux-<id8>-<mode>`.
+5. Reap state: one line in `$HOME/.agmux/attach/<tag>`, `view <socket|-> <view>` or `full <socket|-> <pid>`. Full mode records `$$` then `exec`s tmux; view mode records before building the view. Reap kills the view session, or the pid only if `ps -o comm=` is a tmux and `ps -o args=` contains `attach-session` (never the server, whose Linux title `tmux: server` also matches comm, e.g. after pid reuse). A normal exit leaves the file; the next reap of the tag clears it.
 6. Mode default: `[attach.remote] mode` inside tmux, `full` outside (N4). Explicit `--mode` / `m` wins.
 7. Not built: peek (popup slot 5 dimmed) and N3.
 8. A closed remote session: resume is refused with the command to run by hand (§4.7): `<openshell> -g <gw> sandbox exec -n <sbx> --tty -- <agmux_bin> attach <id>`.
 9. Stopped sandbox: the pane process runs `sandbox get -o json` and, if `phase === "Stopped"`, `sandbox start`; a failing `get` is ignored.
 10. `session.seen` for a remote row is stamped with the local host (`resolveHost()`), not `row.host` (§4.5).
-11. `{title}` = session name or first 8 id chars; `stripControls`, `#` doubled, capped at 40 columns.
+11. `{title}` = session name or first 8 id chars; `stripControls`, `#` doubled, capped at 40 columns. The `window_name` template itself is the user's and is format-expanded by tmux.
 12. Script deviations found by testing: `tmux display-message -t <missing window>` exits 0 with empty output (observed on 3.6a and 3.7c), so the window check compares the printed `#{window_id}`; macOS `ps -o comm=` prints the full path, so the full-mode reap matches `tmux*|*/tmux`.
 13. Review notes: the reap awaits on SIGHUP/SIGTERM before the process exits; plain local `agmux attach` never reads config (remote rows load it lazily; a broken config gives a warning and defaults); a trailing `;` in a window name is escaped as `\;` (tmux argv separator).
-14. Known limits: tags share one sandbox state dir, so two Macs / local tmux servers with the same pane id can reap each other's client; a detach key stays bound in the server-wide `agmux-view` table until the sandbox tmux server restarts.
+14. Known limits: tags share one sandbox state dir, so two Macs / local tmux servers with the same pane id can reap each other's client; a detach key stays bound in the server-wide `agmux-view` table until the sandbox tmux server restarts; stale coords after a sandbox stop/start — until the sandbox hub's lost-sweep (≈30–60 s) the old row stays live, and a new tmux server reusing the socket path and `@0` makes an attach of it open the NEW agent (fix: a tmux-server identity in the replicated coords, Phase 3).
 15. Verified on openshell 0.1.5 (ai-sag): `sandbox exec -- sh -c '…' x 'a b' '$HOME' ';' '"q"' "it's" ''` delivers every positional arg verbatim; sandbox tmux 3.7c.
 
 ## 11. Open questions / verify list

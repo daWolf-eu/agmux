@@ -159,7 +159,8 @@ export async function attachRemote(
   }
   const windowName = remoteWindowName(settings.remote.windowName, row);
   const coords = where === "new-session"
-    ? await deps.newSession({ sessionName: resumeSessionName(id), windowName, cmd, env: {}, socket })
+    // The mode in the name: a view and a full client of one session may both be open.
+    ? await deps.newSession({ sessionName: `${resumeSessionName(id)}-${mode}`, windowName, cmd, env: {}, socket })
     : await deps.newWindow({ sessionName: here.session, windowName, cmd, env: {}, detach: false, socket });
   // The remote tmux client sets its own titles; keep the agmux name.
   await deps.runTmux([...tmuxSocketArgs(socket), "set-option", "-w", "-t", coords.window, "automatic-rename", "off"]);

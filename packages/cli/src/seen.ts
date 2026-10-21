@@ -57,11 +57,6 @@ export interface SeenCmdOpts {
   host: string;
 }
 
-// Resolve a tmux pane id to the open session that currently owns it, by
-// matching against the sessions' `tmux_pane` (and, when both sides know it,
-// `tmux_socket`). Returns null when no open session owns the pane (e.g. the key
-// was pressed in an unrelated pane) or the hub can't be reached — callers must
-// treat that as "nothing to do", not an error.
 export type ReadPaneOption = (pane: string, socket?: string) => Promise<string | null>;
 
 // Runs on every pane switch: never throws, never prints, null on any failure.
@@ -77,8 +72,13 @@ export const defaultReadPaneOption: ReadPaneOption = async (pane, socket) => {
   }
 };
 
+// Resolve a tmux pane id to the open session that currently owns it, by
+// matching against the sessions' `tmux_pane` (and, when both sides know it,
+// `tmux_socket`). Returns null when no open session owns the pane (e.g. the key
+// was pressed in an unrelated pane) or the hub can't be reached — callers must
+// treat that as "nothing to do", not an error.
 // A pane showing a remote session carries `@agmux_session_id` (set by the
-// remote-client); a canonical UUID there wins over the tmux_pane match.
+// remote-client while it runs); a canonical UUID there wins over the tmux_pane match.
 export async function resolvePane(
   pane: string, hubUrl: string, fetchImpl: typeof fetch, socket?: string,
   readPaneOption: ReadPaneOption = defaultReadPaneOption,

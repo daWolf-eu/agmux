@@ -329,7 +329,8 @@ async function main(): Promise<number> {
     case "attach": {
       const id = argv[1]; if (!id || id.startsWith("--")) usage();
       if (argv.includes("--remote-client")) {
-        const mode = argv[argv.indexOf("--mode") + 1];
+        const mi = argv.indexOf("--mode");
+        const mode = mi < 0 ? undefined : argv[mi + 1];
         const key = argv.includes("--detach-key") ? argv[argv.indexOf("--detach-key") + 1] : "M-d";
         if (!isRemoteAttachMode(mode)) { console.error("attach: --mode must be view|full"); return 2; }
         if (key === undefined || !isTmuxKeyName(key)) { console.error("attach: --detach-key must be a tmux key name like M-d"); return 2; }

@@ -532,7 +532,7 @@ set -g set-clipboard on
 set -g focus-events on
 ```
 
-Focusing a local pane that shows a remote session marks it seen. Peek is not built (slot 5 of the popup is dimmed).
+Focusing a local pane that shows a remote session marks it seen. Peek is not built (slot 5 of the popup is dimmed). Known limit: for ≈30–60 s after a sandbox stop/start the old row stays live, and attaching it can open the new agent that reuses its tmux window (fix planned).
 
 ## Troubleshooting
 

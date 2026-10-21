@@ -149,12 +149,18 @@ describe("attachRemote", () => {
     const r = recorder();
     await attachRemote(remoteRow(), { placement: "new-session" }, env(IN_TMUX), r.deps);
     expect(r.placed[0]!.kind).toBe("newSession");
-    expect(r.placed[0]!.args.sessionName).toBe("agmux-11111111");
+    expect(r.placed[0]!.args.sessionName).toBe("agmux-11111111-view");
     expect(r.placed[0]!.args.windowName).toBe("⇄ 11111111");
     expect(r.tmux).toEqual([
       ["set-option", "-w", "-t", "@0", "automatic-rename", "off"],
       ["switch-client", "-t", "agmux-11111111:@0"],
     ]);
+  });
+
+  test("new-session: the session name carries the mode (view and full never collide)", async () => {
+    const r = recorder();
+    await attachRemote(remoteRow(), { placement: "new-session", mode: "full" }, env(IN_TMUX), r.deps);
+    expect(r.placed[0]!.args.sessionName).toBe("agmux-11111111-full");
   });
 
   test("new-tab: the template runs `attach --placement inline --mode <m>`", async () => {

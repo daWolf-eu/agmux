@@ -7,9 +7,10 @@ import {
 export type AttachKind = "live" | "closed" | "remote" | "none";
 
 export function attachKind(row: SessionRow): AttachKind {
-  // A remote row's tmux coords are the sandbox's, not ours: a live one is
-  // opened through the sandbox; a closed one cannot be resumed from here.
-  if (row.remote) return LIVE_STATUSES.includes(row.status) ? "remote" : "none";
+  // A remote row's tmux coords are the sandbox's, not ours: a live one with
+  // replicated coords is opened through the sandbox; a headless one (no
+  // remote_tmux) has nothing to open; a closed one cannot be resumed from here.
+  if (row.remote) return LIVE_STATUSES.includes(row.status) && row.remote_tmux ? "remote" : "none";
   if (TERMINAL_STATUSES.includes(row.status)) return "closed";
   if (LIVE_STATUSES.includes(row.status) && row.tmux_session && row.tmux_window) return "live";
   return "none";

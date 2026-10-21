@@ -69,3 +69,9 @@ test("--mode without a value is a usage error", async () => {
   expect(r.code).toBe(2);
   expect(r.err).toContain("attach: --mode must be view|full");
 });
+
+test("--remote-client without --mode is a usage error", async () => {
+  const r = await agmux("attach", ID, "--remote-client", "--detach-key", "M-d");
+  expect(r.code).toBe(2);
+  expect(r.err).toContain("attach: --mode must be view|full");
+});

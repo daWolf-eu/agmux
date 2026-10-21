@@ -761,7 +761,10 @@ test("x on a remote row shows the refusal as a notice instead of the kill confir
 
 // --- remote attach mode in the popup -----------------------------------------
 
-const remoteRow = () => mkRow({ session_id: "agx-rem-1", status: "running", remote: true, host: "gw/sbx" });
+const remoteRow = () => mkRow({
+  session_id: "agx-rem-1", status: "running", remote: true, host: "gw/sbx",
+  remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null },
+});
 
 async function mountRemote(rows: SessionRow[], actions: Actions, remoteMode?: "view" | "full") {
   const t = await testRender(
@@ -850,6 +853,6 @@ test("help lists the attach-mode key", async () => {
   const { renderer, renderOnce, captureCharFrame, mockInput } = await mountRemote([remoteRow()], noActions);
   await act(async () => { mockInput.pressKey("?"); });
   await renderOnce();
-  expect(captureCharFrame()).toContain("attach mode (remote)");
+  expect(captureCharFrame()).toContain("in A: attach mode (remote)");
   renderer.destroy();
 });

@@ -108,7 +108,7 @@ function remoteHub(row: SessionRow, calls: string[]) {
 test("attachCmd on a live remote row outside tmux runs the pane process in full mode, in the foreground", async () => {
   const { attachCmd } = await import("../src/attach.ts");
   const { DEFAULT_ATTACH_SETTINGS } = await import("../src/attach-place.ts");
-  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
+  const row = sessionRow({ remote: true, remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null }, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
   const calls: string[] = [];
   const origFetch = globalThis.fetch;
   const origTmux = process.env.TMUX;
@@ -171,7 +171,7 @@ test("attachCmd on a local row never reads attach settings (a broken config cann
 
 test("attachCmd on a remote row with a broken config warns and uses the attach defaults", async () => {
   const { attachCmd } = await import("../src/attach.ts");
-  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
+  const row = sessionRow({ remote: true, remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null }, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
   const origFetch = globalThis.fetch;
   const origTmux = process.env.TMUX;
   delete process.env.TMUX;
