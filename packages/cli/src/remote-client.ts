@@ -3,7 +3,7 @@
 // pane, tags it, runs the fixed attach script in the sandbox in the foreground
 // (`exec --tty`), and reaps the sandbox-side client on hangup or failure
 // (`exec --no-tty`, stdin closed). See remote-tmux.ts for the scripts.
-import { isRemoteTmux, LIVE_STATUSES, tmuxSocketArgs, tmuxSocketFromEnv, type HostRow, type RemoteAttachMode, type SessionRow } from "@agmux/protocol";
+import { isRemoteTmux, isShellSafeId, LIVE_STATUSES, tmuxSocketArgs, tmuxSocketFromEnv, type HostRow, type RemoteAttachMode, type SessionRow } from "@agmux/protocol";
 import { runCapture, transportArgv, transportControlArgv } from "@agmux/hub";
 import { fullScriptArgv, reapScriptArgv, viewScriptArgv, viewSessionName } from "./remote-tmux.ts";
 
@@ -62,6 +62,8 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
   const row = sr.session;
   if (!row.remote) return fail(`session ${o.sessionId.slice(0, 8)} is not a remote session`);
   if (!LIVE_STATUSES.includes(row.status)) return fail(`session ${o.sessionId.slice(0, 8)} is not live (${row.status})`);
+  if (!isShellSafeId(row.session_id)) return fail("hub returned an invalid session id");
+  const sessionId = row.session_id;
   const coords = row.remote_tmux;
   if (!isRemoteTmux(coords)) return fail(`unsupported tmux coordinates from ${row.host}`);
   const hr = await getJson<{ hosts: HostRow[] }>(deps.fetchImpl, `${o.hubUrl}/hosts`);
@@ -73,7 +75,7 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
   const pane = o.env.TMUX_PANE;
   if (/^%\d{1,9}$/.test(pane ?? "")) {
     const sock = tmuxSocketArgs(tmuxSocketFromEnv(o.env.TMUX));
-    for (const [k, v] of [["@agmux_session_id", o.sessionId], ["@agmux_remote", "1"], ["@agmux_attach_mode", o.mode]] as const) {
+    for (const [k, v] of [["@agmux_session_id", sessionId], ["@agmux_remote", "1"], ["@agmux_attach_mode", o.mode]] as const) {
       try { await deps.tmux([...sock, "set-option", "-p", "-t", pane!, k, v]); } catch { /* bookkeeping only */ }
     }
   }
@@ -81,23 +83,29 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
   const reap = async (): Promise<void> => {
     try { await deps.capture(transportArgv(spec, reapScriptArgv(tag), { tty: false }), CAPTURE_TIMEOUT_MS); } catch { /* best effort */ }
   };
-  let signalled = false;
+  let signalCode = 0;
+  let reapDone: Promise<void> | null = null;
   for (const [sig, code] of [["SIGHUP", 129], ["SIGTERM", 143]] as const) {
     deps.onSignal(sig, () => {
-      if (signalled) return;
-      signalled = true;
-      void reap().then(() => deps.exit(code));
+      if (reapDone) return;
+      signalCode = code;
+      // exit only after the reap settles: the process must outlive it.
+      reapDone = reap();
+      void reapDone.then(() => deps.exit(code));
     });
   }
-
-  // A failing `get` is ignored: the exec reports the real error.
+    // A failing `get` is ignored: the exec reports the real error.
   try {
     const info = JSON.parse(await deps.capture(transportControlArgv(spec, "get"), CAPTURE_TIMEOUT_MS)) as { phase?: unknown };
     if (info.phase === "Stopped") await deps.capture(transportControlArgv(spec, "start"), CAPTURE_TIMEOUT_MS * 6);
   } catch { /* see above */ }
 
-  const script = o.mode === "full" ? fullScriptArgv(coords, tag) : viewScriptArgv(coords, viewSessionName(o.sessionId, tag), o.detachKey, tag);
+  if (reapDone) { await reapDone; return signalCode; }
+
+  const script = o.mode === "full" ? fullScriptArgv(coords, tag) : viewScriptArgv(coords, viewSessionName(sessionId, tag), o.detachKey, tag);
   const code = await deps.spawnTty(transportArgv(spec, script, { tty: true })).exited;
-  if (code !== 0 && !signalled) await reap();
+  // tmux SIGHUPs the whole group on pane close: the child dies with us, so wait for the handler's reap.
+  if (reapDone) { await reapDone; return signalCode; }
+  if (code !== 0) await reap();
   return code;
 }
