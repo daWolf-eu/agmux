@@ -33,7 +33,7 @@ export async function attachPlacedCmd(opts: AttachPlacedOpts, deps: AttachPlaced
   const { session } = (await (await fetch(`${opts.hubUrl}/sessions/${res.id}`)).json()) as { session: SessionRow };
 
   const kind = attachKind(session);
-  if (kind === "none") { err("attach: session has no tmux pane"); return 1; }
+  if (kind === "none" || kind === "remote") { err("attach: session has no tmux pane"); return 1; }
 
   // Same bookkeeping as plain `agmux attach`: opening a session marks it seen.
   void postSeen(session.session_id, "attach", {

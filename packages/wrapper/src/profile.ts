@@ -1,7 +1,10 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import { parse as parseToml } from "smol-toml";
-import { expandStatusFilter, isAttachPlacement, ATTACH_PLACEMENTS, type AgentKind, type AttachPlacement, type Locality } from "@agmux/protocol";
+import {
+  expandStatusFilter, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, ATTACH_PLACEMENTS, REMOTE_ATTACH_MODES,
+  type AgentKind, type AttachPlacement, type Locality, type RemoteAttachMode,
+} from "@agmux/protocol";
 
 export interface ProfileConfig {
   agent_kind: AgentKind;
@@ -231,6 +234,8 @@ export interface AttachConfig {
   live?: AttachPlacement;    // ⏎ default for a live session
   closed?: AttachPlacement;  // ⏎ default for a closed session (resume)
   terminal: { newWindow?: string[]; newTab?: string[] };
+  // [attach.remote]: opening a replicated sandbox session.
+  remote: { placement?: AttachPlacement; mode?: RemoteAttachMode; windowName?: string; detachKey?: string };
 }
 
 function placementOpt(label: string, v: unknown): AttachPlacement {
@@ -257,11 +262,28 @@ function tableOf(label: string, raw: unknown, keys: string[]): Record<string, un
 }
 
 export function parseAttachSection(attach: unknown, terminal: unknown): AttachConfig {
-  const a = tableOf("[attach]", attach, ["live", "closed"]);
+  const a = tableOf("[attach]", attach, ["live", "closed", "remote"]);
+  const r = tableOf("[attach.remote]", a.remote, ["placement", "mode", "window_name", "detach_key"]);
   const t = tableOf("[terminal]", terminal, ["new_window", "new_tab"]);
-  const out: AttachConfig = { terminal: {} };
+  const out: AttachConfig = { terminal: {}, remote: {} };
   if (a.live !== undefined) out.live = placementOpt("[attach] live", a.live);
   if (a.closed !== undefined) out.closed = placementOpt("[attach] closed", a.closed);
+  if (r.placement !== undefined) out.remote.placement = placementOpt("[attach.remote] placement", r.placement);
+  if (r.mode !== undefined) {
+    if (!isRemoteAttachMode(r.mode))
+      throw new Error(`[attach.remote] mode must be one of ${REMOTE_ATTACH_MODES.join("|")}, got ${JSON.stringify(r.mode)}`);
+    out.remote.mode = r.mode;
+  }
+  if (r.window_name !== undefined) {
+    if (typeof r.window_name !== "string" || r.window_name.length === 0)
+      throw new Error(`[attach.remote] window_name must be a non-empty string, got ${JSON.stringify(r.window_name)}`);
+    out.remote.windowName = r.window_name;
+  }
+  if (r.detach_key !== undefined) {
+    if (typeof r.detach_key !== "string" || !isTmuxKeyName(r.detach_key))
+      throw new Error(`[attach.remote] detach_key must be a tmux key name like M-d, got ${JSON.stringify(r.detach_key)}`);
+    out.remote.detachKey = r.detach_key;
+  }
   if (t.new_window !== undefined) {
     const w = templateOpt("[terminal] new_window", t.new_window);
     if (w) out.terminal.newWindow = w;
@@ -275,7 +297,7 @@ export function parseAttachSection(attach: unknown, terminal: unknown): AttachCo
 
 // Parses ONLY [attach] and [terminal]. Missing file/sections → defaults. Invalid values throw.
 export function loadAttachConfig(configPath: string): AttachConfig {
-  if (!fs.existsSync(configPath)) return { terminal: {} };
+  if (!fs.existsSync(configPath)) return { terminal: {}, remote: {} };
   const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
   return parseAttachSection(raw.attach, raw.terminal);
 }

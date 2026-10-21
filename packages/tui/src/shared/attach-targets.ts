@@ -3,12 +3,13 @@ import {
 } from "@agmux/protocol";
 
 // What a session offers to open: a live tmux pane, a closed session (resume),
-// or a live session with no tmux coords (nothing to open).
-export type AttachKind = "live" | "closed" | "none";
+// a live remote (sandbox) session, or a session with nothing to open.
+export type AttachKind = "live" | "closed" | "remote" | "none";
 
 export function attachKind(row: SessionRow): AttachKind {
-  // Remote rows are read-only here: their tmux coords and pid are not ours.
-  if (row.remote) return "none";
+  // A remote row's tmux coords are the sandbox's, not ours: a live one is
+  // opened through the sandbox; a closed one cannot be resumed from here.
+  if (row.remote) return LIVE_STATUSES.includes(row.status) ? "remote" : "none";
   if (TERMINAL_STATUSES.includes(row.status)) return "closed";
   if (LIVE_STATUSES.includes(row.status) && row.tmux_session && row.tmux_window) return "live";
   return "none";
@@ -32,15 +33,30 @@ export interface AttachTarget {
   reason: string; // why it is disabled; "" when enabled
 }
 
-export interface AttachDefaults { live?: AttachPlacement; closed?: AttachPlacement }
+export interface AttachDefaults { live?: AttachPlacement; closed?: AttachPlacement; remote?: AttachPlacement }
 
 const LABELS: Record<AttachPlacement, string> = {
   inline: "inline", "new-pane": "new pane", "new-window": "new window", "new-session": "new session",
   peek: "peek", "new-tab": "new tab", "new-terminal": "new terminal window",
 };
 
+// A remote session is opened by a new client on the sandbox's tmux, so every
+// tmux placement works wherever a client can be started.
+function remoteReasonFor(p: AttachPlacement, ctx: AttachCtx): string {
+  switch (p) {
+    case "inline": return ctx.popup ? "in popup" : "";
+    case "new-pane":
+    case "new-window":
+    case "new-session": return ctx.inTmux ? "" : "not in tmux";
+    case "peek": return "planned";
+    case "new-tab": return ctx.terminalTab ? "" : "not configured";
+    case "new-terminal": return ctx.terminalWindow ? "" : "not configured";
+  }
+}
+
 function reasonFor(p: AttachPlacement, kind: AttachKind, ctx: AttachCtx): string {
   if (kind === "none") return "no tmux pane";
+  if (kind === "remote") return remoteReasonFor(p, ctx);
   switch (p) {
     // A resumed agent in the dash's own pane would die with the popup.
     case "inline": return kind === "closed" && ctx.popup ? "in popup" : "";
@@ -71,7 +87,9 @@ export function attachTargets(kind: AttachKind, ctx: AttachCtx): AttachTarget[] 
 export function defaultPlacement(kind: AttachKind, ctx: AttachCtx, defaults: AttachDefaults = {}): AttachPlacement {
   const want: AttachPlacement = kind === "closed"
     ? defaults.closed ?? (ctx.inTmux ? "new-window" : "inline")
-    : defaults.live ?? "inline";
+    : kind === "remote"
+      ? defaults.remote ?? (ctx.inTmux ? "new-window" : "inline")
+      : defaults.live ?? "inline";
   const targets = attachTargets(kind, ctx);
   const enabled = (p: AttachPlacement) => targets.find((t) => t.placement === p)!.enabled;
   for (const p of [want, "inline", "new-window"] as const) if (enabled(p)) return p;

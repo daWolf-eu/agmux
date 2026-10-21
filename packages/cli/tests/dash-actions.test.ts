@@ -141,7 +141,7 @@ test("makeActions exposes a copy() method", () => {
 const SOCK = "/private/tmp/tmux-501/default";
 const TMUX_ENV = `${SOCK},123,0`;
 const CALLER = { session: "caller", window: "@1", pane: "%9", socket: SOCK };
-const SETTINGS = attachSettingsFrom({ terminal: { newWindow: ["term", "-e", "{cmd}"] } }, "/bin/agmux");
+const SETTINGS = attachSettingsFrom({ terminal: { newWindow: ["term", "-e", "{cmd}"] }, remote: {} }, "/bin/agmux");
 const liveRow = (over: Partial<SessionRow> = {}) =>
   staleRow({ tmux_session: "work", tmux_window: "@3", tmux_pane: "%5", tmux_socket: SOCK, ...over });
 

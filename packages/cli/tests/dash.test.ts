@@ -114,7 +114,7 @@ test("TTY path forwards the column layout to runManage", async () => {
 test("dash passes attach settings to the actions and the matching attachCtx to the renderer", async () => {
   let seenSettings: unknown;
   let seenCtx: unknown;
-  const settings = attachSettingsFrom({ terminal: { newWindow: ["t", "{cmd}"] } }, "/bin/agmux");
+  const settings = attachSettingsFrom({ terminal: { newWindow: ["t", "{cmd}"] }, remote: {} }, "/bin/agmux");
   await dashCmd(
     { ...opts, attach: settings },
     {

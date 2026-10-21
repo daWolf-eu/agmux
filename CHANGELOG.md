@@ -11,6 +11,9 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
+- Remote attach groundwork: `[attach.remote]` config (`placement`, `mode`, `window_name`,
+  `detach_key`), `remote` attach kind/targets for live replicated sessions, and validators
+  for remote tmux coordinates. Not yet wired into `agmux attach` / the dash.
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
   terminal); new pane/window/session resume a closed one. ⏎ defaults via `[attach] live` / `closed`;

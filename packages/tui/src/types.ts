@@ -1,4 +1,4 @@
-import type { AttachPlacement, SessionRow } from "@agmux/protocol";
+import type { AttachPlacement, RemoteAttachMode, SessionRow } from "@agmux/protocol";
 
 // The dash preview has two tabs: a live tmux mirror and a technical detail card.
 export type PreviewMode = "mirror" | "detail";
@@ -32,7 +32,7 @@ export interface PreviewSource {
 // attach/resume return a Handoff when the terminal must be handed off, or null
 // when handled inline (e.g. in-tmux switch-client — the TUI stays alive).
 // Where to open a session; omitted = the configured default (⏎).
-export interface AttachRequest { placement: AttachPlacement }
+export interface AttachRequest { placement: AttachPlacement; mode?: RemoteAttachMode }
 
 export interface Actions {
   attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null>;

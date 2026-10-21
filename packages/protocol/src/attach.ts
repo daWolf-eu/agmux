@@ -8,3 +8,41 @@ export type AttachPlacement = (typeof ATTACH_PLACEMENTS)[number];
 export function isAttachPlacement(v: unknown): v is AttachPlacement {
   return typeof v === "string" && (ATTACH_PLACEMENTS as readonly string[]).includes(v);
 }
+
+// How a remote (sandbox) session is attached: a throwaway tmux view session on
+// the sandbox's tmux, or the sandbox's own client (full) driving its window.
+export const REMOTE_ATTACH_MODES = ["view", "full"] as const;
+export type RemoteAttachMode = (typeof REMOTE_ATTACH_MODES)[number];
+
+export function isRemoteAttachMode(v: unknown): v is RemoteAttachMode {
+  return typeof v === "string" && (REMOTE_ATTACH_MODES as readonly string[]).includes(v);
+}
+
+// Values from a replicated row (or config) reach a sandbox shell as positional
+// args; they are validated against these before any use.
+export function isAttachTag(s: string): boolean {
+  return /^[A-Za-z0-9_-]{1,32}$/.test(s);
+}
+
+export function isTmuxKeyName(s: string): boolean {
+  return /^[A-Za-z0-9-]{1,16}$/.test(s);
+}
+
+// A remote row's tmux coordinates (SessionRow.remote_tmux).
+export interface RemoteTmux {
+  session: string;
+  window: string;
+  pane: string | null;
+  socket: string | null;
+}
+
+export function isRemoteTmux(v: unknown): v is RemoteTmux {
+  if (typeof v !== "object" || v === null) return false;
+  const t = v as Record<string, unknown>;
+  const { session, window, pane, socket } = t;
+  return typeof session === "string" && session.length >= 1 && session.length <= 128 &&
+    !/[\x00-\x1f\x7f:.]/.test(session) &&
+    typeof window === "string" && /^@\d{1,9}$/.test(window) &&
+    (pane === null || (typeof pane === "string" && /^%\d{1,9}$/.test(pane))) &&
+    (socket === null || (typeof socket === "string" && /^\/[A-Za-z0-9._/-]{1,255}$/.test(socket)));
+}
