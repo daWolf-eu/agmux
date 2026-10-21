@@ -136,6 +136,59 @@ VM restart, idle gaps beyond 16 min, real Claude hooks (needs a logged-in sandbo
 launcher), arm64. Minor UX finding: for an idle but healthy sandbox `hub status` says
 "last sync 16m ago" — the timestamp only moves with the cursor.
 
+## Phase 2 smoke test (2026-10-21)
+
+Remote attach against a real sandbox. Observed on: Mac openshell 0.1.5, gateway `ai-sandbox`
+0.1.5 (docker driver), Mac tmux 3.6a, sandbox tmux 3.7c, image `openshell-workbench:1057569940bb`
+with its own agmux 0.1.0-alpha.2 (Phase 1 build, nothing uploaded but the stub). Scratch
+sandbox `agmux-p2-smoke` (label `agmux=1`, `AGMUX_HOST` via `--env`), stub agent
+`stub-agent-loop.sh` (one turn / 10 s) in the sandbox's tmux session `work`. Mac side isolated:
+hub from the branch under a temp HOME, `[[remote]]` with default `agmux_bin`, its own tmux
+server (`-S`, `-f /dev/null`) with a control-mode client as the terminal. The openshell
+wrapper logs every call, so the reap exec is visible. Script: `phase1-smoke.sh phase2`
+(self-contained, always deletes the sandbox). 4 runs, the last one 0 failures.
+
+| Check | Result |
+|---|---|
+| 1. Replication | `ls --remote` after ≈2 s; `inspect` `.session.remote_tmux` = `work`/`@0`/`%0`/`/tmp/tmux-998/default`, `remote_pid` set, `pid` null ✓ |
+| 2. `attach --placement new-window --mode view` | stub output in the local pane 0.7 s after the command; pane options `@agmux_remote=1`, `@agmux_attach_mode=view`; window `⇄ <id8>`; sandbox has `agmux-view-<id8>-p<N>` (1 window, 1 client); no status bar ✓ |
+| 2. `M-d` | window closed after ≈250 ms, no hold; no `agmux-view-*` left ✓ |
+| 3. `kill-window` (hangup reap) | reap exec (`--no-tty … sh -c <script> agmux p<N>`) started +18 ms after the kill; view gone at the first poll, ≈120–150 ms ✓ |
+| 3b. Control: pane process SIGKILLed first, then `kill-window` (no reap) | view gone at the first poll too (≈140–160 ms); same with the openshell client SIGKILLed. See below ✓ |
+| 4. `--mode full` | inner status bar `[work] 0:bash* …` visible, sandbox prefix `C-a`; state `full <sock> <pid>`, `ps -o comm=` = `tmux: client` (Linux proctitle; matches `tmux*`); `C-a d` → pane exit status 0 after ≈280 ms; `kill-window` → reap exec ran, client gone ≈150 ms ✓ |
+| 5. Stopped sandbox | stays in `sandbox list` as `Stopped` (stop ≈0.4–0.5 s). Attach: `get` +0.45 s, `start` +0.5 s, script exec +1.2–2.2 s (start took 0.7–1.7 s). The sandbox starts, but the agent died with the container: the script exits 3 ("the session's tmux window @0 is gone"), the hold shows it, the reap runs. After restarting the stub, attaching the new session works (output after 0.7 s) ✓ (with the caveat below) |
+| Lost row | `attach` refused, exit 2, message with the by-hand `sandbox exec … --tty -- agmux attach <id>` ✓ |
+
+Latencies (warm, Ready sandbox): `agmux attach` CLI returns in ≈0.4 s; agent output visible
+≈0.7 s; a `--no-tty` exec round trip ≈120–150 ms.
+
+**openshell tears down the remote side of a `--tty` exec (observed on 0.1.5).** When the local
+openshell client dies (SIGHUP from the closed pane, or SIGKILL), the remote pty is hung up and
+the sandbox tmux client exits; `destroy-unattached` then removes the view. So on 0.1.5 the
+hangup reap is redundant for these paths: it still runs (+18 ms) and both race to the same end
+state. It stays needed for what was not tested: Mac sleep / network loss without a clean
+disconnect, other openshell versions (0.0.116 orphaned `--no-tty` remotes, Phase 1), and the
+next-attach reap for a crashed Mac.
+
+**Stale coords after a sandbox restart (design gap, not a code defect).** `sandbox stop` kills
+every process; the row stays live until the sandbox hub's liveness sweep (every 30 s, and only
+once something runs agmux there again; the Mac follower does). A new tmux server reuses the
+same socket path and window ids (`@0`), so the window check passes for the dead row.
+Reproduced: stop, start, start a new stub in `work`, attach the OLD row within 4 s → exit 0, the
+pane shows the NEW agent. The window lasts until the sweep marks the old row `lost` (≈30–60 s
+seen); pid reuse after a restart (pids restart low; the old stub's pid 193 was reused by a
+`head` once) can stretch it. A fix would need a server identity in the coords (e.g. the tmux
+server pid or `#{start_time}`) checked by the script.
+
+Other: two sessions started within ≈65 s share the first 8 id chars (UUIDv7), so the view name
+`agmux-view-<id8>-<tag>` is not unique per session; the tag keeps it unique per local pane.
+A Stopped sandbox showed `stale` ("not ready (phase: Stopped)") in `hub status` once and still
+`ok` 12 s after the stop in the scripted runs (timing of the follower's next reconnect).
+
+**Not covered (by hand, spec §11, in Ghostty with real Claude):** Shift+Enter newline, Esc
+interrupt latency, mouse wheel into the inner copy-mode, OSC 52 yank; a real terminal client
+(only a control-mode client here), Mac sleep / network loss, dash / status-line attach paths.
+
 ## Open
 
 - Real Claude through the hooks: `wi-sag-280` claude is not logged in (provider attached or
@@ -153,7 +206,7 @@ launcher), arm64. Minor UX finding: for an idle but healthy sandbox `hub status`
 - `longstream.ts` — long-lived `exec` stream logger.
 - `n1-manual.sh` — manual N1 check in a real terminal.
 - `stub-agent-loop.sh` — stub agent that runs one turn every `STUB_INTERVAL` s (phase 1 smoke).
-- `phase1-smoke.sh` — phase 1 smoke test: `setup` / `check` / `teardown`.
+- `phase1-smoke.sh` — phase 1 smoke test: `setup` / `check` / `teardown`; phase 2 (remote attach): `phase2`.
 
 ## Left in place (clean up when done)
 
