@@ -30,7 +30,7 @@ const Blank = () => <text> </text>;
 // The full key list (the footer shows only the everyday ones), in the help's wording.
 const HELP_KEYS: [string, string][] = [
   ["j/k", "move"], ["g/G", "top/bottom"], ["s", "sort"], ["f", "filter"], ["r", "local/remote"],
-  ["/", "search"], ["⏎", "attach/resume"], ["A", "attach to…"], ["m", "attach mode (remote)"], ["tab", "preview tab"],
+  ["/", "search"], ["⏎", "attach/resume"], ["A", "attach to…"], ["m", "in A: attach mode (remote)"], ["tab", "preview tab"],
   ["p", "show/hide preview"], ["y", "yank field"], ["x", "kill"],
   ["u", "mark read"], ["?", "help"], ["q", "quit"],
 ];

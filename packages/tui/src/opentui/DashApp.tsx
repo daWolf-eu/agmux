@@ -10,7 +10,6 @@ import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { matchesLocality, nextLocality, type LocalityFilter } from "../shared/locality.ts";
 import { yankFields } from "../shared/yank.ts";
 import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
-
 import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
 import { SPINNER_MS } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
@@ -20,7 +19,6 @@ import { SessionTable } from "./SessionTable.tsx";
 import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 import { AttachOverlay, HelpOverlay, YankOverlay } from "./Overlays.tsx";
-
 
 export interface DashAppProps {
   // A feed per activity group — each group has its own hub query, row cap and

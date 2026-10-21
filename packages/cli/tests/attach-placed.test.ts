@@ -81,7 +81,7 @@ test("a live session without tmux coords is an error", async () => {
 test("a live remote session is attached with the requested placement and mode", async () => {
   const seen: (AttachRequest | undefined)[] = [];
   const actions: Actions = { ...fakeActions([]), async attach(_r, req) { seen.push(req); return null; } };
-  const code = await withHub(row({ remote: true, pid: null, tmux_session: null, tmux_window: null, tmux_pane: null }), () => attachPlacedCmd(
+  const code = await withHub(row({ remote: true, remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null }, pid: null, tmux_session: null, tmux_window: null, tmux_pane: null }), () => attachPlacedCmd(
     { idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "w", placement: "inline", mode: "view", settings: DEFAULT_ATTACH_SETTINGS },
     { makeActionsImpl: () => actions, spawn: async () => 0 },
   ));
