@@ -19,8 +19,11 @@ import type { RemoteTmux } from "@agmux/protocol";
 const SOCK_OR_DASH = '"${sock:--}"';
 
 // Shared by all three scripts. `t` runs tmux on the row's socket (if any).
-// Full-mode reap kills the recorded pid only while it is still a tmux client:
-// `ps -o comm=` is the basename on Linux, the exec path on macOS.
+// Full-mode reap kills the recorded pid only while it is still a tmux attach
+// client (the pid may be reused, the state file outlives a normal exit):
+// `ps -o comm=` is a tmux (the basename on Linux, the exec path on macOS) AND
+// `ps -o args=` holds `attach-session` (the client's args are the script's own
+// exec line; the server's `tmux: server` title on Linux matches comm only).
 export const REAP_FN = String.raw`st=$HOME/.agmux/attach
 t() { if [ -n "$sock" ]; then tmux -S "$sock" "$@"; else tmux "$@"; fi; }
 reap() {
@@ -29,7 +32,9 @@ reap() {
   [ "$s" = - ] && s=
   case $m in
     view) if [ -n "$s" ]; then tmux -S "$s" kill-session -t "=$x"; else tmux kill-session -t "=$x"; fi 2>/dev/null ;;
-    full) case $(ps -o comm= -p "$x" 2>/dev/null) in tmux*|*/tmux) kill "$x" ;; esac ;;
+    full) case $(ps -o comm= -p "$x" 2>/dev/null) in
+        tmux*|*/tmux) case $(ps -o args= -p "$x" 2>/dev/null) in *attach-session*) kill "$x" ;; esac ;;
+      esac ;;
   esac
   return 0
 }`;
@@ -46,6 +51,8 @@ export const VIEW_SCRIPT = String.raw`sock=$1 win=$2 pane=$3 view=$4 key=$5 tag=
 ${REAP_FN}
 mkdir -p "$st" && reap "$tag"
 ${WINDOW_CHECK}
+# Recorded before the build: a crash mid-build leaves a reapable view.
+printf 'view %s %s\n' ${SOCK_OR_DASH} "$view" > "$st/$tag"
 { t new-session -d -s "$view" \
   && t set -t "$view" status off \; set -t "$view" prefix None \; set -t "$view" prefix2 None \
        \; set -t "$view" key-table agmux-view \; set -t "$view" mouse on \
@@ -54,7 +61,6 @@ ${WINDOW_CHECK}
   && t kill-window -t "$view:^"; } \
   || { t kill-session -t "=$view" 2>/dev/null; echo "agmux: could not build the view" >&2; exit 3; }
 [ -n "$pane" ] && t select-pane -t "$pane"
-printf 'view %s %s\n' ${SOCK_OR_DASH} "$view" > "$st/$tag"
 # destroy-unattached only here: set earlier it fires on kill-window (3.7c). -u: exec --tty sets no UTF-8 locale.
 if [ -n "$sock" ]; then exec tmux -u -S "$sock" attach-session -t "=$view" \; set -t "$view" destroy-unattached on
 else exec tmux -u attach-session -t "=$view" \; set -t "$view" destroy-unattached on; fi`;
