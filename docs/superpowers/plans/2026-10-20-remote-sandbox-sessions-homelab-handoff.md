@@ -36,6 +36,7 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 
 ### Work items
 
+0. **OpenShell versions first.** The Mac's `openshell` client is newer than the `ai-sandbox` gateway, and the two can't talk to each other (`workspace '\n\u{7}default' not found`). If the gateway server (`openshell -g ai-sandbox status`) is older than the Mac client, upgrade the gateway to the current OpenShell before anything else, and report the versions.
 1. **`openshell/bin/stage-agmux [<agmux checkout>]`** (default checkout `~/dawolf/agmux/AGX.git.main`):
    - Refuses a dirty agmux tree unless `--dirty` is passed.
    - Runs `bun install --os='*' --cpu='*'`, then `bun build --compile` for `bun-linux-x64` and `bun-linux-arm64`, for both `packages/cli/bin/agmux.ts` and `packages/hub/bin/agmux-hub.ts`.
