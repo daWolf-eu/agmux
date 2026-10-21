@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import type { ReactNode } from "react";
 import { TextAttributes } from "@opentui/core";
-import type { SessionRow } from "@agmux/protocol";
+import type { RemoteAttachMode, SessionRow } from "@agmux/protocol";
 import { STATUS_COLORS, TONES, statusGlyph, toneGlyph, type StatusTone } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
 import { clip } from "../shared/columns.ts";
@@ -30,7 +30,7 @@ const Blank = () => <text> </text>;
 // The full key list (the footer shows only the everyday ones), in the help's wording.
 const HELP_KEYS: [string, string][] = [
   ["j/k", "move"], ["g/G", "top/bottom"], ["s", "sort"], ["f", "filter"], ["r", "local/remote"],
-  ["/", "search"], ["⏎", "attach/resume"], ["A", "attach to…"], ["tab", "preview tab"],
+  ["/", "search"], ["⏎", "attach/resume"], ["A", "attach to…"], ["m", "attach mode (remote)"], ["tab", "preview tab"],
   ["p", "show/hide preview"], ["y", "yank field"], ["x", "kill"],
   ["u", "mark read"], ["?", "help"], ["q", "quit"],
 ];
@@ -95,7 +95,7 @@ interface PickerItem { key: string; label: string; value: string; dim: boolean }
 // A digit-keyed list for the selected session: "▌ 1   Label   value". Dim items
 // keep their slot; their value shows dimmed ("—" when empty).
 function PickerOverlay(props: {
-  title: string; row: SessionRow; items: PickerItem[]; cursor: number; screenWidth: number; hints: ReactNode;
+  title: string; row: SessionRow; items: PickerItem[]; cursor: number; screenWidth: number; hints: ReactNode; extra?: ReactNode;
 }) {
   const { row, items, cursor, title } = props;
   const g = statusGlyph(row);
@@ -128,6 +128,7 @@ function PickerOverlay(props: {
           </box>
         );
       })}
+      {props.extra}
       <Blank />
       <text wrapMode="none">{props.hints}</text>
     </Centered>
@@ -148,11 +149,24 @@ export function YankOverlay(props: { row: SessionRow; fields: YankField[]; curso
   );
 }
 
-export function AttachOverlay(props: { row: SessionRow; targets: AttachTarget[]; cursor: number; screenWidth: number }) {
+// `mode` is set for remote rows only: the line shows both modes, the current one lit.
+export function AttachOverlay(props: { row: SessionRow; targets: AttachTarget[]; cursor: number; screenWidth: number; mode?: RemoteAttachMode }) {
   const items = props.targets.map((t, i) => ({ key: String(i + 1), label: t.label, value: t.enabled ? "" : t.reason, dim: !t.enabled }));
   return (
     <PickerOverlay
       title="attach to" row={props.row} items={items} cursor={props.cursor} screenWidth={props.screenWidth}
+      extra={props.mode && (
+        <>
+          <Blank />
+          <text wrapMode="none">
+            <span fg={MOCHA.overlay1}>{"  mode: "}</span>
+            <span fg={props.mode === "view" ? MOCHA.text : MOCHA.surface2} attributes={props.mode === "view" ? TextAttributes.BOLD : undefined}>view</span>
+            <span fg={MOCHA.overlay1}>{" ⇄ "}</span>
+            <span fg={props.mode === "full" ? MOCHA.text : MOCHA.surface2} attributes={props.mode === "full" ? TextAttributes.BOLD : undefined}>full</span>
+            <span fg={MOCHA.surface2}>{" ("}</span><span fg={MOCHA.subtext0}>m</span><span fg={MOCHA.surface2}>)</span>
+          </text>
+        </>
+      )}
       hints={<>
         <KeyHint k={`1-${items.length}/⏎`} label="open" />
         <KeyHint k="j/k" label="move" lead="  " />

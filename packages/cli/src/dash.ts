@@ -53,6 +53,7 @@ export async function dashCmd(
     return 2;
   }
   const attach = opts.attach ?? DEFAULT_ATTACH_SETTINGS;
+  const attachCtx = attachCtxFor(attach, process.env, opts.popup);
   return deps.runManageImpl({
     hubUrl: opts.hubUrl,
     resolveHubUrl: opts.resolveHubUrl,
@@ -66,7 +67,9 @@ export async function dashCmd(
     initialLocality: opts.locality ?? "all",
     source: deps.makeSourceImpl(opts.hubUrl),
     actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup, attach),
-    attachCtx: attachCtxFor(attach, process.env, opts.popup),
+    attachCtx,
+    // Outside tmux the view mode (a tmux session of its own) has no home: full.
+    remoteMode: attachCtx.inTmux ? attach.remote.mode : "full",
     columns: opts.columns,
     showHeader: opts.header,
   });

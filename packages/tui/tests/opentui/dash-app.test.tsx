@@ -758,3 +758,98 @@ test("x on a remote row shows the refusal as a notice instead of the kill confir
   expect(killed).toEqual([]);
   renderer.destroy();
 });
+
+// --- remote attach mode in the popup -----------------------------------------
+
+const remoteRow = () => mkRow({ session_id: "agx-rem-1", status: "running", remote: true, host: "gw/sbx" });
+
+async function mountRemote(rows: SessionRow[], actions: Actions, remoteMode?: "view" | "full") {
+  const t = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions} attachCtx={TMUX_CTX} remoteMode={remoteMode}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  await t.renderOnce();
+  return t;
+}
+
+test("A on a remote row shows the mode line; m flips the highlighted mode", async () => {
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await mountRemote([remoteRow()], noActions);
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  let frame = captureCharFrame();
+  expect(frame).toContain("mode: view ⇄ full (m)");
+  expect(frame).toContain("new window"); // remote targets, not "no tmux pane"
+  expect(frame).not.toContain("no tmux pane");
+  await act(async () => { mockInput.pressKey("m"); });
+  await renderOnce();
+  frame = captureCharFrame();
+  expect(frame).toContain("mode: view ⇄ full (m)");
+  renderer.destroy();
+});
+
+test("m then a digit attaches a remote row with that mode", async () => {
+  const calls: [SessionRow, AttachRequest | undefined][] = [];
+  const actions: Actions = { ...noActions, async attach(r, req) { calls.push([r, req]); return null; } };
+  const rows = [remoteRow()];
+  const { renderer, renderOnce, mockInput } = await mountRemote(rows, actions);
+  await act(async () => { mockInput.pressKey("A"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("m"); });
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("3"); });
+  await renderOnce();
+  expect(calls.map(([, q]) => q)).toEqual([{ placement: "new-window", mode: "full" }]);
+  renderer.destroy();
+});
+
+test("the popup mode starts from remoteMode and resets on each open", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async attach(_r, req) { reqs.push(req); return null; } };
+  const { renderer, renderOnce, mockInput } = await mountRemote([remoteRow()], actions, "full");
+  await act(async () => { mockInput.pressKey("A"); });
+  await act(async () => { mockInput.pressKey("m"); }); // full -> view
+  await act(async () => { mockInput.pressKey("A"); }); // close (shifted a)
+  await renderOnce();
+  await act(async () => { mockInput.pressKey("A"); }); // reopen: back to full
+  await act(async () => { mockInput.pressKey("3"); });
+  await renderOnce();
+  expect(reqs).toEqual([{ placement: "new-window", mode: "full" }]);
+  renderer.destroy();
+});
+
+test("a local row has no mode line and m does nothing", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async attach(_r, req) { reqs.push(req); return null; } };
+  const rows = [mkRow({ session_id: "agx-loc-1", status: "running", tmux_session: "m", tmux_window: "@1" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await mountRemote(rows, actions);
+  await act(async () => { mockInput.pressKey("A"); });
+  await act(async () => { mockInput.pressKey("m"); });
+  await renderOnce();
+  expect(captureCharFrame()).not.toContain("mode:");
+  await act(async () => { mockInput.pressKey("1"); });
+  await renderOnce();
+  expect(reqs).toEqual([{ placement: "inline" }]);
+  renderer.destroy();
+});
+
+test("Enter on a remote live row attaches with no request", async () => {
+  const reqs: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...noActions, async attach(_r, req) { reqs.push(req); return null; } };
+  const { renderer, renderOnce, mockInput } = await mountRemote([remoteRow()], actions);
+  await act(async () => { (mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await renderOnce();
+  expect(reqs).toEqual([undefined]);
+  renderer.destroy();
+});
+
+test("help lists the attach-mode key", async () => {
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await mountRemote([remoteRow()], noActions);
+  await act(async () => { mockInput.pressKey("?"); });
+  await renderOnce();
+  expect(captureCharFrame()).toContain("attach mode (remote)");
+  renderer.destroy();
+});

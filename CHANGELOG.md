@@ -13,14 +13,15 @@ The single source of truth for the running version is
 ### Added
 - Remote attach groundwork: `[attach.remote]` config (`placement`, `mode`, `window_name`,
   `detach_key`), `remote` attach kind/targets for live replicated sessions, and validators
-  for remote tmux coordinates. Not yet wired into `agmux attach` / the dash.
+  for remote tmux coordinates.
 - Remote session rows expose `remote_tmux` / `remote_pid` (pid and `tmux_*` stay null);
   the `ls` TMUX column renders from `remote_tmux`.
 - Fixed POSIX sh scripts for remote view attach, full attach and reap (sandbox needs only
-  sh + tmux; row values enter only as positional args). Not yet wired into `agmux attach`.
+  sh + tmux; row values enter only as positional args).
 - `agmux attach <id> --remote-client --mode view|full`: local pane process that tags its tmux pane,
   runs the remote script over `openshell sandbox exec --tty` and reaps on hangup or failure.
 - Remote attach wired in: `agmux attach [--placement <p>] [--mode view|full]`, the dash and status-line clicks open a live sandbox session (inline / new pane / window / session / terminal), reuse an already open window of the same mode, name it `[attach.remote] window_name`; a closed one's refused resume prints the command to run by hand.
+- dash: the `A` popup on a remote row shows `mode: view ⇄ full (m)`; `m` toggles it (initial: `[attach.remote] mode` in tmux, `full` outside).
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
   terminal); new pane/window/session resume a closed one. ⏎ defaults via `[attach] live` / `closed`;
