@@ -93,4 +93,15 @@ Host naming is discovery's job: `<gateway>/<sandbox>` (not `name`). Sandbox name
 
 ## Running the e2e
 
-`bun test tests/e2e/remote-sync.test.ts` — no OpenShell needed. It starts real hubs in temp HOMEs (the Mac and sandboxes `box1`/`box2`); `tests/e2e/fake-openshell.sh` stands in for `openshell` with the two verbs the loop uses: `sandbox list` (prints `$FAKE_OS_DIR/list.json`) and `sandbox exec -n <name> --no-tty -- cmd…` (drains stdin to EOF first, like 0.0.116, so a follower holding stdin open hangs the e2e; then runs `cmd` with `HOME=$FAKE_OS_DIR/<name>`, `AGMUX_HOST=<gw>/<name>`; names listed in `$FAKE_OS_DIR/nohost` get no `AGMUX_HOST` to simulate an old sandbox). Point `openshell_bin` at the script. Unit tests for the follower inject `deps` (`spawn`, `nowMs`, `sleep`); the sync loop injects `discoveryFor`, `transportFor`, `follower`, `nowMs`, `newId`.
+`bun test tests/e2e/remote-sync.test.ts` — no OpenShell needed. It starts real hubs in temp HOMEs (the Mac and sandboxes `box1`/`box2`); `tests/e2e/fake-openshell.sh` stands in for `openshell`:
+- `sandbox list -o json --selector <sel>` prints `$FAKE_OS_DIR/list.json`.
+- `sandbox exec -n <name> --no-tty -- cmd…` drains stdin to EOF first, like 0.0.116, so a follower holding stdin open hangs the e2e; then runs `cmd` with `HOME=$FAKE_OS_DIR/<name>`, `AGMUX_HOST=<gw>/<name>` and stdin closed. Names listed in `$FAKE_OS_DIR/nohost` get no `AGMUX_HOST` (an old sandbox).
+- `sandbox exec … --tty -- cmd…` runs `cmd` the same way with the terminal inherited, no drain.
+- `sandbox get <name> -o json` prints `$FAKE_OS_DIR/<name>/sandbox.json`, default `{"phase":"Ready"}`; `sandbox start <name>` exits 0.
+- Every call appends its argv, tab-joined, to `$FAKE_OS_DIR/calls.log` (one line per call; newlines inside an argument become spaces).
+
+Point `openshell_bin` at the script.
+
+`bun test tests/e2e/remote-attach.test.ts` runs remote attach end to end on two private tmux servers (`-S <tmp>/inner.sock` = the sandbox's, `-S <tmp>/outer.sock` = the Mac's, both `-f /dev/null`). The outer server is started with the Mac env (`HOME`, `FAKE_OS_DIR`, `AGMUX_BIN` = the Mac CLI shim) because the placed pane process inherits the server's environment, not the caller's; a control-mode client (`tmux -C attach`) stands in for the user's terminal so `switch-client` has a client. Skipped without `tmux`.
+
+Unit tests for the follower inject `deps` (`spawn`, `nowMs`, `sleep`); the sync loop injects `discoveryFor`, `transportFor`, `follower`, `nowMs`, `newId`.
