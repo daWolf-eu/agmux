@@ -1,3 +1,4 @@
+import type { RemoteTmux } from "./attach.ts";
 // Read-ness is part of the status vocabulary, not a separate axis:
 //   done  = the turn finished and you have not looked at it since
 //   idle  = finished/quiet and seen (or nothing has happened yet)
@@ -56,6 +57,10 @@ export interface SessionRow {
   remote?: boolean;
   sync_stale?: boolean;
   last_sync_ts?: string | null;
+  // Remote rows only (null on local rows): the sandbox's own tmux coords and pid,
+  // namespaced so pid / tmux_* stay null. Not validated here (see isRemoteTmux).
+  remote_tmux?: RemoteTmux | null;
+  remote_pid?: number | null;
   // Joined from the session_usage projection (null = no usage row yet, i.e. the
   // adapter never observed a turn). Lets consumers tell a real conversation from
   // an empty session without a second query.

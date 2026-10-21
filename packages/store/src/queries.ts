@@ -1,6 +1,6 @@
 import type { Database } from "bun:sqlite";
-import type { EventEnvelope, Locality, SessionRow, SessionStatus, StatusDecision } from "@agmux/protocol";
-import { LIVE_STATUSES } from "@agmux/protocol";
+import type { EventEnvelope, RemoteTmux, Locality, SessionRow, SessionStatus, StatusDecision } from "@agmux/protocol";
+import { LIVE_STATUSES, stripControls } from "@agmux/protocol";
 import { deriveStatus } from "./lost.ts";
 
 // Everything decodeRow and deriveStatus need, joined once. `done` vs `idle` is
@@ -28,6 +28,15 @@ function displayName(raw: any): { name: string | null; name_source: string | nul
   if (raw.meta_name) return { name: raw.meta_name, name_source: raw.meta_name_source ?? null };
   if (raw.title && raw.title_activity) return { name: raw.title, name_source: "terminal" };
   return { name: null, name_source: null };
+}
+
+function remoteTmux(raw: any): RemoteTmux | null {
+  if (!raw.tmux_session || !raw.tmux_window) return null;
+  const clean = (v: unknown) => (v == null ? null : stripControls(String(v)));
+  return {
+    session: stripControls(String(raw.tmux_session)), window: stripControls(String(raw.tmux_window)),
+    pane: clean(raw.tmux_pane), socket: clean(raw.tmux_socket),
+  };
 }
 
 function decodeRow(raw: any): SessionRow {
@@ -79,6 +88,8 @@ function decodeRow(raw: any): SessionRow {
     remote,
     sync_stale: remote && !raw.last_sync_ok,
     last_sync_ts: remote ? (raw.last_sync_ts ?? null) : null,
+    remote_tmux: remote ? remoteTmux(raw) : null,
+    remote_pid: remote ? (raw.pid ?? null) : null,
   };
 }
 

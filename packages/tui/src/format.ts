@@ -41,7 +41,8 @@ export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
     r.git_repo ?? "-",
     clip(r.git_branch, BRANCH_MAX),
     r.pid?.toString() ?? "-",
-    r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
+    r.remote_tmux ? `${r.remote_tmux.session}:${r.remote_tmux.window}`
+      : r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
     short(r.start_ts),
     short(r.last_heartbeat_ts ?? r.start_ts),
   ].map(stripControls));   // remote text is untrusted: no escapes or newlines in a cell
