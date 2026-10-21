@@ -125,6 +125,19 @@ for (const shell of SHELLS) {
       expect(fs.existsSync(e.log)).toBe(false);
     });
 
+    test("view: the state is recorded before the view is built", async () => {
+      const V = viewSessionName(ID, "p1");
+      // A session of that name already exists: new-session fails mid-build.
+      expect((await tmux(e, ["new-session", "-d", "-s", V, "sleep 600"])).code).toBe(0);
+      const r = await run(shell, e, viewScriptArgv(coords(), V, "M-d", "p1"));
+      expect(r.code).toBe(3);
+      expect(r.err).toContain("could not build the view");
+      expect(state(e, "p1")).toBe(`view ${e.sock} ${V}\n`);
+      expect((await run(shell, e, reapScriptArgv("p1"))).code).toBe(0);
+      expect(fs.existsSync(path.join(e.st, "p1"))).toBe(false);
+      expect((await tmux(e, ["has-session", "-t", "=work"])).code).toBe(0);
+    });
+
     test("agent window killed → view session gone, server alive", async () => {
       const V = viewSessionName(ID, "p1");
       expect((await run(shell, e, viewScriptArgv(coords(), V, "M-d", "p1"))).code).toBe(0);
@@ -193,27 +206,45 @@ for (const shell of SHELLS) {
       expect(fs.existsSync(e.log)).toBe(false);
     });
 
-    test("full reap kills the recorded pid only when it is tmux", async () => {
+    test("full reap kills the recorded pid only when it is a tmux attach client", async () => {
       const fake = path.join(e.dir, "fakebin");
       fs.mkdirSync(fake);
-      fs.symlinkSync(Bun.which("sleep")!, path.join(fake, "tmux"));
-      const client = Bun.spawn([path.join(fake, "tmux"), "600"], { stdin: "ignore" });
+      // A tmux client: comm `tmux`, `attach-session` in its args (a shell stands in for it).
+      fs.symlinkSync(DASH ?? Bun.which("bash")!, path.join(fake, "tmux"));
+      fs.mkdirSync(path.join(fake, "srv"));
+      // tmux by name only, no attach-session in its args (like the tmux server).
+      fs.symlinkSync(Bun.which("sleep")!, path.join(fake, "srv", "tmux"));
+      const client = Bun.spawn([path.join(fake, "tmux"), "-c", "trap 'exit 0' TERM; while :; do sleep 1; done", "attach-session"], { stdin: "ignore" });
+      const named = Bun.spawn([path.join(fake, "srv", "tmux"), "600"], { stdin: "ignore" });
       const other = Bun.spawn([Bun.which("sleep")!, "600"], { stdin: "ignore" });
       try {
         await Bun.sleep(100);
         fs.mkdirSync(e.st, { recursive: true });
         fs.writeFileSync(path.join(e.st, "p1"), `full - ${client.pid}\n`);
         fs.writeFileSync(path.join(e.st, "p2"), `full - ${other.pid}\n`);
-        expect((await run(shell, e, reapScriptArgv("p1"))).code).toBe(0);
-        expect((await run(shell, e, reapScriptArgv("p2"))).code).toBe(0);
+        fs.writeFileSync(path.join(e.st, "p3"), `full - ${named.pid}\n`);
+        for (const tag of ["p1", "p2", "p3"]) expect((await run(shell, e, reapScriptArgv(tag))).code).toBe(0);
         expect(await Promise.race([client.exited.then(() => "dead"), Bun.sleep(3000).then(() => "alive")])).toBe("dead");
-        expect(other.exitCode).toBeNull();
-        expect(fs.existsSync(path.join(e.st, "p1"))).toBe(false);
-        expect(fs.existsSync(path.join(e.st, "p2"))).toBe(false);
+        const alive = (p: Bun.Subprocess) => Promise.race([p.exited.then(() => "dead"), Bun.sleep(500).then(() => "alive")]);
+        expect(await alive(other)).toBe("alive");
+        expect(await alive(named)).toBe("alive");
+        for (const tag of ["p1", "p2", "p3"]) expect(fs.existsSync(path.join(e.st, tag))).toBe(false);
       } finally {
         client.kill();
+        named.kill();
         other.kill();
       }
+    });
+
+    test("full reap never kills the tmux server (pid reuse)", async () => {
+      const pid = (await tmux(e, ["display-message", "-p", "#{pid}"])).out;
+      expect(pid).toMatch(/^\d+$/);
+      fs.mkdirSync(e.st, { recursive: true });
+      fs.writeFileSync(path.join(e.st, "p1"), `full - ${pid}\n`);
+      expect((await run(shell, e, reapScriptArgv("p1"))).code).toBe(0);
+      await Bun.sleep(200);
+      expect((await tmux(e, ["has-session", "-t", "=work"])).code).toBe(0);
+      expect(fs.existsSync(path.join(e.st, "p1"))).toBe(false);
     });
 
     test("reap never interprets the state file", async () => {
