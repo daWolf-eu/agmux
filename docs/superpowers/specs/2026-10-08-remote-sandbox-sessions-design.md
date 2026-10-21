@@ -1,7 +1,7 @@
 # Remote Sandbox Sessions — Design
 
 **Date:** 2026-10-08
-**Status:** Phase 1 (visibility) implemented 2026-10-20 (see §10 implementation notes). Design: draft, review round 1 incorporated — topology **S** chosen (§5); §6 kept as the
+**Status:** Phase 1 (visibility) implemented 2026-10-20, Phase 2 (attach) implemented 2026-10-21 (see §10 implementation notes). Design: draft, review round 1 incorporated — topology **S** chosen (§5); §6 kept as the
 considered alternative. Phase 0 spike findings (2026-10-11,
 [`SPIKE_REPORT.md`](../../spikes/2026-10-11-remote-sandbox/SPIKE_REPORT.md)) folded in.
 **Builds on:** foundation §2 (B), §3 host-agent role, §7 remote attach, §11 security;
@@ -509,6 +509,8 @@ options, all set so the inner tmux takes no keys and draws nothing.
 > block below implements this.
 
 ```sh
+# Phase 2: this is a fixed sh script the Mac runs via `sandbox exec` (`cli/src/remote-tmux.ts`);
+# `agmux attach --view|--full|--reap` do not run remotely. Values are positional args.
 # run remotely by `agmux attach --view <id>` (S); verified on tmux 3.7c (spike view.sh)
 V=agmux-view-<id8>-<tag>         # <tag> chosen by the Mac side (its pane id), for the reap
 tmux new-session -d -s "$V" \
@@ -650,7 +652,7 @@ in the hub; `--remote/--local/--host`; dash `host` column + filter; stale overla
 interfaces and the loop-prevention rule (§4.8). Launcher changes in homelab (label, env,
 adapter install).
 
-**Phase 2 — attach.** `agmux attach --mode view|full` (N1 + N2), `[remote.attach]`; remote attach path in `attach`/dash/status
+**Phase 2 — attach (done 2026-10-21).** `agmux attach --mode view|full` (N1 + N2), `[attach.remote]` (not `[remote.attach]`, see note 1); remote attach path in `attach`/dash/status
 line; local pane bookkeeping; image `/etc/tmux.conf`; focus-seen for remote panes.
 
 **Phase 3 — control (separate spec).** Remote resume (`exec -- agmux attach` creates the
@@ -685,6 +687,26 @@ Refinements made while implementing; the code is authoritative.
 - R20: the rotation code is `EXIT_ROTATE = 75` (EX_TEMPFAIL, `protocol/src/host.ts`), not 0. A SIGTERMed `agmux events` (consumer-lock replacement) exits 0, so with 0 two followers sharing a consumer id would replace each other with no backoff; exit 0 now backs off like any disconnect. openshell 0.0.116 propagates plain exit codes (`exit 7` → 7). Sandboxes need an agmux that knows `--max-duration` (same build as the Mac).
 - R17: replicated rows carry the source store's `db_id` (schema v10 `events.source_db` / `sessions.source_db`); a live row whose `source_db` differs from `hosts.db_id` derives `lost` with rule `host-reset`, so a sandbox recreated under the same name never resurrects old sessions (`store/src/lost.ts`).
 - Final review: ingest accepts only a canonical UUID `session_id` and an `[A-Za-z0-9-]{1,64}` `event_id`; ids reach shell/tmux strings only as `[0-9a-f-]`, agent text in tmux formats has every `#` doubled (`hub/src/sync/ingest.ts`, `cli/src/notifier.ts`, `tui/src/shared/statusline.ts`). Session text is printed through `stripControls` at every display sink. A stream line is capped at 1 MiB, `/ingest` bodies too (413). `GET /hosts` adds the in-memory per-remote discovery state for `hub status`. A node ingests only after its `host.synced` was written.
+
+### Phase 2 implementation notes
+
+Refinements made while implementing; the code is authoritative (`cli/src/remote-tmux.ts`, `remote-client.ts`, `attach-remote.ts`).
+
+1. `[attach.remote]`, not `[remote.attach]`: `remote` is an array of tables (`[[remote]]`), so `[remote.attach]` would become a subtable of the last entry. Keys/defaults: `placement = "new-window"`, `mode = "view"`, `window_name = "⇄ {title}"`, `detach_key = "M-d"` (was `[attach] view_detach_key`).
+2. Remote coords are exposed namespaced: `SessionRow.remote_tmux {session, window, pane, socket}` and `remote_pid`, only on remote rows; `pid` / `tmux_*` stay null. Shown in `inspect` and the `ls` TMUX column; PID stays `-`.
+3. The Mac builds the attach from the replicated coords; the sandbox needs only sh + tmux (no image change). Replaces §8.1's remote `agmux attach --view|--full|--reap` with three fixed sh scripts; values are positional args after `$0` = `agmux`, validated first (`isRemoteTmux`). Stale coords: the script's window check fails with exit 3 and a message.
+4. The local pane process tags itself: `agmux attach <id> --remote-client --mode <m> --detach-key <k>`; tag `p<N>` from `$TMUX_PANE`, else `t` + 8 hex. It sets `@agmux_session_id`, `@agmux_remote=1`, `@agmux_attach_mode` on its own pane.
+5. Reap state: one line in `$HOME/.agmux/attach/<tag>`, `view <socket|-> <view>` or `full <socket|-> <pid>`. Full mode records `$$` then `exec`s tmux. Reap kills the view session, or the pid only if `ps -o comm=` is a tmux. A normal exit leaves the file; the next reap of the tag clears it.
+6. Mode default: `[attach.remote] mode` inside tmux, `full` outside (N4). Explicit `--mode` / `m` wins.
+7. Not built: peek (popup slot 5 dimmed) and N3.
+8. A closed remote session: resume is refused with the command to run by hand (§4.7): `<openshell> -g <gw> sandbox exec -n <sbx> --tty -- <agmux_bin> attach <id>`.
+9. Stopped sandbox: the pane process runs `sandbox get -o json` and, if `phase === "Stopped"`, `sandbox start`; a failing `get` is ignored.
+10. `session.seen` for a remote row is stamped with the local host (`resolveHost()`), not `row.host` (§4.5).
+11. `{title}` = session name or first 8 id chars; `stripControls`, `#` doubled, capped at 40 columns.
+12. Script deviations found by testing: `tmux display-message -t <missing window>` exits 0 with empty output (observed on 3.6a and 3.7c), so the window check compares the printed `#{window_id}`; macOS `ps -o comm=` prints the full path, so the full-mode reap matches `tmux*|*/tmux`.
+13. Review notes: the reap awaits on SIGHUP/SIGTERM before the process exits; plain local `agmux attach` never reads config (remote rows load it lazily; a broken config gives a warning and defaults); a trailing `;` in a window name is escaped as `\;` (tmux argv separator).
+14. Known limits: tags share one sandbox state dir, so two Macs / local tmux servers with the same pane id can reap each other's client; a detach key stays bound in the server-wide `agmux-view` table until the sandbox tmux server restarts.
+15. Verified on openshell 0.1.5 (ai-sag): `sandbox exec -- sh -c '…' x 'a b' '$HOME' ';' '"q"' "it's" ''` delivers every positional arg verbatim; sandbox tmux 3.7c.
 
 ## 11. Open questions / verify list
 
