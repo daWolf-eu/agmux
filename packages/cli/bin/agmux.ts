@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, resolveHost } from "@agmux/protocol";
+import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, resolveHost } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { runHeadless } from "../src/headless.ts";
@@ -16,6 +16,7 @@ import { inspectCmd } from "../src/inspect.ts";
 import { explainCmd } from "../src/explain.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
+import { runRemoteClient } from "../src/remote-client.ts";
 import { loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
 import { attachPlacedCmd } from "../src/attach-placed.ts";
 import { seenCmd } from "../src/seen.ts";
@@ -324,6 +325,13 @@ async function main(): Promise<number> {
     }
     case "attach": {
       const id = argv[1]; if (!id || id.startsWith("--")) usage();
+      if (argv.includes("--remote-client")) {
+        const mode = argv[argv.indexOf("--mode") + 1];
+        const key = argv.includes("--detach-key") ? argv[argv.indexOf("--detach-key") + 1] : "M-d";
+        if (!isRemoteAttachMode(mode)) { console.error("attach: --mode must be view|full"); return 2; }
+        if (key === undefined || !isTmuxKeyName(key)) { console.error("attach: --detach-key must be a tmux key name like M-d"); return 2; }
+        return runRemoteClient({ sessionId: id, mode, detachKey: key, hubUrl, env: process.env });
+      }
       const pi = argv.indexOf("--placement");
       if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
       const placement = argv[pi + 1];

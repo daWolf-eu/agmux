@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseRemotes } from "../src/sync/config.ts";
-import { openshellTransport } from "../src/sync/transport.ts";
+import { openshellTransport, transportArgv, transportControlArgv } from "../src/sync/transport.ts";
 import { MAX_LIST_PAGES, openshellDiscovery, parseSandboxList, runCapture } from "../src/sync/discovery.ts";
 
 const [remote] = parseRemotes([{ name: "r", gateway: "ai-sandbox", openshell_bin: "/bin/os" }]);
@@ -17,6 +17,18 @@ describe("openshellTransport", () => {
   });
   test("spec", () => {
     expect(t.spec("wi-1")).toEqual({ kind: "openshell", gateway: "ai-sandbox", target: "wi-1", bin: "/bin/os" });
+  });
+});
+
+describe("transportArgv / transportControlArgv", () => {
+  const spec = { kind: "openshell" as const, gateway: "g", target: "wi-1", bin: "/bin/os" };
+  test("exec argv", () => {
+    expect(transportArgv(spec, ["sh"], { tty: true })).toEqual(["/bin/os", "-g", "g", "sandbox", "exec", "-n", "wi-1", "--tty", "--", "sh"]);
+    expect(transportArgv(spec, ["sh"], { tty: false })).toContain("--no-tty");
+  });
+  test("control argv", () => {
+    expect(transportControlArgv(spec, "get")).toEqual(["/bin/os", "-g", "g", "sandbox", "get", "wi-1", "-o", "json"]);
+    expect(transportControlArgv(spec, "start")).toEqual(["/bin/os", "-g", "g", "sandbox", "start", "wi-1"]);
   });
 });
 

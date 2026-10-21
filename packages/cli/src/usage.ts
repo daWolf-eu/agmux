@@ -28,6 +28,8 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
   attach <id|prefix> [--placement <inline|new-pane|new-window|new-session|new-tab|new-terminal>]
      open a session; without --placement: switch to it (live) or resume it.
      placement defaults and terminal templates: [attach] / [terminal] in config.toml
+  attach <id> --remote-client --mode <view|full> [--detach-key <key>]
+     internal: the pane process agmux's own remote attach panes run; not for direct use
   seen <id|prefix>|--pane <pane_id>|--all [--socket <tmux socket>] [--source focus]
      marks a session seen (session.seen): a done session becomes idle.
      --pane resolves the tmux pane owning it and is silently a no-op unless an
