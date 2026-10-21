@@ -15,26 +15,33 @@ function setup(o: { session?: unknown; hosts?: unknown[]; childExit?: number; ge
   const spawned: string[][] = [];
   const handlers: Record<string, () => void> = {};
   const exits: number[] = [];
+  const kills: string[] = [];
+  // tmux calls and the reap, in call order.
+  const events: string[] = [];
   const deps: RemoteClientDeps = {
     fetchImpl: (async (url: string) => {
       if (String(url).includes("/sessions/")) return Response.json({ session: o.session ?? row() });
       return Response.json({ hosts: o.hosts ?? [host()], remotes: [] });
     }) as unknown as typeof fetch,
-    tmux: async (a) => { tmux.push(a); },
+    tmux: async (a) => { tmux.push(a); events.push(`tmux ${a.slice(2, 4).join(" ")} ${a.at(-1)}`); },
     capture: async (argv) => {
       captures.push(argv);
+      if (argv.includes("--no-tty")) events.push("reap");
       if (argv.includes("get")) { if (o.get instanceof Error) throw o.get; return o.get ?? '{"phase":"Ready"}'; }
       if (o.reapGate && argv.includes("--no-tty")) await o.reapGate;
       return "";
     },
-    spawnTty: (argv) => { spawned.push(argv); return { exited: o.pendingExit ?? Promise.resolve(o.childExit ?? 0) }; },
+    spawnTty: (argv) => {
+      spawned.push(argv);
+      return { exited: o.pendingExit ?? Promise.resolve(o.childExit ?? 0), kill: (sig) => { kills.push(sig); events.push(`kill ${sig}`); } };
+    },
     onSignal: (sig, fn) => { handlers[sig] = fn; },
     exit: ((c: number) => { exits.push(c); }) as never,
     rand: () => "deadbeef",
   };
   const run = (mode: "view" | "full" = "view") => runRemoteClient(
     { sessionId: ID, mode, detachKey: "M-d", hubUrl: "http://hub", env: o.env ?? { TMUX_PANE: "%12", TMUX: "/tmp/tmux-501/default,1,0" } }, deps);
-  return { deps, tmux, captures, spawned, handlers, exits, run };
+  return { deps, tmux, captures, spawned, handlers, exits, kills, events, run };
 }
 
 describe("tagFor", () => {
@@ -43,15 +50,20 @@ describe("tagFor", () => {
   test("bad pane", () => expect(tagFor({ TMUX_PANE: "12;x" }, () => "abcd1234")).toBe("tabcd1234"));
 });
 
+const SOCK = ["-S", "/tmp/tmux-501/default"];
+const SET = [
+  [...SOCK, "set-option", "-p", "-t", "%12", "@agmux_session_id", ID],
+  [...SOCK, "set-option", "-p", "-t", "%12", "@agmux_remote", "1"],
+  [...SOCK, "set-option", "-p", "-t", "%12", "@agmux_attach_mode", "view"],
+];
+const UNSET = ["@agmux_session_id", "@agmux_remote", "@agmux_attach_mode"].map((k) => [...SOCK, "set-option", "-p", "-u", "-t", "%12", k]);
+const UNSET_EVENTS = ["@agmux_session_id", "@agmux_remote", "@agmux_attach_mode"].map((k) => `tmux set-option -p ${k}`);
+
 describe("runRemoteClient", () => {
   test("view mode", async () => {
     const t = setup();
     expect(await t.run()).toBe(0);
-    expect(t.tmux).toEqual([
-      ["-S", "/tmp/tmux-501/default", "set-option", "-p", "-t", "%12", "@agmux_session_id", ID],
-      ["-S", "/tmp/tmux-501/default", "set-option", "-p", "-t", "%12", "@agmux_remote", "1"],
-      ["-S", "/tmp/tmux-501/default", "set-option", "-p", "-t", "%12", "@agmux_attach_mode", "view"],
-    ]);
+    expect(t.tmux).toEqual([...SET, ...UNSET]);
     expect(t.spawned).toEqual([transportArgv(SPEC, viewScriptArgv(COORDS, viewSessionName(ID, "p12"), "M-d", "p12"), { tty: true })]);
     expect(t.captures.filter((c) => c.includes("--no-tty"))).toEqual([]);
   });
@@ -64,6 +76,38 @@ describe("runRemoteClient", () => {
     const t = setup({ childExit: 3 });
     expect(await t.run()).toBe(3);
     expect(t.captures).toContainEqual(transportArgv(SPEC, reapScriptArgv("p12"), { tty: false }));
+  });
+  test("exit 0: pane options are unset before returning", async () => {
+    const t = setup();
+    expect(await t.run()).toBe(0);
+    expect(t.tmux.slice(3)).toEqual(UNSET);
+  });
+  test("exit 3: pane options are unset before the reap (and the hold)", async () => {
+    const t = setup({ childExit: 3 });
+    expect(await t.run()).toBe(3);
+    expect(t.tmux.slice(3)).toEqual(UNSET);
+    expect(t.events.slice(3)).toEqual([...UNSET_EVENTS, "reap"]);
+  });
+  test("a failing unset is ignored", async () => {
+    const t = setup({ childExit: 3 });
+    t.deps.tmux = async (a) => { t.tmux.push(a); if (a.includes("-u")) throw new Error("no pane"); };
+    expect(await t.run()).toBe(3);
+    expect(t.tmux.slice(3)).toEqual(UNSET);
+    expect(t.captures).toContainEqual(transportArgv(SPEC, reapScriptArgv("p12"), { tty: false }));
+  });
+  test("signal: unsets the pane options, hangs up the child, reaps, then exits", async () => {
+    let endChild!: (n: number) => void;
+    const t = setup({ pendingExit: new Promise<number>((r) => { endChild = r; }) });
+    const p = t.run();
+    await new Promise((r) => setTimeout(r, 10));
+    t.handlers.SIGTERM!();
+    await new Promise((r) => setTimeout(r, 10));
+    expect(t.events.slice(3)).toEqual([...UNSET_EVENTS, "kill SIGHUP", "reap"]);
+    expect(t.kills).toEqual(["SIGHUP"]);
+    expect(t.exits).toEqual([143]);
+    endChild(129);
+    expect(await p).toBe(143);
+    expect(t.tmux.slice(3)).toEqual(UNSET);
   });
   test("SIGHUP reaps then exits 129; SIGTERM 143", async () => {
     const t = setup();
@@ -94,6 +138,8 @@ describe("runRemoteClient", () => {
   test("no TMUX_PANE: random tag, no pane options", async () => {
     const t = setup({ env: {} });
     await t.run();
+    t.handlers.SIGHUP!();
+    await new Promise((r) => setTimeout(r, 10));
     expect(t.tmux).toEqual([]);
     expect(t.spawned[0]).toEqual(transportArgv(SPEC, viewScriptArgv(COORDS, viewSessionName(ID, "tdeadbeef"), "M-d", "tdeadbeef"), { tty: true }));
   });
