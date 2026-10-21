@@ -8,7 +8,9 @@
 #
 #   IMAGE=openshell-workbench:<tag> docs/spikes/2026-10-11-remote-sandbox/phase1-smoke.sh phase2
 #   Phase 2 (remote attach), self-contained: creates SBX (default agmux-p2-smoke), runs
-#   the checks, always deletes it. Uses the image's agmux and tmux as they are.
+#   the checks, deletes it again (only if this run created it). Refuses any GW but
+#   ai-sandbox, any SBX but agmux-p2-*, and an SBX that already exists. Uses the
+#   image's agmux and tmux as they are.
 #
 # OS: the openshell client to use (default: openshell on PATH). It must be
 # compatible with the gateway; no particular version is required.
@@ -19,6 +21,7 @@ GW=${GW:-ai-sandbox}
 SBX=${SBX:-agmux-smoke}
 OS=${OS:-openshell}
 IMAGE=${IMAGE:?set IMAGE to the workbench image tag on the gateway host}
+[ -z "${WORK:-}" ] && WORK_MADE=1
 WORK=${WORK:-$(mktemp -d -t agmux-smoke)}
 M=$WORK/mac
 
@@ -140,6 +143,11 @@ process:
 P
   (timeout 90 "$M/bin/openshell" -g "$GW" sandbox create --name "$SBX" --from "$IMAGE" --policy "$WORK/policy.yaml" \
     --label agmux=1 --env "AGMUX_HOST=$GW/$SBX" -- sleep infinity </dev/null >"$WORK/create.log" 2>&1 &)
+  # Ours only once create says so: a failed create must never lead to a delete.
+  if ! wait_for 120 has "Created sandbox: $SBX" cat "$WORK/create.log"; then
+    echo "FAIL create not confirmed (not deleting; check sandbox list):"; cat "$WORK/create.log"; return 1
+  fi
+  CREATED=1
   wait_for 120 phase_is Ready || { echo "sandbox not Ready"; return 1; }
   x mkdir -p /sandbox/.agmux-p2
   os sandbox upload "$SBX" "$REPO/docs/spikes/2026-10-11-remote-sandbox/stub-agent-loop.sh" /sandbox/.agmux-p2/ >/dev/null 2>&1
@@ -254,17 +262,46 @@ phase2_checks() {
   T send-keys -t "$PANE" M-d
 }
 
+hub_alive() { [ -f "$M/.agmux/hub.pid" ] && kill -0 "$(cat "$M/.agmux/hub.pid")" 2>/dev/null; }
+sbx_exists() { "$OS" -g "$GW" sandbox get "$SBX" </dev/null >/dev/null 2>&1; }
+
+# EXIT trap: deletes the sandbox only if this run created it; exit 1 on a leak.
 p2_teardown() {
+  local rc=$? leak=0
   set +e
   T kill-server 2>/dev/null
   [ -f "$WORK/ctl.pid" ] && kill "$(cat "$WORK/ctl.pid")" 2>/dev/null
   [ -f "$M/.agmux/hub.pid" ] && kill "$(cat "$M/.agmux/hub.pid")" 2>/dev/null
-  os sandbox delete "$SBX" >/dev/null 2>&1 </dev/null
-  if has "$SBX" os sandbox list; then echo "FAIL teardown: $SBX still listed"; else echo "teardown: $SBX deleted, outer tmux and hub stopped"; fi
+  if [ "${CREATED:-}" = 1 ]; then
+    "$OS" -g "$GW" sandbox delete "$SBX" >/dev/null 2>&1 </dev/null
+    if wait_for 30 eval '! sbx_exists'; then echo "teardown: $SBX deleted"; else echo "FAIL teardown: $SBX still exists"; leak=1; fi
+  else
+    echo "teardown: $SBX not created by this run, not deleted"
+  fi
+  if [ -n "$(T list-sessions 2>/dev/null)" ] || ! wait_for 5 eval '! hub_alive'; then
+    echo "FAIL teardown: outer tmux or hub still running ($WORK kept)"; leak=1
+  elif [ "${WORK_MADE:-}" = 1 ]; then
+    rm -rf "$WORK"
+  fi
+  [ "$leak" = 1 ] && exit 1
+  exit "$rc"
+}
+
+# Guardrails, before any openshell call: only the scratch gateway, only agmux-p2-*
+# sandboxes, and never one that already exists (the trap would delete it).
+p2_guard() {
+  [ "$GW" = ai-sandbox ] || { echo "refusing: phase2 runs on gateway ai-sandbox only (GW=$GW)" >&2; return 1; }
+  case $SBX in agmux-p2-*) ;; *) echo "refusing: phase2 sandbox must be agmux-p2-* (SBX=$SBX)" >&2; return 1 ;; esac
+  case $SBX in *[!a-z0-9-]*) echo "refusing: SBX=$SBX is not [a-z0-9-]" >&2; return 1 ;; esac
 }
 
 phase2() {
   M=$WORK/mac
+  if ! p2_guard; then [ "${WORK_MADE:-}" = 1 ] && rm -rf "$WORK"; exit 2; fi
+  if sbx_exists; then
+    echo "refusing: sandbox $SBX already exists on $GW; delete it by hand first" >&2
+    [ "${WORK_MADE:-}" = 1 ] && rm -rf "$WORK"; exit 2
+  fi
   trap p2_teardown EXIT
   echo "observed on: openshell $("$OS" --version | awk '{print $2}') (client), gateway $("$OS" -g "$GW" status 2>/dev/null | awk '/Version/{print $2}'), Mac tmux $(tmux -V | awk '{print $2}')"
   p2_setup

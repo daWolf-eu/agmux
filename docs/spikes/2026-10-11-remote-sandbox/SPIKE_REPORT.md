@@ -146,7 +146,9 @@ sandbox `agmux-p2-smoke` (label `agmux=1`, `AGMUX_HOST` via `--env`), stub agent
 hub from the branch under a temp HOME, `[[remote]]` with default `agmux_bin`, its own tmux
 server (`-S`, `-f /dev/null`) with a control-mode client as the terminal. The openshell
 wrapper logs every call, so the reap exec is visible. Script: `phase1-smoke.sh phase2`
-(self-contained, always deletes the sandbox). 4 runs, the last one 0 failures.
+(self-contained; refuses any gateway but `ai-sandbox`, any sandbox but `agmux-p2-*`, and an
+existing sandbox; deletes only the sandbox it created). 4 runs, the last one 0 failures, plus
+manual probes (marked below; not in the script).
 
 | Check | Result |
 |---|---|
@@ -154,9 +156,9 @@ wrapper logs every call, so the reap exec is visible. Script: `phase1-smoke.sh p
 | 2. `attach --placement new-window --mode view` | stub output in the local pane 0.7 s after the command; pane options `@agmux_remote=1`, `@agmux_attach_mode=view`; window `⇄ <id8>`; sandbox has `agmux-view-<id8>-p<N>` (1 window, 1 client); no status bar ✓ |
 | 2. `M-d` | window closed after ≈250 ms, no hold; no `agmux-view-*` left ✓ |
 | 3. `kill-window` (hangup reap) | reap exec (`--no-tty … sh -c <script> agmux p<N>`) started +18 ms after the kill; view gone at the first poll, ≈120–150 ms ✓ |
-| 3b. Control: pane process SIGKILLed first, then `kill-window` (no reap) | view gone at the first poll too (≈140–160 ms); same with the openshell client SIGKILLed. See below ✓ |
+| 3b. Control: pane process SIGKILLed first, then `kill-window` (no reap) | view gone at the first poll too (≈140–160 ms). Manual probe (not in the script): same with the openshell client SIGKILLed instead. See below ✓ |
 | 4. `--mode full` | inner status bar `[work] 0:bash* …` visible, sandbox prefix `C-a`; state `full <sock> <pid>`, `ps -o comm=` = `tmux: client` (Linux proctitle; matches `tmux*`); `C-a d` → pane exit status 0 after ≈280 ms; `kill-window` → reap exec ran, client gone ≈150 ms ✓ |
-| 5. Stopped sandbox | stays in `sandbox list` as `Stopped` (stop ≈0.4–0.5 s). Attach: `get` +0.45 s, `start` +0.5 s, script exec +1.2–2.2 s (start took 0.7–1.7 s). The sandbox starts, but the agent died with the container: the script exits 3 ("the session's tmux window @0 is gone"), the hold shows it, the reap runs. After restarting the stub, attaching the new session works (output after 0.7 s) ✓ (with the caveat below) |
+| 5. Stopped sandbox | stays in `sandbox list` as `Stopped` (stop ≈0.4–0.5 s). Sandbox start-first ✓: `get` +0.45 s, `start` +0.5 s, script exec +1.2–2.2 s (start took 0.7–1.7 s). Old-row attach ✗: the agent died with the container, the script exits 3 ("the session's tmux window @0 is gone"), the hold shows it, the reap runs. New session ✓: after restarting the stub, attaching it shows output after 0.7 s |
 | Lost row | `attach` refused, exit 2, message with the by-hand `sandbox exec … --tty -- agmux attach <id>` ✓ |
 
 Latencies (warm, Ready sandbox): `agmux attach` CLI returns in ≈0.4 s; agent output visible
@@ -174,7 +176,7 @@ next-attach reap for a crashed Mac.
 every process; the row stays live until the sandbox hub's liveness sweep (every 30 s, and only
 once something runs agmux there again; the Mac follower does). A new tmux server reuses the
 same socket path and window ids (`@0`), so the window check passes for the dead row.
-Reproduced: stop, start, start a new stub in `work`, attach the OLD row within 4 s → exit 0, the
+Reproduced in a manual probe (not in the script): stop, start, start a new stub in `work`, attach the OLD row within 4 s → exit 0, the
 pane shows the NEW agent. The window lasts until the sweep marks the old row `lost` (≈30–60 s
 seen); pid reuse after a restart (pids restart low; the old stub's pid 193 was reused by a
 `head` once) can stretch it. A fix would need a server identity in the coords (e.g. the tmux
