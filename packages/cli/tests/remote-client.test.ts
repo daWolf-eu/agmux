@@ -9,7 +9,7 @@ const SPEC = { kind: "openshell" as const, gateway: "g", target: "wi-1", bin: "/
 const row = (o: Record<string, unknown> = {}) => ({ session_id: ID, remote: true, status: "idle", host: "g/wi-1", remote_tmux: COORDS, ...o });
 const host = (o: Record<string, unknown> = {}) => ({ host: "g/wi-1", remote: "r", transport: SPEC, ...o });
 
-function setup(o: { session?: unknown; hosts?: unknown[]; childExit?: number; get?: string | Error; env?: Record<string, string> } = {}) {
+function setup(o: { session?: unknown; hosts?: unknown[]; childExit?: number; get?: string | Error; pendingExit?: Promise<number>; reapGate?: Promise<void>; sid?: string; env?: Record<string, string> } = {}) {
   const tmux: string[][] = [];
   const captures: string[][] = [];
   const spawned: string[][] = [];
@@ -24,9 +24,10 @@ function setup(o: { session?: unknown; hosts?: unknown[]; childExit?: number; ge
     capture: async (argv) => {
       captures.push(argv);
       if (argv.includes("get")) { if (o.get instanceof Error) throw o.get; return o.get ?? '{"phase":"Ready"}'; }
+      if (o.reapGate && argv.includes("--no-tty")) await o.reapGate;
       return "";
     },
-    spawnTty: (argv) => { spawned.push(argv); return { exited: Promise.resolve(o.childExit ?? 0) }; },
+    spawnTty: (argv) => { spawned.push(argv); return { exited: o.pendingExit ?? Promise.resolve(o.childExit ?? 0) }; },
     onSignal: (sig, fn) => { handlers[sig] = fn; },
     exit: ((c: number) => { exits.push(c); }) as never,
     rand: () => "deadbeef",
@@ -96,10 +97,37 @@ describe("runRemoteClient", () => {
     expect(t.tmux).toEqual([]);
     expect(t.spawned[0]).toEqual(transportArgv(SPEC, viewScriptArgv(COORDS, viewSessionName(ID, "tdeadbeef"), "M-d", "tdeadbeef"), { tty: true }));
   });
+  test("signal while child runs: run() waits for the reap, returns 129", async () => {
+    let endChild!: (n: number) => void;
+    let openGate!: () => void;
+    const t = setup({ pendingExit: new Promise<number>((r) => { endChild = r; }), reapGate: new Promise<void>((r) => { openGate = r; }) });
+    let result: number | undefined;
+    const p = t.run().then((c) => { result = c; });
+    await new Promise((r) => setTimeout(r, 10));
+    t.handlers.SIGHUP!();
+    endChild(1);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(result).toBeUndefined();
+    expect(t.exits).toEqual([]);
+    openGate();
+    await p;
+    expect(result).toBe(129);
+    expect(t.captures).toContainEqual(transportArgv(SPEC, reapScriptArgv("p12"), { tty: false }));
+  });
+  test("signal during get: nothing spawned", async () => {
+    let openGate!: () => void;
+    const t = setup();
+    const orig = t.deps.capture;
+    t.deps.capture = async (argv, ms) => { if (argv.includes("get")) { t.handlers.SIGTERM!(); } return orig(argv, ms); };
+    void openGate;
+    expect(await t.run()).toBe(143);
+    expect(t.spawned).toEqual([]);
+  });
   const refused: [string, Parameters<typeof setup>[0]][] = [
     ["not remote", { session: row({ remote: false }) }],
     ["not live", { session: row({ status: "closed" }) }],
     ["bad coords", { session: row({ remote_tmux: { ...COORDS, window: "x" } }) }],
+    ["unsafe session id", { session: row({ session_id: "ab:cd.ef" }) }],
     ["no host row", { hosts: [] }],
     ["null transport", { hosts: [host({ transport: null })] }],
   ];
