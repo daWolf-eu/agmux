@@ -1,24 +1,32 @@
 // Pure argv builders for `agmux attach --placement` and the dash attach popup
 // (docs/superpowers/specs/2026-10-09-dash-attach-popup-design.md). The tmux
 // placement itself runs in dash-actions.ts.
+import type { AttachPlacement, RemoteAttachMode } from "@agmux/protocol";
 import { loadAttachConfig, type AttachConfig } from "@agmux/wrapper";
 import type { AttachCtx, AttachDefaults } from "@agmux/tui";
 
 export interface AttachSettings {
   defaults: AttachDefaults;
   terminal: { newWindow?: string[]; newTab?: string[] };
+  remote: { placement: AttachPlacement; mode: RemoteAttachMode; windowName: string; detachKey: string };
   agmuxBin: string; // absolute when known: a new terminal may not have agmux on PATH
 }
 
 export function attachSettingsFrom(cfg: AttachConfig, agmuxBin: string): AttachSettings {
   return {
-    defaults: { live: cfg.live, closed: cfg.closed },
+    defaults: { live: cfg.live, closed: cfg.closed, remote: cfg.remote.placement },
     terminal: cfg.terminal,
+    remote: {
+      placement: cfg.remote.placement ?? "new-window",
+      mode: cfg.remote.mode ?? "view",
+      windowName: cfg.remote.windowName ?? "⇄ {title}",
+      detachKey: cfg.remote.detachKey ?? "M-d",
+    },
     agmuxBin,
   };
 }
 
-export const DEFAULT_ATTACH_SETTINGS: AttachSettings = attachSettingsFrom({ terminal: {} }, "agmux");
+export const DEFAULT_ATTACH_SETTINGS: AttachSettings = attachSettingsFrom({ terminal: {}, remote: {} }, "agmux");
 
 // [attach]/[terminal] from config.toml + the agmux binary a new terminal should run.
 export function loadAttachSettings(configPath: string): AttachSettings {

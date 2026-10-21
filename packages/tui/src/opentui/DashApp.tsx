@@ -9,7 +9,8 @@ import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { matchesLocality, nextLocality, type LocalityFilter } from "../shared/locality.ts";
 import { yankFields } from "../shared/yank.ts";
-import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
+import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx, type AttachKind } from "../shared/attach-targets.ts";
+
 import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
 import { SPINNER_MS } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
@@ -19,6 +20,9 @@ import { SessionTable } from "./SessionTable.tsx";
 import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 import { AttachOverlay, HelpOverlay, YankOverlay } from "./Overlays.tsx";
+
+// Remote attach is not wired into the dash yet: a remote row offers nothing.
+const localKind = (row: SessionRow): AttachKind => { const k = attachKind(row); return k === "remote" ? "none" : k; };
 
 export interface DashAppProps {
   // A feed per activity group — each group has its own hub query, row cap and
@@ -195,7 +199,7 @@ export function DashApp(props: DashAppProps) {
 
   const doAttach = (i: number) => {
     if (!selected) return;
-    const t = attachTargets(attachKind(selected), attachCtx)[i];
+    const t = attachTargets(localKind(selected), attachCtx)[i];
     setAttachOpen(false);
     if (!t) return;
     if (!t.enabled) { setNotice(`${t.label}: ${t.reason}`); return; }
@@ -280,7 +284,7 @@ export function DashApp(props: DashAppProps) {
     return <YankOverlay row={selected} fields={yankFields(selected)} cursor={yankCursor} screenWidth={width} />;
   }
   if (attachOpen && selected) {
-    return <AttachOverlay row={selected} targets={attachTargets(attachKind(selected), attachCtx)} cursor={attachCursor} screenWidth={width} />;
+    return <AttachOverlay row={selected} targets={attachTargets(localKind(selected), attachCtx)} cursor={attachCursor} screenWidth={width} />;
   }
 
   return (

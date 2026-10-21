@@ -75,7 +75,29 @@ test("resolvePlacement passes enabled requests, rejects disabled ones, defaults 
   expect(resolvePlacement("closed", TMUX, undefined)).toBe("new-window");
 });
 
-test("attachKind: a remote row is never attachable or resumable", () => {
-  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true }))).toBe("none");
+test("attachKind: remote rows are remote while live, none once closed", () => {
+  expect(attachKind(mkRow({ status: "running", remote: true }))).toBe("remote");
+  expect(attachKind(mkRow({ status: "ended", remote: true }))).toBe("none");
   expect(attachKind(mkRow({ status: "lost", remote: true }))).toBe("none");
+  expect(attachKind(mkRow({ status: "running", tmux_session: "s", tmux_window: "@1", remote: true }))).toBe("remote");
+});
+
+test("remote targets: tmux placements open, peek planned", () => {
+  expect(reasons(attachTargets("remote", TMUX))).toEqual({
+    inline: "", "new-pane": "", "new-window": "", "new-session": "",
+    peek: "planned", "new-tab": "not configured", "new-terminal": "not configured",
+  });
+  const term = { ...TMUX, terminalTab: true, terminalWindow: true };
+  expect(reasons(attachTargets("remote", term))["new-tab"]).toBe("");
+  expect(reasons(attachTargets("remote", term))["new-terminal"]).toBe("");
+  expect(reasons(attachTargets("remote", POPUP)).inline).toBe("in popup");
+  const out = reasons(attachTargets("remote", NO_ATTACH_CTX));
+  expect([out.inline, out["new-pane"], out["new-window"], out["new-session"]])
+    .toEqual(["", "not in tmux", "not in tmux", "not in tmux"]);
+});
+
+test("remote default placement: new-window in tmux, inline outside, configurable", () => {
+  expect(defaultPlacement("remote", TMUX, {})).toBe("new-window");
+  expect(defaultPlacement("remote", NO_ATTACH_CTX, {})).toBe("inline");
+  expect(defaultPlacement("remote", TMUX, { remote: "new-pane" })).toBe("new-pane");
 });
