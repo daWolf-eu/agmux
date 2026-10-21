@@ -1,7 +1,7 @@
 /** @jsxImportSource @opentui/react */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useKeyboard, useTerminalDimensions } from "@opentui/react";
-import { ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, stripControls, type SessionRow } from "@agmux/protocol";
+import { ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, stripControls, type RemoteAttachMode, type SessionRow } from "@agmux/protocol";
 import type { SessionFeed } from "../feed.ts";
 import type { Actions, AttachRequest, Handoff, PreviewMode, PreviewSource, UsageSummary } from "../types.ts";
 import { sortRows, nextSort, sortDirection, DEFAULT_SORT, type SortKey } from "../shared/sort.ts";
@@ -9,7 +9,7 @@ import { searchRows } from "../shared/search.ts";
 import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { matchesLocality, nextLocality, type LocalityFilter } from "../shared/locality.ts";
 import { yankFields } from "../shared/yank.ts";
-import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx, type AttachKind } from "../shared/attach-targets.ts";
+import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
 
 import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
 import { SPINNER_MS } from "../shared/glyph.ts";
@@ -21,8 +21,6 @@ import { PreviewPane } from "./PreviewPane.tsx";
 import { FooterBar } from "./FooterBar.tsx";
 import { AttachOverlay, HelpOverlay, YankOverlay } from "./Overlays.tsx";
 
-// Remote attach is not wired into the dash yet: a remote row offers nothing.
-const localKind = (row: SessionRow): AttachKind => { const k = attachKind(row); return k === "remote" ? "none" : k; };
 
 export interface DashAppProps {
   // A feed per activity group — each group has its own hub query, row cap and
@@ -54,6 +52,8 @@ export interface DashAppProps {
   // The caller's tmux/popup/terminal situation (cli attachCtxFor). Drives which
   // attach-popup targets are enabled. Default: outside tmux, no terminals.
   attachCtx?: AttachCtx;
+  // Initial remote attach mode of the popup (`m` toggles it). Default "view".
+  remoteMode?: RemoteAttachMode;
 }
 
 // The dash has two preview tabs: mirror / detail.
@@ -113,6 +113,7 @@ export function DashApp(props: DashAppProps) {
   const [attachOpen, setAttachOpen] = useState(false);
   const [attachCursor, setAttachCursor] = useState(0);
   const attachCtx = props.attachCtx ?? NO_ATTACH_CTX;
+  const [attachMode, setAttachMode] = useState<RemoteAttachMode>(props.remoteMode ?? "view");
 
   const visible = useMemo(
     () => sortRows(groupRows(searchRows((rows ?? []).filter((r) => matchesLocality(r, locality)), search), group), sortKey),
@@ -199,11 +200,11 @@ export function DashApp(props: DashAppProps) {
 
   const doAttach = (i: number) => {
     if (!selected) return;
-    const t = attachTargets(localKind(selected), attachCtx)[i];
+    const t = attachTargets(attachKind(selected), attachCtx)[i];
     setAttachOpen(false);
     if (!t) return;
     if (!t.enabled) { setNotice(`${t.label}: ${t.reason}`); return; }
-    openRow(selected, { placement: t.placement });
+    openRow(selected, attachKind(selected) === "remote" ? { placement: t.placement, mode: attachMode } : { placement: t.placement });
   };
 
   useKeyboard((key) => {
@@ -234,6 +235,7 @@ export function DashApp(props: DashAppProps) {
       if (key.name === "escape" || key.name === "q" || (key.name === "a" && key.shift)) { setAttachOpen(false); return; }
       if (key.name === "j" || key.name === "down") { setAttachCursor((c) => Math.min(last, c + 1)); return; }
       if (key.name === "k" || key.name === "up") { setAttachCursor((c) => Math.max(0, c - 1)); return; }
+      if (key.name === "m" && selected && attachKind(selected) === "remote") { setAttachMode((m) => (m === "view" ? "full" : "view")); return; }
       if (key.name === "return") { doAttach(attachCursor); return; }
       if (key.name && /^[1-9]$/.test(key.name) && Number(key.name) <= last + 1) { doAttach(Number(key.name) - 1); return; }
       return;
@@ -246,7 +248,7 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "?") { setShowHelp(true); return; }
     if (key.name === "y" && selected) { setYankCursor(0); setYankOpen(true); return; }
     // OpenTUI reports a shifted letter as its lowercase name + shift.
-    if (key.name === "a" && key.shift && selected) { setAttachCursor(0); setAttachOpen(true); return; }
+    if (key.name === "a" && key.shift && selected) { setAttachCursor(0); setAttachMode(props.remoteMode ?? "view"); setAttachOpen(true); return; }
     if (key.name === "j" || key.name === "down") { move(1); return; }
     if (key.name === "k" || key.name === "up") { move(-1); return; }
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
@@ -284,7 +286,8 @@ export function DashApp(props: DashAppProps) {
     return <YankOverlay row={selected} fields={yankFields(selected)} cursor={yankCursor} screenWidth={width} />;
   }
   if (attachOpen && selected) {
-    return <AttachOverlay row={selected} targets={attachTargets(localKind(selected), attachCtx)} cursor={attachCursor} screenWidth={width} />;
+    return <AttachOverlay row={selected} targets={attachTargets(attachKind(selected), attachCtx)} cursor={attachCursor} screenWidth={width}
+      mode={attachKind(selected) === "remote" ? attachMode : undefined} />;
   }
 
   return (

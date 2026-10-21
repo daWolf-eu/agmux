@@ -6,7 +6,7 @@ import { createRoot } from "@opentui/react";
 import { PollingSessionFeed, type HubUrlSource } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activePaneId } from "./attached.ts";
-import { tmuxSocketFromEnv } from "@agmux/protocol";
+import { tmuxSocketFromEnv, type RemoteAttachMode } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
 import type { LocalityFilter } from "../shared/locality.ts";
@@ -34,6 +34,7 @@ export interface RunManageOpts {
   columns?: ColumnKey[];
   showHeader?: boolean;
   attachCtx?: AttachCtx;
+  remoteMode?: RemoteAttachMode;
 }
 
 // An empty-argv Handoff means "exit, spawn nothing" (popup attach/resume after
@@ -72,6 +73,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
       columns={o.columns}
       showHeader={o.showHeader}
       attachCtx={o.attachCtx}
+      remoteMode={o.remoteMode}
       activePane={activePane}
       activeSocket={activeSocket}
       onHandoff={(h) => { pending = h; }}
