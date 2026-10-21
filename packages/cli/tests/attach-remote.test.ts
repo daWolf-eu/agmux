@@ -53,6 +53,10 @@ describe("remoteWindowName", () => {
     expect(remoteWindowName("⇄ {title}", remoteRow({ name: null }))).toBe("⇄ 11111111");
   });
 
+  test("a trailing `;` is escaped so tmux does not end the command there", () => {
+    expect(remoteWindowName("{title}", remoteRow({ name: "x;" }))).toBe("x\\;");
+  });
+
   test("wide characters are cut by display width", () => {
     const t = remoteWindowName("{title}", remoteRow({ name: "界".repeat(30) }));
     expect(Bun.stringWidth(t)).toBe(40);

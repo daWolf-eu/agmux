@@ -16,6 +16,9 @@ import { attachRemote, defaultAttachRemoteDeps, defaultRemotes, remoteResumeRefu
 export interface AttachOpts {
   idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry;
   settings?: AttachSettings; // [attach.remote] placement/mode for a remote row
+  // Read only for a remote row (a local attach never reads config); a broken
+  // config warns and falls back to the defaults. `settings` wins.
+  loadSettings?: () => AttachSettings;
   mode?: RemoteAttachMode;   // --mode: overrides the remote mode default
   remotes?: () => RemoteConfig[]; // [[remote]] entries; default: config.toml
 }
@@ -144,10 +147,18 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   return child.exitCode ?? 0;
 }
 
+function settingsOrDefaults(load: (() => AttachSettings) | undefined): AttachSettings {
+  if (!load) return DEFAULT_ATTACH_SETTINGS;
+  try { return load(); } catch (e) {
+    console.error(`agmux: config ignored, using attach defaults: ${e instanceof Error ? e.message : String(e)}`);
+    return DEFAULT_ATTACH_SETTINGS;
+  }
+}
+
 // A live remote row: the [attach.remote] default placement, then the pane
 // process in the foreground when it runs here (inline).
 async function attachRemoteCmd(session: SessionRow, opts: AttachOpts): Promise<number> {
-  const settings = opts.settings ?? DEFAULT_ATTACH_SETTINGS;
+  const settings = opts.settings ?? settingsOrDefaults(opts.loadSettings);
   const ctx = attachCtxFor(settings, process.env, false);
   let h;
   try {
