@@ -51,3 +51,16 @@ test("buildLsQuery sets locality and host", () => {
   expect(qs.get("host")).toBe("gw/*");
   expect(qs.toString()).toContain("locality=remote&host=gw%2F*");
 });
+
+test("formatTable: remote row shows remote tmux coords and no pid", () => {
+  const r = {
+    ...mkRow("rrrr", "2026-06-10T11:00:00.000Z"), pid: null, remote: true, host: "gw/sbx",
+    remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null }, remote_pid: 446,
+  } as SessionRow;
+  const lines = formatTable([r], false);
+  const cols = lines[1]!.split(/\s{2,}/);
+  expect(cols).toContain("work:@0");
+  expect(lines[1]).not.toContain("446");
+  const hdr = lines[0]!.split(/\s{2,}/);
+  expect(cols[hdr.indexOf("PID")]).toBe("-");
+});

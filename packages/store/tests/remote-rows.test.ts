@@ -168,3 +168,27 @@ test("rows without source_db (local, pre-v10) never derive host-reset", () => {
   s.append(registered(LOCAL, "mac.local"));
   expect(s.rawDb().query("SELECT source_db FROM events WHERE session_id = ?").get(LOCAL)).toEqual({ source_db: null });
 });
+
+test("remote rows expose namespaced remote_tmux and remote_pid", () => {
+  const s = Store.openInMemory();
+  s.append(synced());
+  const reg = (sid: string, host: string, tmux: any): any => {
+    const e = registered(sid, host);
+    Object.assign(e.payload, { tmux_session: null, tmux_window: null, tmux_pane: null, pid: 446, ...tmux });
+    return e;
+  };
+  const full = { tmux_session: "work", tmux_window: "@0", tmux_pane: "%0", tmux_socket: "/tmp/tmux-998/default" };
+  s.appendReplicated(reg(REMOTE, "gw/sbx", full), "gw/sbx", "db1");
+  s.append(reg(LOCAL, "mac.local", full));
+  const r = s.getSession(REMOTE, NOW)!;
+  expect(r.tmux_session).toBeNull();
+  expect(r.pid).toBeNull();
+  expect(r.remote_tmux).toEqual({ session: "work", window: "@0", pane: "%0", socket: "/tmp/tmux-998/default" });
+  expect(r.remote_pid).toBe(446);
+  const l = s.getSession(LOCAL, NOW)!;
+  expect(l.remote_tmux).toBeNull();
+  expect(l.remote_pid).toBeNull();
+  const R2 = "0190a3e0-0000-7000-8000-000000000003";
+  s.appendReplicated(reg(R2, "gw/sbx", { tmux_session: "work" }), "gw/sbx", "db1");
+  expect(s.getSession(R2, NOW)!.remote_tmux).toBeNull();
+});
