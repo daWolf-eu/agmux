@@ -58,7 +58,8 @@ The single source of truth for the running version is
   `ls --remote|--local|--host <glob>`, `[ls] locality`, dash `host` column and `r` key,
   sync state in `agmux hub status` (per remote: last discovery and its error, a broken
   config even while the hub is down) and `inspect`. Gone sandboxes turn `lost`, and so do
-  the old sessions of a sandbox recreated under the same name.
+  the old sessions of a sandbox recreated under the same name. Discovery reads both
+  `sandbox list -o json` shapes: a bare array and the paged `{ sandboxes, next_page_token }`.
 
 ### Changed
 - dash restyle: no pane borders or titles — whitespace plus a faint vertical rule

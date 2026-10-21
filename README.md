@@ -35,6 +35,7 @@ The foundation persists an append-only event log and serves a local query API ov
 - [Bun](https://bun.com) ≥ 1.3 — the only runtime; there is no Node.js fallback.
 - [tmux](https://github.com/tmux/tmux) ≥ 3.2 — for session placement, `attach`, and the dashboard popup.
 - The agent CLIs you want to track on your `PATH` (e.g. `claude`, `codex`, `pi`).
+  Claude Code must be recent enough to load the adapter's plugin: 2.1.156 was observed registering no agmux hooks, 2.1.306 works.
 - macOS (verified). Linux is best-effort and unverified.
 
 ## Quickstart

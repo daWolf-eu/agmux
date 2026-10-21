@@ -74,7 +74,7 @@ test("Mac hub replicates a sandbox hub through a fake openshell", async () => {
   const box1 = makeSandbox(fakeDir, "box1");
   makeSandbox(fakeDir, "box2");
   const sbxCli = writeSandboxShims(fakeDir);
-  fs.writeFileSync(path.join(fakeDir, "list.json"), JSON.stringify([{ name: "box1" }]));
+  fs.writeFileSync(path.join(fakeDir, "list.json"), JSON.stringify({ next_page_token: "", sandboxes: [{ name: "box1" }] }));
 
   // The sandbox's own (native) session, stamped with the host the Mac will expect.
   // pid: a live process, so no liveness sweep can end the session under the test.
