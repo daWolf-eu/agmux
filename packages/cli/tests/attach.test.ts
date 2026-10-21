@@ -145,3 +145,50 @@ test("attachCmd on a closed remote row refuses the resume with the manual comman
     globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
   }
 });
+
+test("attachCmd on a local row never reads attach settings (a broken config cannot fail it)", async () => {
+  const { attachCmd } = await import("../src/attach.ts");
+  const row = sessionRow({ status: "lost" });
+  const origFetch = globalThis.fetch;
+  const origTmux = process.env.TMUX;
+  delete process.env.TMUX;
+  globalThis.fetch = remoteHub(row, []);
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({ exited: Promise.resolve(0), exitCode: 0 })) as never);
+  let loaded = 0;
+  try {
+    const code = await attachCmd({
+      idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap",
+      loadSettings: () => { loaded++; throw new Error("config.toml: bad"); },
+    });
+    expect(code).toBe(0);
+    expect(loaded).toBe(0);
+    expect((spawn.mock.calls[0] as unknown as [string[]])[0][0]).toBe("agmux-wrap"); // resumed locally
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore();
+    if (origTmux === undefined) delete process.env.TMUX; else process.env.TMUX = origTmux;
+  }
+});
+
+test("attachCmd on a remote row with a broken config warns and uses the attach defaults", async () => {
+  const { attachCmd } = await import("../src/attach.ts");
+  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
+  const origFetch = globalThis.fetch;
+  const origTmux = process.env.TMUX;
+  delete process.env.TMUX;
+  globalThis.fetch = remoteHub(row, []);
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({ exited: Promise.resolve(0), exitCode: 0 })) as never);
+  const err = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const code = await attachCmd({
+      idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap",
+      loadSettings: () => { throw new Error("config.toml: bad"); },
+    });
+    expect(code).toBe(0);
+    expect(err).toHaveBeenCalledWith("agmux: config ignored, using attach defaults: config.toml: bad");
+    expect((spawn.mock.calls[0] as unknown as [string[]])[0]).toEqual(
+      ["agmux", "attach", row.session_id, "--remote-client", "--mode", "full", "--detach-key", "M-d"]);
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
+    if (origTmux === undefined) delete process.env.TMUX; else process.env.TMUX = origTmux;
+  }
+});

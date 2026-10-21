@@ -2,7 +2,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, resolveHost } from "@agmux/protocol";
+import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, resolveHost, type RemoteAttachMode } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { runHeadless } from "../src/headless.ts";
@@ -336,19 +336,24 @@ async function main(): Promise<number> {
         return runRemoteClient({ sessionId: id, mode, detachKey: key, hubUrl, env: process.env });
       }
       const mi = argv.indexOf("--mode");
-      const mode = mi < 0 ? undefined : argv[mi + 1];
-      if (mode !== undefined && !isRemoteAttachMode(mode)) { console.error("attach: --mode must be view|full"); return 2; }
+      let mode: RemoteAttachMode | undefined;
+      if (mi >= 0) {
+        const m = argv[mi + 1];
+        if (!isRemoteAttachMode(m)) { console.error("attach: --mode must be view|full"); return 2; }
+        mode = m;
+      }
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
-      let settings: AttachSettings;
-      try { settings = loadAttachSettings(configPath); }
-      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       const pi = argv.indexOf("--placement");
-      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin, settings, mode });
+      // Plain attach of a local session never needed config: load it only for a remote row.
+      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin, loadSettings: () => loadAttachSettings(configPath), mode });
       const placement = argv[pi + 1];
       if (!isAttachPlacement(placement)) {
         console.error(`attach: --placement must be one of ${ATTACH_PLACEMENTS.join("|")}`);
         return 2;
       }
+      let settings: AttachSettings;
+      try { settings = loadAttachSettings(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       return attachPlacedCmd({ idOrPrefix: id, hubUrl, wrapBin, placement, settings, mode });
     }
     case "kill": {
