@@ -496,7 +496,43 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 - The sandbox must be created with `AGMUX_HOST=<gateway>/<sandbox>` in its environment, or the stream is refused (`agmux hub status` shows the fix).
 - `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. The opt-in `host` column shows `⇄ <sandbox>` for remote sessions, and status-line chips prefix their name with `⇄ ` (both use `?` instead while the sync is stale).
 - `agmux hub status` lists each remote (gateway, sandbox count, last discovery and its error), each sandbox's sync state, and a broken `[[remote]]` config (also while the hub is down); `agmux inspect <id>` adds the host.
-- Remote sessions are read-only for now: `attach`, `resume` and `kill` refuse them, and `pid` / tmux coordinates are not shown.
+- `kill` and `resume` of a remote session are refused (planned); resuming a closed one prints the command to run by hand.
+
+### Attach
+
+`agmux attach <id>` (also the dash `A` popup and status-line clicks) opens a live sandbox session. The Mac builds the attach from the replicated tmux coordinates; the sandbox needs only `sh` + `tmux` (no image change). Two modes:
+
+- `view` (default inside tmux): a throwaway tmux session in the sandbox holds the agent's window; the inner tmux takes no keys and draws nothing, so the pane behaves like a local one. Leave with the detach key (default `M-d`); the agent is untouched.
+- `full` (default outside tmux): a normal client on the sandbox's tmux (its own prefix and status bar).
+
+`--mode view|full` and `--placement <p>` override per call; in the dash `A` popup `m` toggles the mode. Closing the local window or a transport failure reaps the sandbox-side client. A stopped sandbox is started first. Config (`~/.config/agmux/config.toml`, read when attaching):
+
+```toml
+[attach.remote]
+placement = "new-window"   # default target (inline | new-pane | new-window | new-session | new-tab | new-terminal)
+mode = "view"              # default mode inside tmux: view | full (outside tmux: full)
+window_name = "⇄ {title}"  # {title} = session name or first 8 id chars
+detach_key = "M-d"         # view mode only; a tmux key name
+```
+
+`agmux inspect <id>` shows `remote_tmux` (`{session, window, pane, socket}`) and `remote_pid` of a remote session (`pid` / `tmux_*` stay null); `ls` renders the TMUX column from `remote_tmux`. To attach by hand (e.g. from a script):
+
+```sh
+agmux inspect <id> | jq -r .remote_tmux.session
+openshell -g <gw> sandbox exec -n <sbx> --tty -- tmux attach -t <session>
+```
+
+Recommended outer `~/.tmux.conf` (the sandbox side needs the same):
+
+```tmux
+set -s escape-time 0
+set -g extended-keys on
+set -as terminal-features ',xterm*:extkeys'
+set -g set-clipboard on
+set -g focus-events on
+```
+
+Focusing a local pane that shows a remote session marks it seen. Peek is not built (slot 5 of the popup is dimmed).
 
 ## Troubleshooting
 
@@ -507,7 +543,7 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 
 ## Status & roadmap
 
-Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Remote sandbox sessions (OpenShell) are visible read-only. Not yet built: subagent spawning, remote attach/kill, other transports, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
+Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Remote sandbox sessions (OpenShell) are visible and attachable (view/full). Not yet built: subagent spawning, remote kill/resume, other transports, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
 
 ## Contributing
 

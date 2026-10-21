@@ -15,6 +15,9 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
+      # The tmux-backed tests skip silently without tmux.
+      - name: Install tmux
+        run: sudo apt-get update && sudo apt-get install -y tmux
       - run: bun test
       # The sandboxes need Linux binaries: keep them compiling.
       - name: Build linux binaries

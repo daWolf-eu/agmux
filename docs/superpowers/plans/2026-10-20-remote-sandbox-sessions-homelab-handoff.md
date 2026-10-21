@@ -88,3 +88,7 @@ Facts from the agmux phase-0 spike (2026-10-11, in `wi-sag-280` on `ai-sandbox`)
 ### Already verified on the agmux side (2026-10-20 smoke test, `docs/spikes/2026-10-11-remote-sandbox/` § Phase 1 smoke test)
 
 The workbench image `openshell-workbench:e797e53b7f50` with uploaded binaries, `--label agmux=1 --env AGMUX_HOST=…` at create, and a stub agent replicate correctly to the Mac. Discovery, removal, recreation and the missing-`AGMUX_HOST` error are verified. What remains for homelab is baking the binaries in, the launcher flags, and a real logged-in Claude.
+
+### Phase 2 (attach)
+
+Phase 2 needs no image change (sh + tmux only): the Mac runs fixed sh scripts through `sandbox exec`. The image's `/etc/tmux.conf` settings (spec §8.2) remain recommended.
