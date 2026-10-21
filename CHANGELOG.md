@@ -16,6 +16,8 @@ The single source of truth for the running version is
   for remote tmux coordinates. Not yet wired into `agmux attach` / the dash.
 - Remote session rows expose `remote_tmux` / `remote_pid` (pid and `tmux_*` stay null);
   the `ls` TMUX column renders from `remote_tmux`.
+- Fixed POSIX sh scripts for remote view attach, full attach and reap (sandbox needs only
+  sh + tmux; row values enter only as positional args). Not yet wired into `agmux attach`.
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
   terminal); new pane/window/session resume a closed one. ⏎ defaults via `[attach] live` / `closed`;
