@@ -496,6 +496,8 @@ two layers.
 
 ### 8.1 Modes
 
+> As built (Phase 2): the remote side is three fixed sh scripts the Mac runs via `sandbox exec`, not `agmux attach --view/--full/--reap` (§10 Phase 2 note 3).
+
 **N1 — transparent view (default inside tmux).** Each attach creates a throw-away remote
 session that holds the agent's window (linked, not grouped) and has its own session
 options, all set so the inner tmux takes no keys and draws nothing.
@@ -526,7 +528,7 @@ exec tmux -u attach-session -t "$V" \; set -t "$V" destroy-unattached on
 ```
 
 - The outer (local) tmux owns every key; the remote pane behaves like a local pane.
-- Leave with `view_detach_key` (default `M-d`): the view is destroyed
+- Leave with `detach_key` (as built — §10 Phase 2 note 1; was `view_detach_key`; default `M-d`): the view is destroyed
   (`destroy-unattached`), the transport exits 0, the agent's session is untouched.
 - **Closing the local window does not end the remote client** (spike: `exec --tty` never
   tears down the remote side, whatever the local signal). The orphaned client keeps the
@@ -544,7 +546,7 @@ exec tmux -u attach-session -t "$V" \; set -t "$V" destroy-unattached on
   prefix and status bar — the options are per-session, and the view is its own session.
 - The agent exiting while viewed destroys the view (its only window is gone); the remote
   server survives (verified 3.7c, link-window).
-- `agmux-view` binds exactly one key, `[attach] view_detach_key` (default `M-d`) →
+- `agmux-view` binds exactly one key, `[attach.remote] detach_key` (as built — §10 Phase 2 note 1; default `M-d`) →
   `detach-client`; everything else passes to the pane. Same table as the local view client
   in the attach-popup spec (local views were dropped there; the key comes back with N1).
   Verified: unbound keys in the table reach the pane, including `C-b`, Esc (single
@@ -572,13 +574,14 @@ instead of a tmux window (Ghostty CLI on macOS — verify), for people who want 
 **Config**
 
 ```toml
-[remote.attach]
+[attach.remote]   # as built — §10 Phase 2 note 1 (`[remote.attach]` would nest under the last [[remote]])
 placement = "new-window"  # default target for ⏎ (attach-popup spec slots)
-mode = "view"             # default mode: view (N1) | full (N2) | toggle (N3)
+mode = "view"             # default mode: view (N1) | full (N2); toggle (N3) not built
 window_name = "⇄ {title}"
+detach_key = "M-d"        # view mode only
 ```
 
-`agmux attach --placement <p> --mode <view|full|toggle>` overrides per call. Remote `/etc/tmux.conf`
+`agmux attach --placement <p> --mode <view|full>` overrides per call (as built — §10 Phase 2 note 1). Remote `/etc/tmux.conf`
 sets `prefix C-a` server-wide; N1's view session overrides it to `None` per session, so
 both modes coexist on one remote tmux server.
 
