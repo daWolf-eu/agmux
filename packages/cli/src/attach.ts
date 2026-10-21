@@ -1,5 +1,5 @@
 import { $ } from "bun";
-import type { SessionRow } from "@agmux/protocol";
+import type { RemoteAttachMode, SessionRow } from "@agmux/protocol";
 import { LIVE_STATUSES, tmuxSocketArgs, AGMUX_TMUX_SESSION_DEFAULT } from "@agmux/protocol";
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
 import { buildRelaunchSpec } from "./relaunch.ts";
@@ -8,9 +8,17 @@ import { loadProfileEnv } from "./profile-env.ts";
 import { hasSession, readCurrentPane } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 import { postSeen } from "./seen.ts";
-import { remoteRefusal } from "./remote-guard.ts";
+import type { RemoteConfig } from "@agmux/hub";
+import { attachKind, resolvePlacement } from "@agmux/tui";
+import { attachCtxFor, DEFAULT_ATTACH_SETTINGS, type AttachSettings } from "./attach-place.ts";
+import { attachRemote, defaultAttachRemoteDeps, defaultRemotes, remoteResumeRefusal } from "./attach-remote.ts";
 
-export interface AttachOpts { idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry; }
+export interface AttachOpts {
+  idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry;
+  settings?: AttachSettings; // [attach.remote] placement/mode for a remote row
+  mode?: RemoteAttachMode;   // --mode: overrides the remote mode default
+  remotes?: () => RemoteConfig[]; // [[remote]] entries; default: config.toml
+}
 
 export interface AttachCoords { tmux_session: string; tmux_window: string; tmux_pane: string | null; tmux_socket: string | null; }
 
@@ -66,8 +74,11 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     usage: { turn_count: number } | null;
   };
 
-  const refusal = remoteRefusal(session, "attach");
-  if (refusal) { console.error(refusal); return 2; }
+  // A closed remote session cannot be resumed from here; say how to do it by hand.
+  if (session.remote && attachKind(session) !== "remote") {
+    console.error(await remoteResumeRefusal(session, { hubUrl: opts.hubUrl, fetchImpl: fetch, remotes: opts.remotes ?? defaultRemotes }));
+    return 2;
+  }
 
   const inTmux = !!process.env.TMUX;
 
@@ -79,6 +90,8 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     hubUrl: opts.hubUrl, host: session.host,
     fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
   }).catch(() => {});
+
+  if (session.remote) return attachRemoteCmd(session, opts);
 
   if ((await decideAttach(session, hasSession)) === "attach") {
     const cmds = buildAttachCommands(
@@ -127,6 +140,27 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     stdio: ["inherit", "inherit", "inherit"],
     env: spec.env,
   });
+  await child.exited;
+  return child.exitCode ?? 0;
+}
+
+// A live remote row: the [attach.remote] default placement, then the pane
+// process in the foreground when it runs here (inline).
+async function attachRemoteCmd(session: SessionRow, opts: AttachOpts): Promise<number> {
+  const settings = opts.settings ?? DEFAULT_ATTACH_SETTINGS;
+  const ctx = attachCtxFor(settings, process.env, false);
+  let h;
+  try {
+    const req = opts.mode
+      ? { placement: resolvePlacement("remote", ctx, undefined, { remote: settings.remote.placement }), mode: opts.mode }
+      : undefined;
+    h = await attachRemote(session, req, { ctx, settings }, defaultAttachRemoteDeps);
+  } catch (e) {
+    console.error(`attach: ${e instanceof Error ? e.message : String(e)}`);
+    return 2;
+  }
+  if (!h || h.argv.length === 0) return 0;
+  const child = Bun.spawn(h.argv, { stdio: ["inherit", "inherit", "inherit"], env: h.env ?? process.env });
   await child.exited;
   return child.exitCode ?? 0;
 }

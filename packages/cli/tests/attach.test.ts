@@ -92,24 +92,55 @@ test("omits -S when tmux_socket is null", () => {
   expect(buildAttachCommands(coords, true)[0]!.slice(0, 2)).toEqual(["switch-client", "-t"]);
 });
 
-test("attachCmd on a remote row prints the refusal, returns 2, never touches tmux or spawn", async () => {
+function remoteHub(row: SessionRow, calls: string[]) {
+  return (async (url: string, init?: RequestInit) => {
+    calls.push(`${init?.method ?? "GET"} ${String(url)}`);
+    const u = String(url);
+    if (init?.method === "POST") return new Response(null, { status: 202 });
+    if (u.includes("/sessions?")) return Response.json({ sessions: [{ session_id: row.session_id }] });
+    if (u.endsWith("/hosts")) {
+      return Response.json({ hosts: [{ host: "sbx-1", remote: "lab", transport: { kind: "openshell", gateway: "gw", target: "box1", bin: "openshell" } }] });
+    }
+    return Response.json({ session: row, usage: null });
+  }) as unknown as typeof fetch;
+}
+
+test("attachCmd on a live remote row outside tmux runs the pane process in full mode, in the foreground", async () => {
   const { attachCmd } = await import("../src/attach.ts");
-  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle" });
+  const { DEFAULT_ATTACH_SETTINGS } = await import("../src/attach-place.ts");
+  const row = sessionRow({ remote: true, host: "sbx-1", status: "idle", pid: null, tmux_session: null, tmux_window: null, tmux_pane: null });
   const calls: string[] = [];
   const origFetch = globalThis.fetch;
-  globalThis.fetch = (async (url: string) => {
-    calls.push(String(url));
-    return String(url).includes("/sessions?")
-      ? new Response(JSON.stringify({ sessions: [{ session_id: row.session_id }] }))
-      : new Response(JSON.stringify({ session: row, usage: null }));
-  }) as unknown as typeof fetch;
+  const origTmux = process.env.TMUX;
+  delete process.env.TMUX;
+  globalThis.fetch = remoteHub(row, calls);
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({ exited: Promise.resolve(0), exitCode: 0 })) as never);
+  try {
+    expect(await attachCmd({ idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap", settings: { ...DEFAULT_ATTACH_SETTINGS, agmuxBin: "/bin/agmux" } })).toBe(0);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const [argv, o] = spawn.mock.calls[0] as unknown as [string[], { stdio: string[] }];
+    expect(argv).toEqual(["/bin/agmux", "attach", row.session_id, "--remote-client", "--mode", "full", "--detach-key", "M-d"]);
+    expect(o.stdio).toEqual(["inherit", "inherit", "inherit"]);
+    expect(calls.some((c) => c.startsWith("POST") && c.includes("/ingest"))).toBe(true);
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore();
+    if (origTmux === undefined) delete process.env.TMUX; else process.env.TMUX = origTmux;
+  }
+});
+
+test("attachCmd on a closed remote row refuses the resume with the manual command, never spawns", async () => {
+  const { attachCmd } = await import("../src/attach.ts");
+  const row = sessionRow({ remote: true, host: "sbx-1", status: "lost", pid: null });
+  const calls: string[] = [];
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = remoteHub(row, calls);
   const spawn = spyOn(Bun, "spawn").mockImplementation((() => { throw new Error("spawn"); }) as never);
   const err = spyOn(console, "error").mockImplementation(() => {});
   try {
-    expect(await attachCmd({ idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap" })).toBe(2);
-    expect(err).toHaveBeenCalledWith("attach: 019f1898 runs on sbx-1; remote attach is not supported yet");
+    expect(await attachCmd({ idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap", remotes: () => [] })).toBe(2);
+    expect(err).toHaveBeenCalledWith(
+      `resume: 019f1898 runs on sbx-1; remote resume is not supported yet; run it by hand: openshell -g gw sandbox exec -n box1 --tty -- agmux attach ${row.session_id}`);
     expect(spawn).not.toHaveBeenCalled();
-    expect(calls.some((c) => c.includes("/seen"))).toBe(false);
   } finally {
     globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
   }

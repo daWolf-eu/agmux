@@ -13,3 +13,9 @@ test("remoteRefusal: exact message for remote rows", () => {
     "resume: 019f1898 runs on sbx-1; remote resume is not supported yet",
   );
 });
+
+test("remoteRefusal: a resume names the command to run by hand", () => {
+  expect(remoteRefusal({ ...base, remote: true }, "resume", "os sandbox exec -n b --tty -- agmux attach x")).toBe(
+    "resume: 019f1898 runs on sbx-1; remote resume is not supported yet; run it by hand: os sandbox exec -n b --tty -- agmux attach x",
+  );
+});
