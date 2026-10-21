@@ -1,8 +1,9 @@
 // Mac-side pane process for a remote (sandbox) session: `agmux attach <id>
 // --remote-client --mode view|full --detach-key <k>`. Runs inside a local tmux
 // pane, tags it, runs the fixed attach script in the sandbox in the foreground
-// (`exec --tty`), and reaps the sandbox-side client on hangup or failure
-// (`exec --no-tty`, stdin closed). See remote-tmux.ts for the scripts.
+// (`exec --tty`), clears the pane tags when it ends, and reaps the
+// sandbox-side client on hangup or failure (`exec --no-tty`, stdin closed).
+// See remote-tmux.ts for the scripts.
 import { isRemoteTmux, isShellSafeId, LIVE_STATUSES, tmuxSocketArgs, tmuxSocketFromEnv, type HostRow, type RemoteAttachMode, type SessionRow } from "@agmux/protocol";
 import { runCapture, transportArgv, transportControlArgv } from "@agmux/hub";
 import { fullScriptArgv, reapScriptArgv, viewScriptArgv, viewSessionName } from "./remote-tmux.ts";
@@ -16,7 +17,7 @@ export interface RemoteClientDeps {
   fetchImpl: typeof fetch;
   tmux(args: string[]): Promise<void>;
   capture(argv: string[], timeoutMs: number): Promise<string>;
-  spawnTty(argv: string[]): { exited: Promise<number> };
+  spawnTty(argv: string[]): { exited: Promise<number>; kill(sig: "SIGHUP"): void };
   onSignal(sig: "SIGHUP" | "SIGTERM", fn: () => void): void;
   exit(code: number): never;
   rand(): string;
@@ -40,7 +41,10 @@ export const defaultRemoteClientDeps: RemoteClientDeps = {
     if ((await p.exited) !== 0) throw new Error(`tmux ${args[0]} failed`);
   },
   capture: (argv, timeoutMs) => runCapture(argv, { timeoutMs }),
-  spawnTty: (argv) => ({ exited: Bun.spawn(argv, { stdin: "inherit", stdout: "inherit", stderr: "inherit" }).exited }),
+  spawnTty: (argv) => {
+    const p = Bun.spawn(argv, { stdin: "inherit", stdout: "inherit", stderr: "inherit" });
+    return { exited: p.exited, kill: (sig) => { try { p.kill(sig); } catch { /* already gone */ } } };
+  },
   onSignal: (sig, fn) => { process.on(sig, fn); },
   exit: (code) => process.exit(code),
   rand: randHex,
@@ -73,28 +77,40 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
 
   const tag = tagFor(o.env, deps.rand);
   const pane = o.env.TMUX_PANE;
-  if (/^%\d{1,9}$/.test(pane ?? "")) {
-    const sock = tmuxSocketArgs(tmuxSocketFromEnv(o.env.TMUX));
-    for (const [k, v] of [["@agmux_session_id", sessionId], ["@agmux_remote", "1"], ["@agmux_attach_mode", o.mode]] as const) {
+  const tagged = /^%\d{1,9}$/.test(pane ?? "");
+  const sock = tmuxSocketArgs(tmuxSocketFromEnv(o.env.TMUX));
+  const opts = [["@agmux_session_id", sessionId], ["@agmux_remote", "1"], ["@agmux_attach_mode", o.mode]] as const;
+  if (tagged) {
+    for (const [k, v] of opts) {
       try { await deps.tmux([...sock, "set-option", "-p", "-t", pane!, k, v]); } catch { /* bookkeeping only */ }
     }
   }
+  // On every exit path, before the reap and the failure hold: a tag left on
+  // the pane would win dedup and focus-seen for whatever runs there next.
+  const untag = async (): Promise<void> => {
+    if (!tagged) return;
+    for (const [k] of opts) {
+      try { await deps.tmux([...sock, "set-option", "-p", "-u", "-t", pane!, k]); } catch { /* pane gone */ }
+    }
+  };
 
   const reap = async (): Promise<void> => {
     try { await deps.capture(transportArgv(spec, reapScriptArgv(tag), { tty: false }), CAPTURE_TIMEOUT_MS); } catch { /* best effort */ }
   };
+  let child: ReturnType<RemoteClientDeps["spawnTty"]> | null = null;
   let signalCode = 0;
   let reapDone: Promise<void> | null = null;
   for (const [sig, code] of [["SIGHUP", 129], ["SIGTERM", 143]] as const) {
     deps.onSignal(sig, () => {
       if (reapDone) return;
       signalCode = code;
-      // exit only after the reap settles: the process must outlive it.
-      reapDone = reap();
+      // A signal to this process alone leaves the transport running on the
+      // shared tty: hang it up too. Exit only after the reap settles.
+      reapDone = (async () => { await untag(); child?.kill("SIGHUP"); await reap(); })();
       void reapDone.then(() => deps.exit(code));
     });
   }
-    // A failing `get` is ignored: the exec reports the real error.
+  // A failing `get` is ignored: the exec reports the real error.
   try {
     const info = JSON.parse(await deps.capture(transportControlArgv(spec, "get"), CAPTURE_TIMEOUT_MS)) as { phase?: unknown };
     if (info.phase === "Stopped") await deps.capture(transportControlArgv(spec, "start"), CAPTURE_TIMEOUT_MS * 6);
@@ -103,9 +119,11 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
   if (reapDone) { await reapDone; return signalCode; }
 
   const script = o.mode === "full" ? fullScriptArgv(coords, tag) : viewScriptArgv(coords, viewSessionName(sessionId, tag), o.detachKey, tag);
-  const code = await deps.spawnTty(transportArgv(spec, script, { tty: true })).exited;
+  child = deps.spawnTty(transportArgv(spec, script, { tty: true }));
+  const code = await child.exited;
   // tmux SIGHUPs the whole group on pane close: the child dies with us, so wait for the handler's reap.
   if (reapDone) { await reapDone; return signalCode; }
+  await untag();
   if (code !== 0) await reap();
   return code;
 }
