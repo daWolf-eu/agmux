@@ -265,19 +265,42 @@ test("terminal templates are launched without the dash's tmux env", async () => 
   expect(envs[0]!.PATH).toBe(process.env.PATH);
 });
 
-test("makeActions: remote rows are refused by attach and resume, and kill never signals", async () => {
+test("makeActions: a live remote row attaches; a closed one names the manual resume; kill never signals", async () => {
   const { spyOn } = await import("bun:test");
-  const row = staleRow({ remote: true, host: "sbx-1" });
-  const refusal = (v: string) => `${v}: 019f1898 runs on sbx-1; remote ${v} is not supported yet`;
-  const actions = makeActions("http://hub", "agmux-wrap", false, {
+  const spec = { kind: "openshell", gateway: "gw", target: "box1", bin: "openshell" };
+  const row = staleRow({ remote: true, host: "gw/box1", pid: 4242, remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null } });
+  const closed = staleRow({ remote: true, host: "gw/box1", status: "lost" });
+  // ctx (in tmux or not) is read when the actions are made.
+  const actions = await withTmux(undefined, async () => makeActions("http://hub", "agmux-wrap", false, {
     runTmux: async () => { throw new Error("should not run tmux"); },
     sessionExists: async () => { throw new Error("should not probe tmux"); },
-  });
-  await expect(actions.attach(row)).rejects.toThrow(refusal("attach"));
-  await expect(actions.resume(row)).rejects.toThrow(refusal("resume"));
+    remotes: () => [],
+  }, SETTINGS));
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: string) => String(url).endsWith("/hosts")
+    ? Response.json({ hosts: [{ host: "gw/box1", remote: "lab", transport: spec }], remotes: [] })
+    : Response.json({ session: closed, usage: null })) as unknown as typeof fetch;
   const kill = spyOn(process, "kill").mockImplementation(() => true);
   try {
+    const h = await actions.attach(row);
+    expect(h!.argv).toEqual(["/bin/agmux", "attach", row.session_id, "--remote-client", "--mode", "full", "--detach-key", "M-d"]);
+    await expect(actions.resume(closed)).rejects.toThrow(`sandbox exec -n box1 --tty -- agmux attach ${closed.session_id}`);
+    await expect(actions.attach(closed)).rejects.toThrow("remote resume is not supported yet");
     await actions.kill(row);
     expect(kill).not.toHaveBeenCalled();
-  } finally { kill.mockRestore(); }
+  } finally { globalThis.fetch = origFetch; kill.mockRestore(); }
+});
+
+test("makeActions: the manual resume uses the [[remote]] agmux_bin", async () => {
+  const spec = { kind: "openshell", gateway: "gw", target: "box1", bin: "openshell" };
+  const closed = staleRow({ remote: true, host: "gw/box1", status: "lost" });
+  const actions = makeActions("http://hub", "agmux-wrap", false, {
+    runTmux: async () => {},
+    remotes: () => [{ name: "lab", agmux_bin: "/opt/agmux" }] as never,
+  }, SETTINGS);
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ hosts: [{ host: "gw/box1", remote: "lab", transport: spec }] })) as unknown as typeof fetch;
+  try {
+    await expect(actions.resume(closed)).rejects.toThrow(`--tty -- /opt/agmux attach ${closed.session_id}`);
+  } finally { globalThis.fetch = origFetch; }
 });

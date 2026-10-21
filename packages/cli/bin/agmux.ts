@@ -17,7 +17,7 @@ import { explainCmd } from "../src/explain.ts";
 import { killCmd } from "../src/kill.ts";
 import { attachCmd } from "../src/attach.ts";
 import { runRemoteClient } from "../src/remote-client.ts";
-import { loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
+import { DEFAULT_ATTACH_SETTINGS, loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
 import { attachPlacedCmd } from "../src/attach-placed.ts";
 import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
@@ -144,8 +144,11 @@ async function main(): Promise<number> {
       const clickHub = discoverHubUrl(process.env, stateDir);
       if (!clickHub) return 0;
       const seenDeps = { fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID() };
+      // A click must never fail on a broken [attach] config: fall back to the defaults.
+      let settings: AttachSettings;
+      try { settings = loadAttachSettings(configPath); } catch { settings = DEFAULT_ATTACH_SETTINGS; }
       return statuslineClick(button, token, {
-        attach: (idOrPrefix) => attachCmd({ idOrPrefix, hubUrl: clickHub, wrapBin }),
+        attach: (idOrPrefix) => attachCmd({ idOrPrefix, hubUrl: clickHub, wrapBin, settings }),
         seen: (o) => seenCmd({ ...o, hubUrl: clickHub, host: resolveHost() }, seenDeps),
         cycleShow: (step) => cycleShowCmd(step, { hubUrl: clickHub }, deps),
       });
@@ -332,18 +335,21 @@ async function main(): Promise<number> {
         if (key === undefined || !isTmuxKeyName(key)) { console.error("attach: --detach-key must be a tmux key name like M-d"); return 2; }
         return runRemoteClient({ sessionId: id, mode, detachKey: key, hubUrl, env: process.env });
       }
+      const mi = argv.indexOf("--mode");
+      const mode = mi < 0 ? undefined : argv[mi + 1];
+      if (mode !== undefined && !isRemoteAttachMode(mode)) { console.error("attach: --mode must be view|full"); return 2; }
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      let settings: AttachSettings;
+      try { settings = loadAttachSettings(configPath); }
+      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       const pi = argv.indexOf("--placement");
-      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin });
+      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin, settings, mode });
       const placement = argv[pi + 1];
       if (!isAttachPlacement(placement)) {
         console.error(`attach: --placement must be one of ${ATTACH_PLACEMENTS.join("|")}`);
         return 2;
       }
-      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
-      let settings: AttachSettings;
-      try { settings = loadAttachSettings(configPath); }
-      catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
-      return attachPlacedCmd({ idOrPrefix: id, hubUrl, wrapBin, placement, settings });
+      return attachPlacedCmd({ idOrPrefix: id, hubUrl, wrapBin, placement, settings, mode });
     }
     case "kill": {
       const id = argv[1]; if (!id) usage();

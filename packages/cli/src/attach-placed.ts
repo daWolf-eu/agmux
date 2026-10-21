@@ -1,6 +1,6 @@
 // `agmux attach <id> --placement <p>`: the dash's placement executor on the CLI.
 // Lives apart from attach.ts because dash-actions.ts already imports attach.ts.
-import type { AttachPlacement, SessionRow } from "@agmux/protocol";
+import type { AttachPlacement, RemoteAttachMode, SessionRow } from "@agmux/protocol";
 import { attachKind, type Handoff } from "@agmux/tui";
 import { makeActions } from "./dash-actions.ts";
 import { resolvePrefix } from "./id-resolve.ts";
@@ -9,6 +9,7 @@ import type { AttachSettings } from "./attach-place.ts";
 
 export interface AttachPlacedOpts {
   idOrPrefix: string; hubUrl: string; wrapBin: string; placement: AttachPlacement; settings: AttachSettings;
+  mode?: RemoteAttachMode; // remote rows only
 }
 
 export interface AttachPlacedDeps {
@@ -33,19 +34,23 @@ export async function attachPlacedCmd(opts: AttachPlacedOpts, deps: AttachPlaced
   const { session } = (await (await fetch(`${opts.hubUrl}/sessions/${res.id}`)).json()) as { session: SessionRow };
 
   const kind = attachKind(session);
-  if (kind === "none" || kind === "remote") { err("attach: session has no tmux pane"); return 1; }
+  // A closed remote row goes to resume, which refuses it with the manual command.
+  const remoteClosed = !!session.remote && kind === "none";
+  if (kind === "none" && !remoteClosed) { err("attach: session has no tmux pane"); return 1; }
 
   // Same bookkeeping as plain `agmux attach`: opening a session marks it seen.
-  void postSeen(session.session_id, "attach", {
-    hubUrl: opts.hubUrl, host: session.host,
-    fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
-  }).catch(() => {});
+  if (!remoteClosed) {
+    void postSeen(session.session_id, "attach", {
+      hubUrl: opts.hubUrl, host: session.host,
+      fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
+    }).catch(() => {});
+  }
 
   const actions = (deps.makeActionsImpl ?? makeActions)(opts.hubUrl, opts.wrapBin, false, undefined, opts.settings);
-  const req = { placement: opts.placement };
+  const req = opts.mode ? { placement: opts.placement, mode: opts.mode } : { placement: opts.placement };
   let h: Handoff | null;
   try {
-    h = kind === "closed" ? await actions.resume(session, req) : await actions.attach(session, req);
+    h = kind === "closed" || remoteClosed ? await actions.resume(session, req) : await actions.attach(session, req);
   } catch (e) {
     err(`attach: ${e instanceof Error ? e.message : String(e)}`);
     return 2;

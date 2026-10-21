@@ -25,9 +25,10 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      interactive TUI: grouped sessions + preview; ⏎ attach, x kill, r resume, q quit
      each activity group (f) polls on its own: open 50 rows/1s, closed+all 1000/10s
      ([dash], [dash.open], [dash.closed], [dash.all] in config; -n/-i override all)
-  attach <id|prefix> [--placement <inline|new-pane|new-window|new-session|new-tab|new-terminal>]
+  attach <id|prefix> [--placement <inline|new-pane|new-window|new-session|new-tab|new-terminal>] [--mode <view|full>]
      open a session; without --placement: switch to it (live) or resume it.
      placement defaults and terminal templates: [attach] / [terminal] in config.toml
+     remote (sandbox) sessions: --mode view (own view, default in tmux) or full; [attach.remote]
   attach <id> --remote-client --mode <view|full> [--detach-key <key>]
      internal: the pane process agmux's own remote attach panes run; not for direct use
   seen <id|prefix>|--pane <pane_id>|--all [--socket <tmux socket>] [--source focus]

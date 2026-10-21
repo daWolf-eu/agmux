@@ -53,3 +53,10 @@ export function expandTemplate(tpl: string[], cmd: string[]): string[] {
   const line = cmd.map(shellQuote).join(" ");
   return tpl.flatMap((el) => (el === "{cmd}" ? cmd : [el.split("{cmd}").join(line)]));
 }
+
+// A new terminal must not look like it runs inside the dash's tmux client, or
+// `agmux attach` there would switch the dash's client instead of attaching.
+export function withoutTmuxEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const { TMUX: _tmux, TMUX_PANE: _pane, ...rest } = env;
+  return rest;
+}

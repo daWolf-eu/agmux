@@ -77,3 +77,25 @@ test("a live session without tmux coords is an error", async () => {
   expect(code).toBe(1);
   expect(errs).toEqual(["attach: session has no tmux pane"]);
 });
+
+test("a live remote session is attached with the requested placement and mode", async () => {
+  const seen: (AttachRequest | undefined)[] = [];
+  const actions: Actions = { ...fakeActions([]), async attach(_r, req) { seen.push(req); return null; } };
+  const code = await withHub(row({ remote: true, pid: null, tmux_session: null, tmux_window: null, tmux_pane: null }), () => attachPlacedCmd(
+    { idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "w", placement: "inline", mode: "view", settings: DEFAULT_ATTACH_SETTINGS },
+    { makeActionsImpl: () => actions, spawn: async () => 0 },
+  ));
+  expect(code).toBe(0);
+  expect(seen).toEqual([{ placement: "inline", mode: "view" }]);
+});
+
+test("a closed remote session goes to resume (which refuses it)", async () => {
+  const errs: string[] = [];
+  const actions: Actions = { ...fakeActions([]), async resume() { throw new Error("resume: refused"); } };
+  const code = await withHub(row({ remote: true, status: "lost", pid: null }), () => attachPlacedCmd(
+    { idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "w", placement: "inline", settings: DEFAULT_ATTACH_SETTINGS },
+    { makeActionsImpl: () => actions, spawn: async () => 0, err: (s) => errs.push(s) },
+  ));
+  expect(code).toBe(2);
+  expect(errs).toEqual(["attach: resume: refused"]);
+});

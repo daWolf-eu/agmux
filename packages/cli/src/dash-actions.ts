@@ -11,8 +11,12 @@ import { copyToClipboard } from "./clipboard.ts";
 import { postSeen } from "./seen.ts";
 import { remoteRefusal } from "./remote-guard.ts";
 import {
-  DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, type AttachSettings,
+  DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, withoutTmuxEnv, type AttachSettings,
 } from "./attach-place.ts";
+import {
+  attachRemote, defaultAttachRemoteDeps, defaultRemotes, remoteResumeRefusal, spawnDetachedDefault,
+} from "./attach-remote.ts";
+import type { RemoteConfig } from "@agmux/hub";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
 // `attach` command can share them without an import cycle (dash-actions already
@@ -41,23 +45,16 @@ export interface ActionDeps {
   // Resume placement (new window / new session); default: real tmux.
   placement?: ResumePlacementDeps;
   splitPane?: typeof splitPane;
+  // `tmux list-panes -a` in REMOTE_PANES_FMT (remote attach dedup).
+  listPanes?: () => Promise<string>;
+  // [[remote]] entries (the sandbox agmux_bin for the manual resume hint).
+  remotes?: () => RemoteConfig[];
 }
 
 const defaultActionDeps: ActionDeps = {
   runTmux: async (args) => { await $`tmux ${args}`.quiet(); },
   sessionExists: hasSession,
 };
-
-function spawnDetachedDefault(argv: string[], env: Record<string, string | undefined>): void {
-  Bun.spawn(argv, { stdio: ["ignore", "ignore", "ignore"], env }).unref();
-}
-
-// A new terminal must not look like it runs inside the dash's tmux client, or
-// `agmux attach` there would switch the dash's client instead of attaching.
-function withoutTmuxEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
-  const { TMUX: _tmux, TMUX_PANE: _pane, ...rest } = env;
-  return rest;
-}
 
 export function makeActions(
   hubUrl: string,
@@ -76,6 +73,14 @@ export function makeActions(
   // Opened somewhere else: in a popup the empty handoff closes the popup onto
   // it; in an inline dash the dash stays (null).
   const opened = (): Handoff | null => (popup ? { argv: [] } : null);
+  const remoteDeps = {
+    runTmux: deps.runTmux, listPanes: deps.listPanes ?? defaultAttachRemoteDeps.listPanes, currentPane,
+    splitPane: split, newWindow: placement.newWindow, newSession: placement.newSession,
+    switchClient: placement.switchClient, spawnDetached,
+  };
+  const remoteResume = async (row: SessionRow): Promise<never> => {
+    throw new Error(await remoteResumeRefusal(row, { hubUrl, fetchImpl: fetch, remotes: deps.remotes ?? defaultRemotes }));
+  };
 
   function openTerminal(where: "new-tab" | "new-terminal", row: SessionRow): Handoff | null {
     const tpl = where === "new-tab" ? settings.terminal.newTab : settings.terminal.newWindow;
@@ -86,8 +91,7 @@ export function makeActions(
   }
 
   async function resume(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
-    const refusal = remoteRefusal(row, "resume");
-    if (refusal) throw new Error(refusal);
+    if (row.remote) return remoteResume(row);
     const where = resolvePlacement("closed", ctx, req?.placement, settings.defaults);
     if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
     const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
@@ -122,8 +126,10 @@ export function makeActions(
 
   return {
     async attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
-      const refusal = remoteRefusal(row, "attach");
-      if (refusal) throw new Error(refusal);
+      // A live remote row opens through the sandbox; a closed one cannot be resumed here.
+      if (row.remote) {
+        return attachKind(row) === "remote" ? attachRemote(row, req, { ctx, settings }, remoteDeps) : remoteResume(row);
+      }
       // No tmux target to focus → nothing to attach to (unchanged no-op).
       if (attachKind(row) !== "live") return null;
       // Status is only a lagging approximation of tmux reality: a LIVE row whose
