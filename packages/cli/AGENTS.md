@@ -18,7 +18,7 @@ Plain local `agmux attach` never reads config; remote rows load `[attach.remote]
 `VIEW_SCRIPT`, `FULL_SCRIPT`, `REAP_SCRIPT` are string constants run as `sh -c <SCRIPT> agmux <args...>`. Row values are positional args only: copied to named variables on the first line, always expanded double-quoted. No `eval`, nothing spliced into the script text. The sandbox needs only sh + tmux. Exit codes: 0 normal, 3 target gone / view not buildable (stderr message), else tmux's.
 
 Validation (before any value is used; `isRemoteTmux`, `isAttachTag`, `isTmuxKeyName`):
-- `session_id`: canonical UUID (`isShellSafeId`).
+- `session_id`: `isShellSafeId` (`[0-9a-f-]+`; the canonical-UUID check `SESSION_ID_RE` is used for the pane option and ingest).
 - tag `^[A-Za-z0-9_-]{1,32}$`; detach key `^[A-Za-z0-9-]{1,16}$`.
 - window `^@\d{1,9}$`; pane `^%\d{1,9}$` or null.
 - socket null or `^/[A-Za-z0-9._/-]{1,255}$`.

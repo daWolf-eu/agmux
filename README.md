@@ -509,7 +509,7 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 
 ```toml
 [attach.remote]
-placement = "new-window"   # default target (inline | new-pane | new-window | new-session | new-tab | new-terminal)
+placement = "new-window"   # default target (inline | new-pane | new-window | new-session | new-tab | new-terminal); outside tmux the effective default is inline
 mode = "view"              # default mode inside tmux: view | full (outside tmux: full)
 window_name = "⇄ {title}"  # {title} = session name or first 8 id chars
 detach_key = "M-d"         # view mode only; a tmux key name
@@ -518,7 +518,7 @@ detach_key = "M-d"         # view mode only; a tmux key name
 `agmux inspect <id>` shows `remote_tmux` (`{session, window, pane, socket}`) and `remote_pid` of a remote session (`pid` / `tmux_*` stay null); `ls` renders the TMUX column from `remote_tmux`. To attach by hand (e.g. from a script):
 
 ```sh
-agmux inspect <id> | jq -r .remote_tmux.session
+agmux inspect <id> | jq -r .session.remote_tmux.session
 openshell -g <gw> sandbox exec -n <sbx> --tty -- tmux attach -t <session>
 ```
 
