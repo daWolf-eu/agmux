@@ -18,6 +18,8 @@ The single source of truth for the running version is
   the `ls` TMUX column renders from `remote_tmux`.
 - Fixed POSIX sh scripts for remote view attach, full attach and reap (sandbox needs only
   sh + tmux; row values enter only as positional args). Not yet wired into `agmux attach`.
+- `agmux attach <id> --remote-client --mode view|full`: local pane process that tags its tmux pane,
+  runs the remote script over `openshell sandbox exec --tty` and reaps on hangup or failure.
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
   terminal); new pane/window/session resume a closed one. ⏎ defaults via `[attach] live` / `closed`;

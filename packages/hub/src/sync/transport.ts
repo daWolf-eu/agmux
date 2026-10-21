@@ -6,12 +6,18 @@ export interface Transport {
   argv(target: string, cmd: string[], o: { tty: boolean }): string[];
 }
 
+export function transportArgv(spec: TransportSpec, cmd: string[], o: { tty: boolean }): string[] {
+  return [spec.bin, "-g", spec.gateway, "sandbox", "exec", "-n", spec.target, o.tty ? "--tty" : "--no-tty", "--", ...cmd];
+}
+
+export function transportControlArgv(spec: TransportSpec, verb: "get" | "start"): string[] {
+  const base = [spec.bin, "-g", spec.gateway, "sandbox", verb, spec.target];
+  return verb === "get" ? [...base, "-o", "json"] : base;
+}
+
 export function openshellTransport(r: RemoteConfig): Transport {
   return {
     spec: (target) => ({ kind: "openshell", gateway: r.gateway, target, bin: r.openshell_bin }),
-    argv: (target, cmd, o) => [
-      r.openshell_bin, "-g", r.gateway, "sandbox", "exec", "-n", target,
-      o.tty ? "--tty" : "--no-tty", "--", ...cmd,
-    ],
+    argv: (target, cmd, o) => transportArgv({ kind: "openshell", gateway: r.gateway, target, bin: r.openshell_bin }, cmd, o),
   };
 }
