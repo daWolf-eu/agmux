@@ -1,5 +1,11 @@
-import type { SessionRow, SeenSource } from "@agmux/protocol";
+import { resolveHost, SESSION_ID_RE, type SessionRow, type SeenSource } from "@agmux/protocol";
 import { resolvePrefix } from "./id-resolve.ts";
+
+// `session.seen` is stamped with the host that observed it. For a remote row
+// that is this machine, not the sandbox's host (spec §4.5).
+export function seenHost(row: Pick<SessionRow, "remote" | "host">): string {
+  return row.remote ? resolveHost() : row.host;
+}
 
 export interface PostSeenDeps {
   hubUrl: string;
@@ -56,11 +62,35 @@ export interface SeenCmdOpts {
 // `tmux_socket`). Returns null when no open session owns the pane (e.g. the key
 // was pressed in an unrelated pane) or the hub can't be reached — callers must
 // treat that as "nothing to do", not an error.
+export type ReadPaneOption = (pane: string, socket?: string) => Promise<string | null>;
+
+// Runs on every pane switch: never throws, never prints, null on any failure.
+export const defaultReadPaneOption: ReadPaneOption = async (pane, socket) => {
+  try {
+    const argv = ["tmux", ...(socket ? ["-S", socket] : []), "show-options", "-pqv", "-t", pane, "@agmux_session_id"];
+    const proc = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "ignore" });
+    const out = await new Response(proc.stdout).text();
+    if ((await proc.exited) !== 0) return null;
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+};
+
+// A pane showing a remote session carries `@agmux_session_id` (set by the
+// remote-client); a canonical UUID there wins over the tmux_pane match.
 export async function resolvePane(
   pane: string, hubUrl: string, fetchImpl: typeof fetch, socket?: string,
+  readPaneOption: ReadPaneOption = defaultReadPaneOption,
 ): Promise<SessionRow | null> {
   const sessions = await openSessions(hubUrl, fetchImpl);
-  return sessions?.find((s) => s.tmux_pane === pane
+  if (!sessions) return null;
+  const opt = await readPaneOption(pane, socket).catch(() => null);
+  if (opt && SESSION_ID_RE.test(opt)) {
+    const id = opt.toLowerCase();
+    return sessions.find((s) => s.session_id.toLowerCase() === id) ?? null;
+  }
+  return sessions.find((s) => s.tmux_pane === pane
     && (!socket || !s.tmux_socket || s.tmux_socket === socket)) ?? null;
 }
 
@@ -77,10 +107,13 @@ async function openSessions(hubUrl: string, fetchImpl: typeof fetch): Promise<Se
 
 export async function seenCmd(
   opts: SeenCmdOpts,
-  deps: Omit<PostSeenDeps, "hubUrl" | "host"> & { fetchImpl: typeof fetch },
+  deps: Omit<PostSeenDeps, "hubUrl" | "host"> & { fetchImpl: typeof fetch; readPaneOption?: ReadPaneOption },
 ): Promise<number> {
+  // opts.host is the local host (bin passes resolveHost()), right for remote rows too.
   const post = (ids: string | string[]) =>
-    postSeen(ids, opts.source ?? "dismiss", { ...deps, hubUrl: opts.hubUrl, host: opts.host });
+    postSeen(ids, opts.source ?? "dismiss", {
+      fetchImpl: deps.fetchImpl, now: deps.now, newId: deps.newId, hubUrl: opts.hubUrl, host: opts.host,
+    });
   if (opts.all) {
     const sessions = await openSessions(opts.hubUrl, deps.fetchImpl);
     if (!sessions) return 1;
@@ -97,7 +130,7 @@ export async function seenCmd(
     if (!res.ok) { console.error(res.error); return 2; }
     sessionId = res.id;
   } else if (opts.pane) {
-    const row = await resolvePane(opts.pane, opts.hubUrl, deps.fetchImpl, opts.socket);
+    const row = await resolvePane(opts.pane, opts.hubUrl, deps.fetchImpl, opts.socket, deps.readPaneOption);
     // No session owns this pane: pressing the key in an unrelated pane is not
     // an error and must produce no output. Only a `done` session has anything
     // to acknowledge — this path runs on every pane switch (pane-focus-in), and

@@ -7,7 +7,7 @@ import { resolvePrefix } from "./id-resolve.ts";
 import { loadProfileEnv } from "./profile-env.ts";
 import { hasSession, readCurrentPane } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
-import { postSeen } from "./seen.ts";
+import { postSeen, seenHost } from "./seen.ts";
 import type { RemoteConfig } from "@agmux/hub";
 import { attachKind, resolvePlacement } from "@agmux/tui";
 import { attachCtxFor, DEFAULT_ATTACH_SETTINGS, type AttachSettings } from "./attach-place.ts";
@@ -90,7 +90,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   // throwing on failure; `.catch` here is defense-in-depth against ever
   // surfacing an unhandled rejection.
   void postSeen(session.session_id, "attach", {
-    hubUrl: opts.hubUrl, host: session.host,
+    hubUrl: opts.hubUrl, host: seenHost(session),
     fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
   }).catch(() => {});
 

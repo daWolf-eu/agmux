@@ -4,7 +4,7 @@ import type { AttachPlacement, RemoteAttachMode, SessionRow } from "@agmux/proto
 import { attachKind, type Handoff } from "@agmux/tui";
 import { makeActions } from "./dash-actions.ts";
 import { resolvePrefix } from "./id-resolve.ts";
-import { postSeen } from "./seen.ts";
+import { postSeen, seenHost } from "./seen.ts";
 import type { AttachSettings } from "./attach-place.ts";
 
 export interface AttachPlacedOpts {
@@ -41,7 +41,7 @@ export async function attachPlacedCmd(opts: AttachPlacedOpts, deps: AttachPlaced
   // Same bookkeeping as plain `agmux attach`: opening a session marks it seen.
   if (!remoteClosed) {
     void postSeen(session.session_id, "attach", {
-      hubUrl: opts.hubUrl, host: session.host,
+      hubUrl: opts.hubUrl, host: seenHost(session),
       fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
     }).catch(() => {});
   }

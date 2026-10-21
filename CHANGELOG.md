@@ -21,6 +21,7 @@ The single source of truth for the running version is
 - `agmux attach <id> --remote-client --mode view|full`: local pane process that tags its tmux pane,
   runs the remote script over `openshell sandbox exec --tty` and reaps on hangup or failure.
 - Remote attach wired in: `agmux attach [--placement <p>] [--mode view|full]`, the dash and status-line clicks open a live sandbox session (inline / new pane / window / session / terminal), reuse an already open window of the same mode, name it `[attach.remote] window_name`; a closed one's refused resume prints the command to run by hand.
+- Focusing a tmux pane that shows a remote session (`@agmux_session_id` pane option) marks it seen; `session.seen` for remote rows is stamped with the local host.
 - dash: the `A` popup on a remote row shows `mode: view ⇄ full (m)`; `m` toggles it (initial: `[attach.remote] mode` in tmux, `full` outside).
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
