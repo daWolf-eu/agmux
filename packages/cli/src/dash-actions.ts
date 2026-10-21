@@ -8,7 +8,7 @@ import { loadProfileEnv } from "./profile-env.ts";
 import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
-import { postSeen } from "./seen.ts";
+import { postSeen, seenHost } from "./seen.ts";
 import { remoteRefusal } from "./remote-guard.ts";
 import {
   DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, withoutTmuxEnv, type AttachSettings,
@@ -167,7 +167,7 @@ export function makeActions(
       // action can only ever move a row from done to idle. Do not add a
       // toggle here without a new event kind and projection rule.
       await postSeen(row.session_id, "dismiss", {
-        hubUrl, host: row.host,
+        hubUrl, host: seenHost(row),
         fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
       });
     },

@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { postSeen, seenCmd } from "../src/seen.ts";
+import { postSeen, seenCmd, seenHost } from "../src/seen.ts";
 
 test("posts a session.seen envelope to /ingest", async () => {
   let body: any = null;
@@ -155,4 +155,49 @@ test("seenCmd with neither an id nor a pane is an error", async () => {
     { fetchImpl: (async () => new Response(null, { status: 202 })) as unknown as typeof fetch, now: () => "t", newId: () => "e" },
   );
   expect(code).toBe(2);
+});
+
+// --- remote panes: focus resolves via the @agmux_session_id pane option ---
+const RID = "0192f3a4-0000-7000-8000-00000000abcd";
+const remoteRow = (over: object = {}) => ({
+  session_id: RID, status: "done", host: "sandbox-host", remote: true, tmux_pane: null, tmux_socket: null, ...over,
+});
+
+test("focus on a pane whose option names an open remote done session posts seen with the local host", async () => {
+  const hub = fakeHub([remoteRow()]);
+  const code = await seenCmd(
+    { pane: "%5", source: "focus", hubUrl: "http://h", host: "local-mac" },
+    { ...hub.deps, readPaneOption: async () => RID },
+  );
+  expect(code).toBe(0);
+  expect(hub.ingested[0]![0].session_id).toBe(RID);
+  expect(hub.ingested[0]![0].host).toBe("local-mac");
+});
+
+test("pane option naming a session that is not open: no post, exit 0", async () => {
+  const hub = fakeHub([]);
+  const code = await seenCmd(
+    { pane: "%5", source: "focus", hubUrl: "http://h", host: "local-mac" },
+    { ...hub.deps, readPaneOption: async () => RID },
+  );
+  expect(code).toBe(0);
+  expect(hub.ingested).toEqual([]);
+});
+
+test("a non-UUID pane option is ignored and the tmux_pane match still applies", async () => {
+  const hub = fakeHub([{ session_id: "agx-1", status: "done", host: "box", tmux_pane: "%5" }]);
+  const code = await seenCmd(
+    { pane: "%5", source: "focus", hubUrl: "http://h", host: "local-mac" },
+    { ...hub.deps, readPaneOption: async () => "not-a-uuid; rm -rf" },
+  );
+  expect(code).toBe(0);
+  expect(hub.ingested[0]![0].session_id).toBe("agx-1");
+});
+
+test("seenHost: local host for remote rows, row host otherwise", () => {
+  process.env.AGMUX_HOST = "mac-local";
+  try {
+    expect(seenHost({ remote: true, host: "sbx" })).toBe("mac-local");
+    expect(seenHost({ remote: false, host: "box" })).toBe("box");
+  } finally { delete process.env.AGMUX_HOST; }
 });

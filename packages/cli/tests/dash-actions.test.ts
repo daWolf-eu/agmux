@@ -304,3 +304,18 @@ test("makeActions: the manual resume uses the [[remote]] agmux_bin", async () =>
     await expect(actions.resume(closed)).rejects.toThrow(`--tty -- /opt/agmux attach ${closed.session_id}`);
   } finally { globalThis.fetch = origFetch; }
 });
+
+test("makeActions.markSeen posts session.seen with the local host for a remote row", async () => {
+  const origFetch = globalThis.fetch;
+  process.env.AGMUX_HOST = "mac-local";
+  let body: any = null;
+  globalThis.fetch = (async (_u: any, init: any) => { body = JSON.parse(init.body); return new Response(null, { status: 202 }); }) as unknown as typeof fetch;
+  try {
+    const actions = makeActions("http://hub", "agmux-wrap", false);
+    await actions.markSeen({ ...staleRow(), remote: true, host: "sbx-host" } as any);
+    expect(body[0].host).toBe("mac-local");
+  } finally {
+    globalThis.fetch = origFetch;
+    delete process.env.AGMUX_HOST;
+  }
+});
