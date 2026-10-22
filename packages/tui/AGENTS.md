@@ -29,7 +29,7 @@
 
 ### Remote sessions: `host` column and locality
 
-`host` (`HOST`, opt-in, not in `DEFAULT_COLUMNS`; shrinks after `repo`) renders `hostLabel` from `shared/locality.ts`: `⇄ <sandbox>` (part after the first `/`), `? <sandbox>` when `sync_stale`, `""` for local rows. The `r` key cycles `LOCALITY_CYCLE` (`all → local → remote`) **client-side** (`matchesLocality` over the fetched rows; the header shows `[local]`/`[remote]`). `[dash] locality` / `--local` / `--remote` only seed the initial value. `cli/src/dash.ts` strips `locality` from the opts used for group/count queries so the activity-group counts stay unfiltered. `agmux ls` has a `HOST` column only when remote rows are present.
+A remote row's `name` cell starts with `remoteNamePrefix` (`shared/locality.ts`: the remote mark, `? ` when `sync_stale`); the name column sorts by `plainName` (`sortText`), so the mark never groups rows. `host` (`HOST`, not in `DEFAULT_COLUMNS`; shrinks after `repo`) renders the full `<gateway>/<sandbox>` (`""` for local rows); `columnsFor(cols, locality)` inserts it after `name` in the remote view unless `[dash] columns` already lists it. The detail pane's `TMUX` falls back to `remote_tmux` (`… (in sandbox)`). The `r` key cycles `LOCALITY_CYCLE` (`all → local → remote`) **client-side** (`matchesLocality` over the fetched rows; the header shows `[local]`/`[remote]`). `[dash] locality` / `--local` / `--remote` only seed the initial value. `cli/src/dash.ts` strips `locality` from the opts used for group/count queries so the activity-group counts stay unfiltered. `agmux ls` has a `HOST` column (`hostLabel`: `⇄ <sandbox>`) only when remote rows are present.
 
 ### Adding a column
 

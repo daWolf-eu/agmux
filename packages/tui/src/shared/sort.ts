@@ -22,10 +22,11 @@ export function sortDirection(key: SortKey): "asc" | "desc" {
 }
 
 function byText(key: ColumnKey) {
-  const text = COLUMNS[key].text;
+  const def = COLUMNS[key];
+  const text = def.sortText ?? ((r: SessionRow) => def.text(r, 0));
   return (a: SessionRow, b: SessionRow): number => {
-    const x = text(a, 0);
-    const y = text(b, 0);
+    const x = text(a);
+    const y = text(b);
     if (!x !== !y) return x ? -1 : 1;
     return x.localeCompare(y);
   };

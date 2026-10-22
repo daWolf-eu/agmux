@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { hostDetail } from "../../src/opentui/PreviewPane.tsx";
+import { detailFields, hostDetail } from "../../src/opentui/PreviewPane.tsx";
 import { mkRow } from "../helpers/mk-row.ts";
 
 const NOW = Date.parse("2026-06-20T12:00:00.000Z");
@@ -30,4 +30,11 @@ test("detailFields replaces control characters in every value", async () => {
   const f = detailFields(mkRow({ cwd: evil, project: evil, command: evil, args: [evil], profile: evil, host: evil, native_session_id: evil }), null);
   for (const [, v] of f) expect(v).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   expect(f.find(([k]) => k === "CWD")![1]).toBe("x ]52;c;ZXZpbA==  y");
+});
+
+test("detailFields: a remote row's TMUX is its target inside the sandbox", () => {
+  const tmux = (r: Parameters<typeof detailFields>[0]) => detailFields(r, null).find(([k]) => k === "TMUX")![1];
+  expect(tmux(mkRow({ remote: true, remote_tmux: { session: "work", window: "@0", pane: "%0", socket: null } })))
+    .toBe("work:@0 %0 (in sandbox)");
+  expect(tmux(mkRow({ remote: true, remote_tmux: null }))).toBe("—");
 });

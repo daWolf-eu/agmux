@@ -15,6 +15,13 @@ let currentRemoteMark = DEFAULT_REMOTE_MARK;
 export function remoteMark(): string { return currentRemoteMark; }
 export function setRemoteMark(mark: string): void { currentRemoteMark = mark; }
 
+// Before a remote row's name (dash name column, status-line chips): the mark,
+// or "?" while its replica is stale. "" for local rows.
+export function remoteNamePrefix(r: SessionRow): string {
+  if (!r.remote) return "";
+  return r.sync_stale ? "? " : `${currentRemoteMark} `;
+}
+
 export function matchesLocality(r: SessionRow, l: LocalityFilter): boolean {
   return l === "all" || (l === "remote") === !!r.remote;
 }

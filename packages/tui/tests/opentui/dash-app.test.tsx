@@ -736,6 +736,34 @@ test("r cycles locality all → local → remote and filters client-side", async
   renderer.destroy();
 });
 
+test("remote rows: marked name in the combined view, host column only in the remote view", async () => {
+  const rows = [
+    mkRow({ session_id: "agx-local0001", name: "mine" }),
+    mkRow({ session_id: "agx-remote001", name: "theirs", remote: true, host: "os/sbx" }),
+  ];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={noActions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      initialLocality="all" onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 30 },
+  );
+  const line = (f: string, s: string) => f.split("\n").find((l) => l.includes(s)) ?? "";
+  await renderOnce();
+  let f = captureCharFrame();
+  expect(line(f, "theirs")).toContain("⇄ theirs");
+  expect(line(f, "theirs")).not.toContain("os/sbx");
+  expect(line(f, "mine")).not.toContain("⇄");
+
+  await act(async () => { mockInput.pressKey("r"); });
+  await act(async () => { mockInput.pressKey("r"); });
+  await renderOnce();
+  f = captureCharFrame();
+  expect(line(f, "theirs")).toMatch(/⇄ theirs\s+os\/sbx/);
+  renderer.destroy();
+});
+
 test("x on a remote row shows the refusal as a notice instead of the kill confirm", async () => {
   const killed: string[] = [];
   const actions: Actions = { ...noActions, async kill(row) { killed.push(row.session_id); } };

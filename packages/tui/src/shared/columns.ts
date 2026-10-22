@@ -1,7 +1,7 @@
 import { stripControls, type SessionRow } from "@agmux/protocol";
 import { relTime } from "./reltime.ts";
 import { activityCell } from "../format.ts";
-import { hostLabel } from "./locality.ts";
+import { remoteNamePrefix, type LocalityFilter } from "./locality.ts";
 
 // Every column the dash can show, in no particular order. The visible set and
 // its order come from `[dash] columns` (DEFAULT_COLUMNS when unset).
@@ -35,6 +35,8 @@ export interface ColDef {
   // Floor when the table is squeezed to fit; absent = never shrinks.
   min?: number;
   text: (r: SessionRow, now: number) => string;
+  // What the column sorts by, when that isn't its text (default: the text).
+  sortText?: (r: SessionRow) => string;
   // How the text is shortened to a width (default `clip`: tail + ellipsis).
   shorten?: (s: string, width: number) => string;
 }
@@ -42,8 +44,13 @@ export interface ColDef {
 const ID_MAX = 13;
 
 // Sessions without a reported name fall back to the short id so a row is never blank.
-function nameText(r: SessionRow): string {
+export function plainName(r: SessionRow): string {
   return r.name || r.session_id.slice(0, ID_MAX);
+}
+
+// A remote row's name carries the remote mark, so the combined view needs no host column.
+function nameText(r: SessionRow): string {
+  return remoteNamePrefix(r) + plainName(r);
 }
 
 function tmuxText(r: SessionRow): string {
@@ -53,7 +60,7 @@ function tmuxText(r: SessionRow): string {
 const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
   // The cell is a width placeholder; SessionTable draws the (animated) glyph.
   glyph: { key: "glyph", header: "", align: "left", style: "state", text: () => " " },
-  name: { key: "name", header: "NAME", align: "left", style: "state", max: 40, min: 12, text: nameText },
+  name: { key: "name", header: "NAME", align: "left", style: "state", max: 40, min: 12, text: nameText, sortText: plainName },
   repo: { key: "repo", header: "REPO", align: "left", style: "faint", max: 24, min: 6, text: (r) => r.git_repo ?? "" },
   // Floor 12 = "f…/" + 8 chars of the branch name + "…" (see abbreviateBranch).
   branch: {
@@ -77,7 +84,8 @@ const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
     key: "activity", header: "ACTIVITY", align: "left", style: "sub", max: 40, min: 8,
     text: (r) => { const a = activityCell(r); return a === "-" ? "" : a; },
   },
-  host: { key: "host", header: "HOST", align: "left", style: "sub", max: 28, min: 8, text: hostLabel },
+  // The full `<gateway>/<sandbox>`: the mark is already on the name.
+  host: { key: "host", header: "HOST", align: "left", style: "sub", max: 28, min: 8, text: (r) => (r.remote ? r.host : "") },
   project: { key: "project", header: "PROJECT", align: "left", style: "sub", max: 24, min: 6, text: (r) => r.project ?? "" },
 };
 
@@ -119,6 +127,14 @@ export function clip(s: string, width: number): string {
   if (s.length <= width) return s;
   if (width <= 0) return "";
   return s.slice(0, width - 1) + "…";
+}
+
+// The remote view (`r` → remote) shows the host column after the name; elsewhere
+// only when `[dash] columns` lists it.
+export function columnsFor(cols: ColumnKey[], locality: LocalityFilter): ColumnKey[] {
+  if (locality !== "remote" || cols.includes("host")) return cols;
+  const i = cols.indexOf("name");
+  return i < 0 ? [...cols, "host"] : [...cols.slice(0, i + 1), "host", ...cols.slice(i + 1)];
 }
 
 export type RowCells = Partial<Record<ColumnKey, string>>;

@@ -130,7 +130,7 @@ Config under `[dash]` in `~/.config/agmux/config.toml`: `preview`, `interval`, `
 
 `columns` picks the table columns and their order (default
 `["glyph", "name", "repo", "branch", "last_seen"]`); available: `glyph`, `name`, `repo`,
-`branch`, `last_seen`, `id`, `agent`, `profile`, `tmux`, `turns`, `activity`, `project`, `host` (remote sessions' `⇄ host`; opt-in).
+`branch`, `last_seen`, `id`, `agent`, `profile`, `tmux`, `turns`, `activity`, `project`, `host` (remote sessions' `<gateway>/<sandbox>`; opt-in, added automatically in the remote view).
 `header = true` shows the column-title row (default off). Columns are content-sized and
 squeezed to fit the pane (activity/tmux/project/profile first, then branch, repo, name).
 A squeezed branch keeps its name over its prefix: `feature/`, `feat/`, `bugfix/`, `bug/`,
@@ -494,7 +494,7 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 ```
 
 - The sandbox must be created with `AGMUX_HOST=<gateway>/<sandbox>` in its environment, or the stream is refused (`agmux hub status` shows the fix).
-- `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. The opt-in `host` column shows `⇄ <sandbox>` for remote sessions, and status-line chips prefix their name with `⇄ ` (both use `?` instead while the sync is stale). The mark is `[ui] remote_mark` (one or two cells; also the default `window_name`'s): with a Nerd Font, `remote_mark = "\uf0c2"` gives a cloud. The default `⇄` renders in every font; plain `☁` (U+2601) does not.
+- `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. In the dash, a remote session's name carries the remote mark (`⇄ fix`, `? fix` while the sync is stale), as do status-line chips; the remote view (`r` → remote) adds a `HOST` column (`<gateway>/<sandbox>`), and the detail pane shows the host, last sync and the tmux target inside the sandbox. Put `host` in `[dash] columns` to see the column in every view. `agmux ls` shows `⇄ <sandbox>` in a `HOST` column whenever remote rows are listed. The mark is `[ui] remote_mark` (one or two cells; also the default `window_name`'s): with a Nerd Font, `remote_mark = "\uf0c2"` gives a cloud. The default `⇄` renders in every font; plain `☁` (U+2601) does not.
 - `agmux hub status` lists each remote (gateway, sandbox count, last discovery and its error), each sandbox's sync state, and a broken `[[remote]]` config (also while the hub is down); `agmux inspect <id>` adds the host.
 - `kill` and `resume` of a remote session are refused (planned); resuming a closed one prints the command to run by hand.
 
