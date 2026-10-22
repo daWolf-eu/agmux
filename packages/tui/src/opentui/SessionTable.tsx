@@ -40,6 +40,7 @@ function cellColor(style: ColumnStyle, state: string, r: SessionRow, now: number
     case "accent": return MOCHA.pink;
     case "sub": return MOCHA.subtext0;
     case "age": return ageColor(r.last_heartbeat_ts ?? r.start_ts, now);
+    case "remote": return MOCHA.teal;
   }
 }
 

@@ -95,6 +95,7 @@ test("host column: blank for local rows, the full host for remote, not a default
   expect(COLUMN_KEYS).toContain("host");
   expect(DEFAULT_COLUMNS).not.toContain("host");
   expect(COLUMNS.host.header).toBe("HOST");
+  expect(COLUMNS.host.style).toBe("remote"); // teal (SessionTable.cellColor)
   expect(COLUMNS.host.text(mkRow(), 0)).toBe("");
   expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("os/sbx");
 });

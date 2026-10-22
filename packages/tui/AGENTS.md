@@ -4,7 +4,7 @@
 
 ## Look & feel rules (dash)
 
-- **Hue = meaning only.** Status colours come from `STATUS_COLORS` (`shared/glyph.ts`); everything else (chrome, secondary columns, legend) uses the neutral ramp in `MOCHA` (`shared/palette.ts`). Sole exception: the branch column (`accent` role, pink). Never hard-code hexes in components — pick a `MOCHA` token.
+- **Hue = meaning only.** Status colours come from `STATUS_COLORS` (`shared/glyph.ts`); everything else (chrome, secondary columns, legend) uses the neutral ramp in `MOCHA` (`shared/palette.ts`). Exceptions: the branch column (`accent` role, pink) and the host column (`remote` role, teal — where a remote session runs). Never hard-code hexes in components — pick a `MOCHA` token.
 - **Whitespace over lines.** No pane borders or titles; blank spacer rows around the body; one faint `│` between table and preview. Overlays (`Overlays.tsx`: help, yank, attach — the two pickers share `PickerOverlay`) are borderless blocks centred on an empty screen.
 - **Keys** render through `KeyHint` (`[key] label`) everywhere — footer, help, yank.
 - **One glyph vocabulary** shared by dash and the tmux status line: `statusTone()` → `toneGlyph(tone, frame)` / `STATUS_COLORS`. Red is reserved for errors; `waiting` is yellow.
@@ -33,7 +33,7 @@ A remote row's `name` cell starts with `remoteNamePrefix` (`shared/locality.ts`:
 
 ### Adding a column
 
-1. Add the key to `COLUMN_KEYS` and a `ColDef` to `COLUMNS`: `header`, `align`, `style` (`state` | `faint` | `accent` | `sub` | `age` — a colour *role*, mapped to hexes in `SessionTable.cellColor`), `text(row, now)` (return `""` for missing, not `-`), optional `max` (hard cap) and `min` (shrink floor), and `shorten(text, width)` when a plain tail ellipsis loses the useful part (see `abbreviateBranch`).
+1. Add the key to `COLUMN_KEYS` and a `ColDef` to `COLUMNS`: `header`, `align`, `style` (`state` | `faint` | `accent` | `sub` | `age` | `remote` — a colour *role*, mapped to hexes in `SessionTable.cellColor`), `text(row, now)` (return `""` for missing, not `-`), optional `max` (hard cap) and `min` (shrink floor), and `shorten(text, width)` when a plain tail ellipsis loses the useful part (see `abbreviateBranch`).
 2. If it may give way when the pane is narrow, add it to `SHRINK_ORDER` (earlier = squeezed first; `name` last).
 3. Non-text sort semantics (numeric, rank) go in `sort.ts` `primary()` and `sortDirection()`; text columns sort a→z with blanks last for free.
 4. Document it in the README `[dash] columns` list; extend `tests/shared/columns.test.ts`.
