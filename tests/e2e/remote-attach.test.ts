@@ -242,6 +242,20 @@ describe.skipIf(!hasTmux)("remote attach through a fake openshell and two tmux s
     expect(tmuxOut(outerSock, ["display-message", "-p", "#{window_id}"])).toBe(viewWindow);
   }, 15_000);
 
+  test("a mouse click in the view selects the other remote pane", async () => {
+    // The agent opened a second pane next to itself (a linked window: the view shows it too).
+    const second = tmuxOut(innerSock, ["split-window", "-h", "-d", "-t", innerWindow, "-P", "-F", "#{pane_id}", "sleep 600"]);
+    const active = () => tmuxOut(innerSock, ["display-message", "-p", "-t", innerWindow, "#{pane_id}"]);
+    expect(active()).toBe(innerPane);
+    const [left = "0"] = tmuxOut(innerSock, ["display-message", "-p", "-t", second, "#{pane_left}"]).split("\t");
+    // An SGR mouse click typed into the local view pane reaches the sandbox's tmux client;
+    // SGR coordinates are 1-based, and the view has no status line.
+    const x = Number(left) + 3;
+    tmuxOut(outerSock, ["send-keys", "-t", viewPane, "-l", `\x1b[<0;${x};3M\x1b[<0;${x};3m`]);
+    await waitFor(() => active() === second, STEP_MS);
+    tmuxOut(innerSock, ["kill-pane", "-t", second]);
+  }, 15_000);
+
   test("closing the local window reaps the view", async () => {
     const view = viewName(viewPane);
     tmuxOut(outerSock, ["kill-window", "-t", viewWindow]);

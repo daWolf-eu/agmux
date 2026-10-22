@@ -28,7 +28,7 @@ Validation (before any value is used; `isRemoteTmux`, `isAttachTag`, `isTmuxKeyN
 - tmux session name 1-128 chars, no control chars, no `:` or `.`.
 - `{title}` (session name, else id8) passes `stripControls`, is capped at 40 columns and has every `#` doubled. The `[attach.remote] window_name` template itself is the user's own and is format-expanded by tmux (`#{…}` works). A trailing `;` of the final name is escaped as `\;` (tmux argv separator).
 
-View mode builds a plain session `agmux-view-<id8>-<tag>` (never grouped: tmux 3.6a segfault), links the agent's window, binds the detach key in the server-wide key table `agmux-view`, sets `destroy-unattached on` only on the attach command line, client `tmux -u`.
+View mode builds a plain session `agmux-view-<id8>-<tag>` (never grouped: tmux 3.6a segfault), links the agent's window, binds the detach key in the server-wide key table `agmux-view` plus tmux's default mouse bindings (`MouseDown1Pane` select-pane, `MouseDrag1Pane`/`WheelUpPane` copy-mode; a session `key-table` replaces root for mouse events too, so without them clicks and the wheel do nothing), sets `destroy-unattached on` only on the attach command line, client `tmux -u`.
 
 ## Reap state
 

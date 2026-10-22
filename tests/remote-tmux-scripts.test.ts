@@ -110,6 +110,10 @@ for (const shell of SHELLS) {
       expect((await tmux(e, ["show", "-t", V, "-v", "status"])).out).toBe("off");
       const keys = (await tmux(e, ["list-keys", "-T", "agmux-view"])).out;
       expect(keys).toMatch(/agmux-view\s+M-d\s+detach-client/);
+      // The view's key table replaces root for mouse events too: tmux's defaults, rebound.
+      expect(keys).toMatch(/agmux-view\s+MouseDown1Pane\s+select-pane -t = \\; send-keys -M/);
+      expect(keys).toMatch(/agmux-view\s+MouseDrag1Pane\s+if-shell -F .*"copy-mode -M"/);
+      expect(keys).toMatch(/agmux-view\s+WheelUpPane\s+if-shell -F .*"copy-mode -e"/);
       expect(state(e, "p1")).toBe(`view ${e.sock} ${V}\n`);
       expect(stubLog(e).slice(1)).toEqual([
         "-u", "-S", e.sock, "attach-session", "-t", `=${V}`, ";", "set", "-t", V, "destroy-unattached", "on",
