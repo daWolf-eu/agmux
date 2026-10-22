@@ -11,7 +11,7 @@ import {
 import { buildChildEnv, reexecEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
 import type { ProfileConfig } from "./profile.ts";
-import { HubClient } from "./hub-client.ts";
+import { HubClient, portFileHubUrl } from "./hub-client.ts";
 import { mintSessionId } from "./ids.ts";
 import { buildStartedEvent, buildEndedEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
 import { OscTitleParser } from "./osc-title.ts";
@@ -20,7 +20,7 @@ import {
   ensureAgmuxSession, readCurrentTmuxCoords, newAgmuxWindow, tmuxVersion,
 } from "./tmux.ts";
 export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, loadAttachConfig, parseAttachSection, type AttachConfig, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig, type DashGroupConfig, type DashGroupKey, DASH_GROUP_KEYS } from "./profile.ts";
-export { HubClient, type HubClientOpts } from "./hub-client.ts";
+export { HubClient, portFileHubUrl, type HubClientOpts } from "./hub-client.ts";
 export { mintSessionId, mintEventId } from "./ids.ts";
 export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
 export { OscTitleParser } from "./osc-title.ts";
@@ -43,7 +43,9 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
 
   const host = resolveHost();
   const queueDir = path.join(opts.stateDir, "queue");
-  const client = new HubClient({ hubUrl: opts.hubUrl, queueDir, sessionId });
+  const client = new HubClient({
+    hubUrl: opts.hubUrl, queueDir, sessionId, resolveHubUrl: () => portFileHubUrl(opts.stateDir),
+  });
 
   // Tmux session name is overridable so e2e tests don't collide with the user's real "agmux".
   const tmuxSessionName = process.env[AGMUX_TMUX_SESSION_ENV] ?? AGMUX_TMUX_SESSION_DEFAULT;
