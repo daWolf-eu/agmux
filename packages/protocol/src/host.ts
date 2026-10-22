@@ -20,6 +20,10 @@ export function resolveHost(
 }
 
 // Session id carried by host-level events that belong to no session.
+// Marks a remote (replicated) session in the dash host column, status-line chips and
+// remote attach window names. One cell wide (U+2601, text presentation).
+export const REMOTE_MARK = "☁";
+
 export const NO_SESSION_ID = "00000000-0000-0000-0000-000000000000";
 
 export const EVENT_KINDS_HOST = ["host.synced", "host.sync_failed", "host.removed"] as const;

@@ -11,7 +11,7 @@ The single source of truth for the running version is
 ## [Unreleased]
 
 ### Added
-- Remote sandbox attach (phase 2): `agmux attach <id> [--placement <p>] [--mode view|full]`, the dash `A` popup (`m` toggles the mode) and status-line clicks open a live sandbox session (inline / new pane / window / session / terminal), reuse an already open window of the same mode and name it `[attach.remote] window_name`. Modes: `view` (throwaway tmux view session, detach with `detach_key`, default `M-d`) and `full` (default outside tmux). Config `[attach.remote]`: `placement` (`new-window`), `mode` (`view`), `window_name` (`⇄ {title}`), `detach_key` (`M-d`). The sandbox needs only sh + tmux: three fixed sh scripts take row values as positional args only, validated first. The local pane process (`--remote-client`) tags its pane (`@agmux_session_id`, `@agmux_remote`, `@agmux_attach_mode`), starts a stopped sandbox and reaps the sandbox-side client on hangup, transport failure or the next attach with the same tag. Remote rows expose `remote_tmux` / `remote_pid` (`pid` / `tmux_*` stay null); `ls` renders the TMUX column from `remote_tmux`. Focusing a pane that shows a remote session marks it seen (`session.seen` stamped with the local host). A closed remote session's refused resume prints the command to run by hand. Remote kill / resume stay unsupported.
+- Remote sandbox attach (phase 2): `agmux attach <id> [--placement <p>] [--mode view|full]`, the dash `A` popup (`m` toggles the mode) and status-line clicks open a live sandbox session (inline / new pane / window / session / terminal), reuse an already open window of the same mode and name it `[attach.remote] window_name`. Modes: `view` (throwaway tmux view session, detach with `detach_key`, default `M-d`) and `full` (default outside tmux). Config `[attach.remote]`: `placement` (`new-window`), `mode` (`view`), `window_name` (`☁ {title}`), `detach_key` (`M-d`). The sandbox needs only sh + tmux: three fixed sh scripts take row values as positional args only, validated first. The local pane process (`--remote-client`) tags its pane (`@agmux_session_id`, `@agmux_remote`, `@agmux_attach_mode`), starts a stopped sandbox and reaps the sandbox-side client on hangup, transport failure or the next attach with the same tag. Remote rows expose `remote_tmux` / `remote_pid` (`pid` / `tmux_*` stay null); `ls` renders the TMUX column from `remote_tmux`. Focusing a pane that shows a remote session marks it seen (`session.seen` stamped with the local host). A closed remote session's refused resume prints the command to run by hand. Remote kill / resume stay unsupported.
 - Remote attach hardening: the pane tags are cleared when the remote client exits (a held failed window or the shell of an inline attach no longer wins dedup / focus-seen); the full-mode reap kills only a tmux attach client, never the sandbox's tmux server; a signal also hangs up the openshell child; a live remote row without tmux coordinates is no longer attachable; new-session names are `agmux-<id8>-<mode>`.
 - dash: `A` opens an attach-target popup — inline, new pane, new window, new tmux
   session, new terminal tab/window. A live session is switched to (or opened from a new
@@ -56,7 +56,7 @@ The single source of truth for the running version is
 - Remote sandbox sessions (phase 1, read-only): `[[remote]]` in `config.toml` makes the
   hub pull the event logs of OpenShell sandboxes (`agmux events --follow` over
   `sandbox exec`, schema v9: `events.source`, `hosts`; v10: `source_db`). Sandboxes need `AGMUX_HOST`.
-  Remote sessions appear in `ls`/`dash`/status line (`⇄ host`, `?` when stale);
+  Remote sessions appear in `ls`/`dash`/status line (`☁ host`, `?` when stale);
   `ls --remote|--local|--host <glob>`, `[ls] locality`, dash `host` column and `r` key,
   sync state in `agmux hub status` (per remote: last discovery and its error, a broken
   config even while the hub is down) and `inspect`. Gone sandboxes turn `lost`, and so do
@@ -104,6 +104,11 @@ The single source of truth for the running version is
   (table, detail, yank), `explain` and the status line.
 
 ### Fixed
+- Sessions launched through `agmux-wrap` stopped reaching the hub after `agmux hub
+  restart`: the wrapper and its agent's hooks kept posting to the port the hub had
+  when the session started, so heartbeats and events only went to the on-disk queue
+  (drained at the next hub start) and the session drifted to `lost`. Both now fall
+  back to the hub's port file when that URL fails.
 - tmux status line froze after a reboot: nothing restarted `agmux notifyd`, the
   only writer of the cache it `cat`s, while the dash (hub auto-spawned) stayed live.
   The plugin now starts notifyd whenever it installs the status line.

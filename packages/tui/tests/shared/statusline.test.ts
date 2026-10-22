@@ -276,11 +276,11 @@ test("a width too small for anything still keeps the filter chip", () => {
   expect(out).not.toContain("range=user|@s");
 });
 
-test("a remote chip prefixes the name with ⇄, counted by the width fit; escaping still applies", () => {
+test("a remote chip prefixes the name with ☁, counted by the width fit; escaping still applies", () => {
   const f = { ...OPTS, format: "{name}" };
-  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌⇄ fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌☁ fix ");
   expect(plain(formatStatusLine([mkRow({ name: "fix" })], f))).toBe("▌fix ");
-  expect(formatStatusLine([mkRow({ name: "a #[fg=red]", remote: true })], f)).toContain("⇄ a ##[fg=red]");
+  expect(formatStatusLine([mkRow({ name: "a #[fg=red]", remote: true })], f)).toContain("☁ a ##[fg=red]");
   const rows = [mkRow({ name: "x".repeat(24), remote: true })];
   const out = formatStatusLine(rows, { ...f, width: 14 });
   expect(statusWidth(chips(out))).toBeLessThanOrEqual(14);
@@ -305,11 +305,11 @@ test("status-line fields carry no control characters", () => {
   const out = formatStatusLine([mkRow({ name: evil, git_repo: evil, git_branch: evil, project: evil, last_tool: evil, remote: true })],
     { ...OPTS, format: "{name} {repo} {branch} {project} {last_tool}" });
   expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
-  expect(out).toContain("⇄ x ]52;c;ZXZpbA== y");
+  expect(out).toContain("☁ x ]52;c;ZXZpbA== y");
 });
 
-test("a stale remote chip prefixes the name with ? instead of ⇄ (spec §4.4)", () => {
+test("a stale remote chip prefixes the name with ? instead of ☁ (spec §4.4)", () => {
   const f = { ...OPTS, format: "{name}" };
   expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: true })], f))).toBe("▌? fix ");
-  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌⇄ fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌☁ fix ");
 });
