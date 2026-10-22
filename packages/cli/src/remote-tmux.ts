@@ -45,6 +45,8 @@ const WINDOW_CHECK = String.raw`[ "$(t display-message -p -t "$win" '#{window_id
   || { echo "agmux: the session's tmux window $win is gone" >&2; exit 3; }`;
 
 // $1 socket, $2 window, $3 pane, $4 view, $5 key, $6 tag (spec §8.1 order).
+// key-table agmux-view replaces root for mouse events too, so the view rebinds
+// tmux's default click (select pane), drag (copy-mode) and wheel (copy-mode/scroll).
 // The view is a plain session holding the agent's window (linked, never
 // grouped: tmux 3.6a segfaults when a grouped session loses its last window).
 export const VIEW_SCRIPT = String.raw`sock=$1 win=$2 pane=$3 view=$4 key=$5 tag=$6
@@ -57,6 +59,9 @@ printf 'view %s %s\n' ${SOCK_OR_DASH} "$view" > "$st/$tag"
   && t set -t "$view" status off \; set -t "$view" prefix None \; set -t "$view" prefix2 None \
        \; set -t "$view" key-table agmux-view \; set -t "$view" mouse on \
   && t bind -T agmux-view "$key" detach-client \
+  && t bind -T agmux-view MouseDown1Pane 'select-pane -t = ; send-keys -M' \
+  && t bind -T agmux-view MouseDrag1Pane 'if-shell -F "#{||:#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -M"' \
+  && t bind -T agmux-view WheelUpPane 'if-shell -F "#{||:#{alternate_on},#{pane_in_mode},#{mouse_any_flag}}" "send-keys -M" "copy-mode -e"' \
   && t link-window -s "$win" -t "$view:" \
   && t kill-window -t "$view:^"; } \
   || { t kill-session -t "=$view" 2>/dev/null; echo "agmux: could not build the view" >&2; exit 3; }

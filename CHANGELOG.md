@@ -106,6 +106,7 @@ The single source of truth for the running version is
   (table, detail, yank), `explain` and the status line.
 
 ### Fixed
+- Remote view mode: clicking another pane or scrolling did nothing — the view's `agmux-view` key table replaced tmux's root table for mouse events too. The view now binds tmux's default click, drag and wheel actions.
 - Sessions launched through `agmux-wrap` stopped reaching the hub after `agmux hub
   restart`: the wrapper and its agent's hooks kept posting to the port the hub had
   when the session started, so heartbeats and events only went to the on-disk queue

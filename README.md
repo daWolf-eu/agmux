@@ -502,8 +502,8 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 
 `agmux attach <id>` (also the dash `A` popup and status-line clicks) opens a live sandbox session. The Mac builds the attach from the replicated tmux coordinates; the sandbox needs only `sh` + `tmux` (no image change). Two modes:
 
-- `view` (default inside tmux): a throwaway tmux session in the sandbox holds the agent's window; the inner tmux takes no keys and draws nothing, so the pane behaves like a local one. Leave with the detach key (default `M-d`); the agent is untouched.
-- `full` (default outside tmux): a normal client on the sandbox's tmux (its own prefix and status bar).
+- `view` (default inside tmux): a throwaway tmux session in the sandbox holds the agent's window; the inner tmux takes no keys and draws nothing, so the pane behaves like a local one. Click a pane to switch to it, scroll with the wheel (the sandbox's scrollback). Leave with the detach key (default `M-d`, which needs Option sent as Alt — e.g. Ghostty `macos-option-as-alt`; or set `detach_key`, e.g. `F12`); the agent is untouched.
+- `full` (default outside tmux): a normal client on the sandbox's tmux (its own prefix and status bar). Nested tmux: when your local prefix is the same as the sandbox's (the workbench image uses `C-a`), bind it to `send-prefix` locally (`bind C-a send-prefix`), then `C-a C-a <key>` reaches the sandbox (`C-a C-a d` detaches).
 
 `--mode view|full` and `--placement <p>` override per call; in the dash `A` popup `m` toggles the mode. Closing the local window or a transport failure reaps the sandbox-side client. A stopped sandbox is started first. Config (`~/.config/agmux/config.toml`, read when attaching):
 
