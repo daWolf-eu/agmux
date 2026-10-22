@@ -199,10 +199,10 @@ the window), and `agmux seen --pane` checks that option first.
 
 - `ls`/`watch`/`dash`: `--remote`, `--local`, `--host <glob>` (hub `/sessions?host=` +
   `locality=`). Config-able defaults under `[ls]`/`[dash]`.
-- New dash column `host` (short form `⇄ wi-SAG-1234`; local renders empty) for the
+- New dash column `host` (short form `☁ wi-SAG-1234`; local renders empty) for the
   configurable `columns` list. Dash filter key cycles `all → local → remote`.
 - `inspect` shows the host's sync state.
-- Status line: remote chips get a `⇄` prefix; click → §4.7.
+- Status line: remote chips get a `☁` prefix; click → §4.7.
 
 ### 4.7 Attach flow
 
@@ -212,7 +212,7 @@ agmux attach <id>   (or dash ⏎ / status-line click)
        no  → existing local path (unchanged)
        yes → already open locally? (a pane with @agmux_session_id=<id>)
                yes → switch-client to it
-               no  → in tmux:  tmux new-window -n "⇄ <title>" -- <transport argv --tty> <view cmd>
+               no  → in tmux:  tmux new-window -n "☁ <title>" -- <transport argv --tty> <view cmd>
                       not in tmux: exec the same argv in the foreground
 ```
 
@@ -579,7 +579,7 @@ instead of a tmux window (Ghostty CLI on macOS — verify), for people who want 
 [attach.remote]   # as built — §10 Phase 2 note 1 (`[remote.attach]` would nest under the last [[remote]])
 placement = "new-window"  # default target for ⏎ (attach-popup spec slots)
 mode = "view"             # default mode: view (N1) | full (N2); toggle (N3) not built
-window_name = "⇄ {title}"
+window_name = "☁ {title}"
 detach_key = "M-d"        # view mode only
 ```
 
@@ -697,7 +697,7 @@ Refinements made while implementing; the code is authoritative.
 
 Refinements made while implementing; the code is authoritative (`cli/src/remote-tmux.ts`, `remote-client.ts`, `attach-remote.ts`).
 
-1. `[attach.remote]`, not `[remote.attach]`: `remote` is an array of tables (`[[remote]]`), so `[remote.attach]` would become a subtable of the last entry. Keys/defaults: `placement = "new-window"`, `mode = "view"`, `window_name = "⇄ {title}"`, `detach_key = "M-d"` (was `[attach] view_detach_key`).
+1. `[attach.remote]`, not `[remote.attach]`: `remote` is an array of tables (`[[remote]]`), so `[remote.attach]` would become a subtable of the last entry. Keys/defaults: `placement = "new-window"`, `mode = "view"`, `window_name = "☁ {title}"`, `detach_key = "M-d"` (was `[attach] view_detach_key`).
 2. Remote coords are exposed namespaced: `SessionRow.remote_tmux {session, window, pane, socket}` and `remote_pid`, only on remote rows; `pid` / `tmux_*` stay null. Shown in `inspect` and the `ls` TMUX column; PID stays `-`.
 3. The Mac builds the attach from the replicated coords; the sandbox needs only sh + tmux (no image change). Replaces §8.1's remote `agmux attach --view|--full|--reap` with three fixed sh scripts; values are positional args after `$0` = `agmux`, validated first (`isRemoteTmux`). Stale coords: the script's window check fails with exit 3 and a message.
 4. The local pane process tags itself: `agmux attach <id> --remote-client --mode <m> --detach-key <k>`; tag `p<N>` from `$TMUX_PANE`, else `t` + 8 hex. It sets `@agmux_session_id`, `@agmux_remote=1`, `@agmux_attach_mode` on its own pane and unsets them when the transport exits or on SIGHUP/SIGTERM (before the reap / failure hold). On a signal it also SIGHUPs the openshell child. A live remote row without `remote_tmux` (headless) has nothing to attach. New-session placement names the session `agmux-<id8>-<mode>`.

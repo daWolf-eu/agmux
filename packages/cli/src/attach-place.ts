@@ -1,7 +1,7 @@
 // Pure argv builders for `agmux attach --placement` and the dash attach popup
 // (docs/superpowers/specs/2026-10-09-dash-attach-popup-design.md). The tmux
 // placement itself runs in dash-actions.ts.
-import type { AttachPlacement, RemoteAttachMode } from "@agmux/protocol";
+import { REMOTE_MARK, type AttachPlacement, type RemoteAttachMode } from "@agmux/protocol";
 import { loadAttachConfig, type AttachConfig } from "@agmux/wrapper";
 import type { AttachCtx, AttachDefaults } from "@agmux/tui";
 
@@ -19,7 +19,7 @@ export function attachSettingsFrom(cfg: AttachConfig, agmuxBin: string): AttachS
     remote: {
       placement: cfg.remote.placement ?? "new-window",
       mode: cfg.remote.mode ?? "view",
-      windowName: cfg.remote.windowName ?? "⇄ {title}",
+      windowName: cfg.remote.windowName ?? `${REMOTE_MARK} {title}`,
       detachKey: cfg.remote.detachKey ?? "M-d",
     },
     agmuxBin,

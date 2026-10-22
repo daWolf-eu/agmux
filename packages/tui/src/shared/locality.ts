@@ -1,4 +1,4 @@
-import type { Locality, SessionRow } from "@agmux/protocol";
+import { REMOTE_MARK, type Locality, type SessionRow } from "@agmux/protocol";
 
 // The dash's client-side locality filter (key `r`): everything, only this
 // machine's sessions, or only replicated remote ones.
@@ -13,12 +13,12 @@ export function matchesLocality(r: SessionRow, l: LocalityFilter): boolean {
   return l === "all" || (l === "remote") === !!r.remote;
 }
 
-// "" for local rows; remote rows show where they run: `⇄ <host>` (the part
+// "" for local rows; remote rows show where they run: `☁ <host>` (the part
 // after the first "/", i.e. without the transport prefix), `? <host>` when the
 // replica is stale.
 export function hostLabel(r: SessionRow): string {
   if (!r.remote) return "";
   const i = r.host.indexOf("/");
   const name = i < 0 ? r.host : r.host.slice(i + 1);
-  return `${r.sync_stale ? "?" : "⇄"} ${name}`;
+  return `${r.sync_stale ? "?" : REMOTE_MARK} ${name}`;
 }

@@ -4,9 +4,9 @@ import { mkRow } from "../helpers/mk-row.ts";
 
 test("hostLabel: local is blank, remote shows the part after the first '/', stale is marked ?", () => {
   expect(hostLabel(mkRow())).toBe("");
-  expect(hostLabel(mkRow({ remote: true, host: "openshell/sbx-1" }))).toBe("⇄ sbx-1");
-  expect(hostLabel(mkRow({ remote: true, host: "a/b/c" }))).toBe("⇄ b/c");
-  expect(hostLabel(mkRow({ remote: true, host: "plain" }))).toBe("⇄ plain");
+  expect(hostLabel(mkRow({ remote: true, host: "openshell/sbx-1" }))).toBe("☁ sbx-1");
+  expect(hostLabel(mkRow({ remote: true, host: "a/b/c" }))).toBe("☁ b/c");
+  expect(hostLabel(mkRow({ remote: true, host: "plain" }))).toBe("☁ plain");
   expect(hostLabel(mkRow({ remote: true, host: "openshell/sbx-1", sync_stale: true }))).toBe("? sbx-1");
 });
 

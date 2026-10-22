@@ -45,12 +45,12 @@ function recorder(listing = "") {
 
 describe("remoteWindowName", () => {
   test("window name escapes formats and caps width", () => {
-    expect(remoteWindowName("⇄ {title}", remoteRow({ name: "#(rm -rf ~)" }))).toBe("⇄ ##(rm -rf ~)");
-    expect(remoteWindowName("⇄ {title}", remoteRow({ name: "a\u001b[31mb" }))).toBe("⇄ ab");
-    const long = remoteWindowName("⇄ {title}", remoteRow({ name: "x".repeat(200) }));
-    expect(long).toBe(`⇄ ${"x".repeat(40)}`);
-    expect(Bun.stringWidth(long)).toBe(Bun.stringWidth("⇄ ") + 40);
-    expect(remoteWindowName("⇄ {title}", remoteRow({ name: null }))).toBe("⇄ 11111111");
+    expect(remoteWindowName("☁ {title}", remoteRow({ name: "#(rm -rf ~)" }))).toBe("☁ ##(rm -rf ~)");
+    expect(remoteWindowName("☁ {title}", remoteRow({ name: "a\u001b[31mb" }))).toBe("☁ ab");
+    const long = remoteWindowName("☁ {title}", remoteRow({ name: "x".repeat(200) }));
+    expect(long).toBe(`☁ ${"x".repeat(40)}`);
+    expect(Bun.stringWidth(long)).toBe(Bun.stringWidth("☁ ") + 40);
+    expect(remoteWindowName("☁ {title}", remoteRow({ name: null }))).toBe("☁ 11111111");
   });
 
   test("a trailing `;` is escaped so tmux does not end the command there", () => {
@@ -113,7 +113,7 @@ describe("attachRemote", () => {
     const a = r.placed[0]!.args;
     expect(r.placed[0]!.kind).toBe("newWindow");
     expect(a.sessionName).toBe("mac");
-    expect(a.windowName).toBe("⇄ fix ##1");
+    expect(a.windowName).toBe("☁ fix ##1");
     expect(a.cmd).toEqual(remotePaneCmd("/bin/agmux", ID, "view", "M-d"));
     expect(r.tmux).toEqual([["set-option", "-w", "-t", "@9", "automatic-rename", "off"]]);
   });
@@ -150,7 +150,7 @@ describe("attachRemote", () => {
     await attachRemote(remoteRow(), { placement: "new-session" }, env(IN_TMUX), r.deps);
     expect(r.placed[0]!.kind).toBe("newSession");
     expect(r.placed[0]!.args.sessionName).toBe("agmux-11111111-view");
-    expect(r.placed[0]!.args.windowName).toBe("⇄ 11111111");
+    expect(r.placed[0]!.args.windowName).toBe("☁ 11111111");
     expect(r.tmux).toEqual([
       ["set-option", "-w", "-t", "@0", "automatic-rename", "off"],
       ["switch-client", "-t", "agmux-11111111:@0"],

@@ -96,7 +96,7 @@ test("host column: blank for local rows, hostLabel for remote, not a default, sh
   expect(DEFAULT_COLUMNS).not.toContain("host");
   expect(COLUMNS.host.header).toBe("HOST");
   expect(COLUMNS.host.text(mkRow(), 0)).toBe("");
-  expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("⇄ sbx");
+  expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("☁ sbx");
 });
 
 test("host gives way before name in SHRINK_ORDER", async () => {

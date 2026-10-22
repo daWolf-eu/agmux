@@ -8,7 +8,7 @@ const ID = "019f1898-8e0f-7000-ab55-07d09f673b59";
 test("settings take config values and fill defaults", () => {
   const s = attachSettingsFrom({ live: "new-window", terminal: { newWindow: ["x", "{cmd}"] }, remote: {} }, "/bin/agmux");
   expect(s).toEqual({ defaults: { live: "new-window", closed: undefined, remote: undefined }, terminal: { newWindow: ["x", "{cmd}"] },
-    remote: { placement: "new-window", mode: "view", windowName: "⇄ {title}", detachKey: "M-d" }, agmuxBin: "/bin/agmux" });
+    remote: { placement: "new-window", mode: "view", windowName: "☁ {title}", detachKey: "M-d" }, agmuxBin: "/bin/agmux" });
 });
 
 test("attachCtxFor reads TMUX and the configured terminals", () => {
@@ -37,8 +37,8 @@ test("expandTemplate splices {cmd} as argv, or shell-quotes it inside a string",
 
 test("settings fill the [attach.remote] defaults", () => {
   expect(attachSettingsFrom({ terminal: {}, remote: {} }, "agmux").remote).toEqual({
-    placement: "new-window", mode: "view", windowName: "⇄ {title}", detachKey: "M-d",
+    placement: "new-window", mode: "view", windowName: "☁ {title}", detachKey: "M-d",
   });
   expect(attachSettingsFrom({ terminal: {}, remote: { mode: "full", detachKey: "C-q" } }, "agmux").remote)
-    .toEqual({ placement: "new-window", mode: "full", windowName: "⇄ {title}", detachKey: "C-q" });
+    .toEqual({ placement: "new-window", mode: "full", windowName: "☁ {title}", detachKey: "C-q" });
 });
