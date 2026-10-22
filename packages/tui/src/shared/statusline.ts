@@ -1,8 +1,8 @@
 import { isShellSafeId, shellSafeIdChars, stripControls, type SessionRow } from "@agmux/protocol";
 import { statusGlyph, statusTone, toneGlyph, STATUS_COLORS, type StatusTone } from "./glyph.ts";
 import { MOCHA } from "./palette.ts";
-import { abbreviateBranch, clip, COLUMNS, type ColumnStyle } from "./columns.ts";
-import { remoteMark } from "./locality.ts";
+import { abbreviateBranch, clip, COLUMNS, plainName, type ColumnStyle } from "./columns.ts";
+import { remoteNamePrefix } from "./locality.ts";
 
 // Which sessions get a chip. "attention" = waiting or done: everything that
 // wants you; "working" adds what is still running. Rows are open sessions only,
@@ -139,11 +139,6 @@ const FIELD_STYLE: Record<string, ColumnStyle> = {
   agent_kind: "sub", last_tool: "sub",
 };
 
-// Remote chips: the remote mark before the name, `? ` while the sync is stale (as hostLabel).
-function remotePrefix(r: SessionRow): string {
-  if (!r.remote) return "";
-  return r.sync_stale ? "? " : `${remoteMark()} `;
-}
 
 // Field text is untrusted (remote rows): no control characters reach tmux.
 function fieldValue(r: SessionRow, key: string, caps: Caps): string {
@@ -153,7 +148,8 @@ function fieldValue(r: SessionRow, key: string, caps: Caps): string {
 function rawFieldValue(r: SessionRow, key: string, caps: Caps): string {
   switch (key) {
     case "glyph": return statusGlyph(r).glyph;
-    case "name": return remotePrefix(r) + clip(COLUMNS.name.text(r, 0), caps.name);
+    // Remote chips: the remote mark (or "?" while stale) before the name, outside the cap.
+    case "name": return remoteNamePrefix(r) + clip(stripControls(plainName(r)), caps.name);
     case "repo": return r.git_repo ?? "";
     case "branch": return r.git_branch ? abbreviateBranch(r.git_branch, BRANCH_MAX) : "";
     case "tmux_session": return r.tmux_session ? abbreviate(r.tmux_session, caps.session) : "";

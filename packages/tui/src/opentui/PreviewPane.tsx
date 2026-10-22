@@ -18,6 +18,12 @@ function exitStr(r: SessionRow): string {
   return "-";
 }
 
+// Where attach goes for a remote row: its tmux target inside the sandbox.
+function remoteTmuxTarget(r: SessionRow): string {
+  const t = r.remote_tmux;
+  return t ? `${t.session}:${t.window}${t.pane ? ` ${t.pane}` : ""} (in sandbox)` : "";
+}
+
 // Remote rows add when the replica last synced and whether it has gone stale.
 export function hostDetail(r: SessionRow, now: number = Date.now()): string {
   let s = r.host;
@@ -35,7 +41,7 @@ export function detailFields(r: SessionRow, u: UsageSummary | null): [string, st
     ["Agent", r.agent_kind],
     ["Profile", r.profile ?? "-"],
     ["Origin", r.origin],
-    ["TMUX", tmuxTarget(r) || "—"],
+    ["TMUX", tmuxTarget(r) || remoteTmuxTarget(r) || "—"],
     ["PID", r.pid == null ? "-" : String(r.pid)],
     ["Host", hostDetail(r)],
     ["Project", r.project ?? "-"],

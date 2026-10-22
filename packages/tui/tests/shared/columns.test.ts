@@ -90,13 +90,13 @@ test("branch is the accent column; other optional columns stay secondary text", 
   for (const k of ["id", "agent", "profile", "tmux", "turns", "activity", "project"] as const) expect(COLUMNS[k].style).toBe("sub");
 });
 
-test("host column: blank for local rows, hostLabel for remote, not a default, shrinks before name", async () => {
+test("host column: blank for local rows, the full host for remote, not a default", async () => {
   const { COLUMNS, DEFAULT_COLUMNS, COLUMN_KEYS } = await import("../../src/shared/columns.ts");
   expect(COLUMN_KEYS).toContain("host");
   expect(DEFAULT_COLUMNS).not.toContain("host");
   expect(COLUMNS.host.header).toBe("HOST");
   expect(COLUMNS.host.text(mkRow(), 0)).toBe("");
-  expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("⇄ sbx");
+  expect(COLUMNS.host.text(mkRow({ remote: true, host: "os/sbx" }), 0)).toBe("os/sbx");
 });
 
 test("host gives way before name in SHRINK_ORDER", async () => {
@@ -115,5 +115,28 @@ test("every column's text has control characters replaced (remote text is untrus
     remote: true, host: `gw/${HOSTILE}`,
   });
   for (const k of COLUMN_KEYS) expect(COLUMNS[k].text(r, NOW)).not.toMatch(CTRL);
-  expect(COLUMNS.name.text(r, NOW)).toBe("evil ]52;c;ZXZpbA==  name");
+  expect(COLUMNS.name.text(r, NOW)).toBe("⇄ evil ]52;c;ZXZpbA==  name");
+});
+
+test("a remote row's name carries the remote mark (? while stale); local names are unchanged", async () => {
+  const { COLUMNS } = await import("../../src/shared/columns.ts");
+  expect(COLUMNS.name.text(mkRow({ name: "fix" }), 0)).toBe("fix");
+  expect(COLUMNS.name.text(mkRow({ name: "fix", remote: true }), 0)).toBe("⇄ fix");
+  expect(COLUMNS.name.text(mkRow({ name: "fix", remote: true, sync_stale: true }), 0)).toBe("? fix");
+});
+
+test("sorting by name ignores the remote mark", async () => {
+  const { sortRows } = await import("../../src/shared/sort.ts");
+  const rows = [mkRow({ name: "b-local" }), mkRow({ name: "a-remote", remote: true }), mkRow({ name: "c-remote", remote: true })];
+  expect(sortRows(rows, "name").map((r) => r.name)).toEqual(["a-remote", "b-local", "c-remote"]);
+});
+
+test("columnsFor: the remote view adds host after name; other views and explicit host are unchanged", async () => {
+  const { columnsFor } = await import("../../src/shared/columns.ts");
+  const cols = ["glyph", "name", "repo"] as const;
+  expect(columnsFor([...cols], "remote")).toEqual(["glyph", "name", "host", "repo"]);
+  expect(columnsFor([...cols], "all")).toEqual([...cols]);
+  expect(columnsFor([...cols], "local")).toEqual([...cols]);
+  expect(columnsFor(["glyph", "host", "name"], "remote")).toEqual(["glyph", "host", "name"]);
+  expect(columnsFor(["glyph", "repo"], "remote")).toEqual(["glyph", "repo", "host"]);
 });

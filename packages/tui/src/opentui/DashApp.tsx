@@ -10,7 +10,7 @@ import { groupRows, nextGroup, type ActivityGroup } from "../shared/group.ts";
 import { matchesLocality, nextLocality, type LocalityFilter } from "../shared/locality.ts";
 import { yankFields } from "../shared/yank.ts";
 import { attachKind, attachTargets, NO_ATTACH_CTX, type AttachCtx } from "../shared/attach-targets.ts";
-import { COLUMNS, DEFAULT_COLUMNS, type ColumnKey } from "../shared/columns.ts";
+import { COLUMNS, DEFAULT_COLUMNS, columnsFor, type ColumnKey } from "../shared/columns.ts";
 import { SPINNER_MS } from "../shared/glyph.ts";
 import { MOCHA } from "../shared/palette.ts";
 import { matchAttachedPane } from "./attached.ts";
@@ -80,6 +80,8 @@ export function DashApp(props: DashAppProps) {
   const [group, setGroup] = useState<ActivityGroup>(props.initialGroup ?? "open");
 
   const [locality, setLocality] = useState<LocalityFilter>(props.initialLocality ?? "all");
+  // The remote view adds the host column; the combined view marks remote names instead.
+  const shownColumns = useMemo(() => columnsFor(columns, locality), [columns, locality]);
 
   // Feed → rows via useSyncExternalStore (synchronous notify; same as Ink path).
   // `subscribe` changes identity with the group, so React tears the old feed
@@ -251,7 +253,7 @@ export function DashApp(props: DashAppProps) {
     if (key.name === "k" || key.name === "up") { move(-1); return; }
     if (key.name === "g") { setSelectedId(visible[0]?.session_id ?? null); return; }
     if (key.name === "G") { setSelectedId(visible[visible.length - 1]?.session_id ?? null); return; }
-    if (key.name === "s") { setSortKey((k) => nextSort(k, columns)); return; }
+    if (key.name === "s") { setSortKey((k) => nextSort(k, shownColumns)); return; }
     if (key.name === "f") { setGroup((g) => nextGroup(g)); return; }
     if (key.name === "r") { setLocality((l) => nextLocality(l)); return; }
     if (key.name === "p") { setShowPreview((v) => !v); return; }
@@ -298,7 +300,7 @@ export function DashApp(props: DashAppProps) {
             ? <text fg={MOCHA.overlay0}>connecting to {hubUrl}…</text>
             : <SessionTable
                 rows={visible} selectedId={effectiveSelectedId} attachedId={attachedId} now={now}
-                columns={columns} showHeader={props.showHeader ?? false} width={tableWidth} height={bodyHeight} frame={frame}
+                columns={shownColumns} showHeader={props.showHeader ?? false} width={tableWidth} height={bodyHeight} frame={frame}
                 sortKey={sortKey} onSelect={setSelectedId}
               />}
         </box>
