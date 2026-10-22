@@ -1,7 +1,8 @@
-import { isShellSafeId, REMOTE_MARK, shellSafeIdChars, stripControls, type SessionRow } from "@agmux/protocol";
+import { isShellSafeId, shellSafeIdChars, stripControls, type SessionRow } from "@agmux/protocol";
 import { statusGlyph, statusTone, toneGlyph, STATUS_COLORS, type StatusTone } from "./glyph.ts";
 import { MOCHA } from "./palette.ts";
 import { abbreviateBranch, clip, COLUMNS, type ColumnStyle } from "./columns.ts";
+import { remoteMark } from "./locality.ts";
 
 // Which sessions get a chip. "attention" = waiting or done: everything that
 // wants you; "working" adds what is still running. Rows are open sessions only,
@@ -138,10 +139,10 @@ const FIELD_STYLE: Record<string, ColumnStyle> = {
   agent_kind: "sub", last_tool: "sub",
 };
 
-// Remote chips: `☁ ` before the name, `? ` while the sync is stale (as hostLabel).
+// Remote chips: the remote mark before the name, `? ` while the sync is stale (as hostLabel).
 function remotePrefix(r: SessionRow): string {
   if (!r.remote) return "";
-  return r.sync_stale ? "? " : `${REMOTE_MARK} `;
+  return r.sync_stale ? "? " : `${remoteMark()} `;
 }
 
 // Field text is untrusted (remote rows): no control characters reach tmux.

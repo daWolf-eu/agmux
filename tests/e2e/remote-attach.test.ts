@@ -216,7 +216,7 @@ describe.skipIf(!hasTmux)("remote attach through a fake openshell and two tmux s
     expect(r).toEqual({ code: 0, err: "" });
     await waitFor(() => remotePanes("view").length === 1, STEP_MS);
     const [p] = remotePanes("view");
-    expect(p!.name).toBe(`☁ ${NAME}`);
+    expect(p!.name).toBe(`⇄ ${NAME}`);
     viewPane = p!.pane;
     viewWindow = p!.window;
 
