@@ -23,7 +23,8 @@ export function isColumnKey(s: string): s is ColumnKey {
 //   accent pink — the one non-status hue, for the branch
 //   sub    secondary text (every other optional column)
 //   age    text fading with age (last_seen)
-export type ColumnStyle = "state" | "faint" | "accent" | "sub" | "age";
+//   remote teal — where a remote session runs (host)
+export type ColumnStyle = "state" | "faint" | "accent" | "sub" | "age" | "remote";
 
 export interface ColDef {
   key: ColumnKey;
@@ -85,7 +86,7 @@ const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
     text: (r) => { const a = activityCell(r); return a === "-" ? "" : a; },
   },
   // The full `<gateway>/<sandbox>`: the mark is already on the name.
-  host: { key: "host", header: "HOST", align: "left", style: "sub", max: 28, min: 8, text: (r) => (r.remote ? r.host : "") },
+  host: { key: "host", header: "HOST", align: "left", style: "remote", max: 28, min: 8, text: (r) => (r.remote ? r.host : "") },
   project: { key: "project", header: "PROJECT", align: "left", style: "sub", max: 24, min: 6, text: (r) => r.project ?? "" },
 };
 
