@@ -8,6 +8,7 @@ import type { AgentKind, CapabilitySourceType, IngestEnvelope, SessionMetadataPa
 import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, tmuxSocketFromEnv } from "@agmux/protocol";
 import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
 import { probeGit, type GitExec } from "./git-meta.ts";
+import { portFileHubUrl } from "@agmux/wrapper";
 
 export interface ParsedEmit {
   from: string;
@@ -60,13 +61,7 @@ function parseRaw(stdin: string): unknown {
 // neither, return undefined and postOrQueue spools to disk for the next drain.
 // Best-effort and silent: a telemetry callback must never throw (spec §4.2).
 export function discoverHubUrl(env: Record<string, string | undefined>, stateDir: string): string | undefined {
-  const fromEnv = env[AGMUX_HUB_URL_ENV];
-  if (fromEnv) return fromEnv;
-  try {
-    const port = Number(fs.readFileSync(path.join(stateDir, "hub.port"), "utf8").trim());
-    if (Number.isInteger(port) && port > 0) return `http://127.0.0.1:${port}`;
-  } catch { /* no hub running / unreadable → queue fallback */ }
-  return undefined;
+  return env[AGMUX_HUB_URL_ENV] || (portFileHubUrl(stateDir) ?? undefined);
 }
 
 // Hub URL for a LONG-LIVED subscriber (dash, notifyd), re-read on every poll.
@@ -85,11 +80,7 @@ export function resolveLiveHubUrl(
   env: Record<string, string | undefined>,
   stateDir: string,
 ): string | null {
-  try {
-    const port = Number(fs.readFileSync(path.join(stateDir, "hub.port"), "utf8").trim());
-    if (Number.isInteger(port) && port > 0) return `http://127.0.0.1:${port}`;
-  } catch { /* no local hub → fall through to the env override */ }
-  return env[AGMUX_HUB_URL_ENV] ?? null;
+  return portFileHubUrl(stateDir) ?? env[AGMUX_HUB_URL_ENV] ?? null;
 }
 
 // Fill tmux_session/window on session.registered payloads (best effort: fires once
@@ -194,7 +185,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     });
     await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)));
     await postOrQueue(stamped, {
-      hubUrl: discoverHubUrl(deps.env, deps.stateDir), stateDir: deps.stateDir,
+      hubUrls: hubUrlCandidates(deps.env, deps.stateDir), stateDir: deps.stateDir,
       queueKey: nativeId ?? claimId!, // one of the two is set (guard above)
       fetchImpl: deps.fetchImpl ?? fetch, timeoutMs: deps.timeoutMs ?? 1500,
     });
@@ -203,21 +194,30 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
   }
 }
 
+// Where a hook should post, in order: AGMUX_HUB_URL (the wrapper's snapshot, or a
+// deliberate override), then the live port file — the snapshot goes stale when
+// `agmux hub restart` moves the hub to a new ephemeral port.
+export function hubUrlCandidates(env: Record<string, string | undefined>, stateDir: string): string[] {
+  const urls = [env[AGMUX_HUB_URL_ENV], portFileHubUrl(stateDir)].filter((u): u is string => !!u);
+  return [...new Set(urls)];
+}
+
 async function postOrQueue(events: IngestEnvelope[], o: {
-  hubUrl: string | undefined; stateDir: string; queueKey: string;
+  hubUrls: string[]; stateDir: string; queueKey: string;
   fetchImpl: typeof fetch; timeoutMs: number;
 }): Promise<void> {
-  if (o.hubUrl) {
+  const body = JSON.stringify(events);
+  for (const url of o.hubUrls) {
     try {
       const ctrl = new AbortController();
       const t = setTimeout(() => ctrl.abort(), o.timeoutMs);
-      const res = await o.fetchImpl(`${o.hubUrl}/ingest`, {
+      const res = await o.fetchImpl(`${url}/ingest`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(events), signal: ctrl.signal,
+        body, signal: ctrl.signal,
       });
       clearTimeout(t);
       if (res.status < 500 && res.status !== 0) return; // 2xx/4xx = delivered or unrecoverable
-    } catch { /* fall through to queue */ }
+    } catch { /* try the next candidate, then the queue */ }
   }
   const queueDir = path.join(o.stateDir, "queue");
   fs.mkdirSync(queueDir, { recursive: true });

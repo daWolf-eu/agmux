@@ -199,6 +199,29 @@ test("runEmit discovers the hub via the port file when AGMUX_HUB_URL is unset", 
   expect(fs.existsSync(path.join(stateDir, "queue", "nat-d.jsonl"))).toBe(false);
 });
 
+test("runEmit falls back to the port file when AGMUX_HUB_URL is stale (hub restarted on a new port)", async () => {
+  const stateDir = tmp();
+  fs.writeFileSync(path.join(stateDir, "hub.port"), "54321\n");
+  const tried: string[] = [];
+  const posted: any[] = [];
+  const fakeFetch = (async (url: string, init: any) => {
+    tried.push(String(url));
+    if (String(url).startsWith("http://127.0.0.1:1111")) throw new Error("ECONNREFUSED");
+    posted.push(...JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+
+  await runEmit(["--from=claude", "--source=hook-command", "--point=turn.started"], {
+    registry: reg(),
+    env: { AGMUX_SESSION_ID: "sid-s", AGMUX_HUB_URL: "http://127.0.0.1:1111" },
+    stdin: "{}", host: "h", stateDir, fetchImpl: fakeFetch,
+  });
+
+  expect(tried).toEqual(["http://127.0.0.1:1111/ingest", "http://127.0.0.1:54321/ingest"]);
+  expect(posted).toHaveLength(1);
+  expect(fs.existsSync(path.join(stateDir, "queue", "sid-s.jsonl"))).toBe(false);
+});
+
 test("hook events are stamped with the process spawn time, so spawn order = event order", () => {
   const fired = Date.parse(hookFiredAt());
   expect(fired).toBe(Math.floor(performance.timeOrigin));
