@@ -20,9 +20,10 @@ export function resolveHost(
 }
 
 // Session id carried by host-level events that belong to no session.
-// Marks a remote (replicated) session in the dash host column, status-line chips and
-// remote attach window names. One cell wide (U+2601, text presentation).
-export const REMOTE_MARK = "☁";
+// Marks a remote (replicated) session in the dash host column, `ls`, status-line
+// chips and remote attach window names. It must render in every font: a symbol
+// font's glyph (e.g. the Nerd Font cloud) is opt-in via `[ui] remote_mark`.
+export const DEFAULT_REMOTE_MARK = "⇄";
 
 export const NO_SESSION_ID = "00000000-0000-0000-0000-000000000000";
 

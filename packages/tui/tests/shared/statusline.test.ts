@@ -3,6 +3,8 @@ import {
   formatStatusLine, abbreviate, chipToken, parseChipToken, nextShow, statusWidth, FILTER_TOKEN, SHOW_CYCLE, type StatusLineOpts,
 } from "../../src/shared/statusline.ts";
 import { mkRow } from "../helpers/mk-row.ts";
+import { DEFAULT_REMOTE_MARK } from "@agmux/protocol";
+import { setRemoteMark } from "../../src/shared/locality.ts";
 
 const OPTS: StatusLineOpts = { show: "all", max: 6, format: "{glyph} {tmux_session}:{tmux_window}" };
 
@@ -276,14 +278,22 @@ test("a width too small for anything still keeps the filter chip", () => {
   expect(out).not.toContain("range=user|@s");
 });
 
-test("a remote chip prefixes the name with ☁, counted by the width fit; escaping still applies", () => {
+test("a remote chip prefixes the name with ⇄, counted by the width fit; escaping still applies", () => {
   const f = { ...OPTS, format: "{name}" };
-  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌☁ fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌⇄ fix ");
   expect(plain(formatStatusLine([mkRow({ name: "fix" })], f))).toBe("▌fix ");
-  expect(formatStatusLine([mkRow({ name: "a #[fg=red]", remote: true })], f)).toContain("☁ a ##[fg=red]");
+  expect(formatStatusLine([mkRow({ name: "a #[fg=red]", remote: true })], f)).toContain("⇄ a ##[fg=red]");
   const rows = [mkRow({ name: "x".repeat(24), remote: true })];
   const out = formatStatusLine(rows, { ...f, width: 14 });
   expect(statusWidth(chips(out))).toBeLessThanOrEqual(14);
+});
+
+test("a remote chip uses the configured remote mark", () => {
+  const f = { ...OPTS, format: "{name}" };
+  setRemoteMark("\uf0c2");
+  try {
+    expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true })], f))).toBe("▌\uf0c2 fix ");
+  } finally { setRemoteMark(DEFAULT_REMOTE_MARK); }
 });
 
 test("chipToken keeps only hex digits and dashes of a hostile id; parseChipToken refuses others", () => {
@@ -305,11 +315,11 @@ test("status-line fields carry no control characters", () => {
   const out = formatStatusLine([mkRow({ name: evil, git_repo: evil, git_branch: evil, project: evil, last_tool: evil, remote: true })],
     { ...OPTS, format: "{name} {repo} {branch} {project} {last_tool}" });
   expect(out).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
-  expect(out).toContain("☁ x ]52;c;ZXZpbA== y");
+  expect(out).toContain("⇄ x ]52;c;ZXZpbA== y");
 });
 
-test("a stale remote chip prefixes the name with ? instead of ☁ (spec §4.4)", () => {
+test("a stale remote chip prefixes the name with ? instead of ⇄ (spec §4.4)", () => {
   const f = { ...OPTS, format: "{name}" };
   expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: true })], f))).toBe("▌? fix ");
-  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌☁ fix ");
+  expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌⇄ fix ");
 });

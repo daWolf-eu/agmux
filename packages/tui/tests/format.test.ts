@@ -91,7 +91,7 @@ test("formatTable with a remote row: HOST right after NAME; local cell is exactl
   expect(lines[0]!.slice(0, col).trim().split(/\s+/)).toEqual(["ID", "NAME"]);
   const hostCell = (l: string) => l.slice(col, col + "HOST".length).trimEnd();
   expect(hostCell(lines[1]!)).toBe("-");
-  expect(lines[2]!.slice(col)).toStartWith("☁ sbx-1");
+  expect(lines[2]!.slice(col)).toStartWith("⇄ sbx-1");
 });
 
 test("formatTable replaces control characters in every cell: one line per row, no escapes", () => {

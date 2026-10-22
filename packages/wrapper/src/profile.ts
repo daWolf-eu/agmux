@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import { parse as parseToml } from "smol-toml";
 import {
-  expandStatusFilter, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, ATTACH_PLACEMENTS, REMOTE_ATTACH_MODES,
+  expandStatusFilter, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, stripControls, ATTACH_PLACEMENTS, REMOTE_ATTACH_MODES,
   type AgentKind, type AttachPlacement, type Locality, type RemoteAttachMode,
 } from "@agmux/protocol";
 
@@ -293,6 +293,32 @@ export function parseAttachSection(attach: unknown, terminal: unknown): AttachCo
     if (tab) out.terminal.newTab = tab;
   }
   return out;
+}
+
+export interface UiConfig {
+  remoteMark?: string; // [ui] remote_mark: the mark before remote sessions
+}
+
+// [ui]: how agmux draws things, shared by ls/dash/watch/status line/attach.
+// remote_mark is one or two cells (a Nerd Font icon like "\uf0c2" is one).
+export function parseUiSection(raw: unknown): UiConfig {
+  const u = tableOf("[ui]", raw, ["remote_mark"]);
+  const out: UiConfig = {};
+  if (u.remote_mark !== undefined) {
+    const m = u.remote_mark;
+    const w = typeof m === "string" ? Bun.stringWidth(m) : 0;
+    if (typeof m !== "string" || m.trim() === "" || stripControls(m) !== m || w < 1 || w > 2)
+      throw new Error(`[ui] remote_mark must be a 1-2 cell mark, got ${JSON.stringify(m)}`);
+    out.remoteMark = m;
+  }
+  return out;
+}
+
+// Parses ONLY [ui]. Missing file/section → {}. Invalid values throw.
+export function loadUiConfig(configPath: string): UiConfig {
+  if (!fs.existsSync(configPath)) return {};
+  const raw = parseToml(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+  return parseUiSection(raw.ui);
 }
 
 // Parses ONLY [attach] and [terminal]. Missing file/sections → defaults. Invalid values throw.

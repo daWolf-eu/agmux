@@ -19,6 +19,7 @@ import { attachCmd } from "../src/attach.ts";
 import { runRemoteClient } from "../src/remote-client.ts";
 import { DEFAULT_ATTACH_SETTINGS, loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
 import { attachPlacedCmd } from "../src/attach-placed.ts";
+import { applyUiConfig } from "../src/ui-config.ts";
 import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
 import { runAdapterCmd } from "../src/adapter-cmd.ts";
@@ -68,6 +69,11 @@ function writeStdoutLine(line: string): boolean {
 
 const argv = process.argv.slice(2);
 const verb = argv[0];
+
+// A bad [ui] value never stops a verb: say so and draw with the defaults.
+function warnUi(err: string | null): void {
+  if (err) console.error(`agmux: ${err}; using the default`);
+}
 
 function usage(): never {
   console.error(HELP_TEXT);
@@ -124,6 +130,7 @@ async function main(): Promise<number> {
     const check = argv.includes("--check");
     const printConfig = argv.includes("--print-config");
     const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+    applyUiConfig(configPath); // silent: the status line never prints
     let config;
     try { config = loadAttentionConfigFile(configPath); }
     catch { config = loadAttentionConfig(""); }
@@ -189,6 +196,7 @@ async function main(): Promise<number> {
   switch (verb) {
     case "notifyd": {
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      applyUiConfig(configPath);
       let config;
       try { config = loadAttentionConfigFile(configPath); }
       catch { config = loadAttentionConfig(""); }
@@ -300,6 +308,7 @@ async function main(): Promise<number> {
     }
     case "ls": {
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      warnUi(applyUiConfig(configPath));
       let lsDefaults: LsConfig;
       try { lsDefaults = loadLsConfig(configPath); }
       catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
@@ -308,6 +317,7 @@ async function main(): Promise<number> {
       return lsCmd({ ...parsed.opts, hubUrl });
     }
     case "watch": {
+      warnUi(applyUiConfig(path.join(os.homedir(), AGMUX_CONFIG_SUBPATH)));
       const parsed = parseWatchArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
       // Long-lived view: follow the hub across restarts (see resolveLiveHubUrl).
@@ -315,6 +325,7 @@ async function main(): Promise<number> {
     }
     case "dash": {
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+      warnUi(applyUiConfig(configPath));
       let dashDefaults: DashConfig;
       try { dashDefaults = loadDashConfig(configPath); }
       catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
@@ -346,13 +357,14 @@ async function main(): Promise<number> {
       const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
       const pi = argv.indexOf("--placement");
       // Plain attach of a local session never needed config: load it only for a remote row.
-      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin, loadSettings: () => loadAttachSettings(configPath), mode });
+      if (pi < 0) return attachCmd({ idOrPrefix: id, hubUrl, wrapBin, loadSettings: () => { warnUi(applyUiConfig(configPath)); return loadAttachSettings(configPath); }, mode });
       const placement = argv[pi + 1];
       if (!isAttachPlacement(placement)) {
         console.error(`attach: --placement must be one of ${ATTACH_PLACEMENTS.join("|")}`);
         return 2;
       }
       let settings: AttachSettings;
+      warnUi(applyUiConfig(configPath));
       try { settings = loadAttachSettings(configPath); }
       catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
       return attachPlacedCmd({ idOrPrefix: id, hubUrl, wrapBin, placement, settings, mode });

@@ -13,7 +13,7 @@ export {
   type StatusLineOpts, type ShowMode, type ChipTarget, type StatusLineStyle, type LineTone,
 } from "./shared/statusline.ts";
 export { createDetectState, primeDetectState, detectNotifications, type DetectState, type DetectConfig, type NotifyEvent, type NotifyTrigger } from "./shared/transitions.ts";
-export { type LocalityFilter } from "./shared/locality.ts";
+export { remoteMark, setRemoteMark, type LocalityFilter } from "./shared/locality.ts";
 export { COLUMN_KEYS, DEFAULT_COLUMNS, isColumnKey, type ColumnKey } from "./shared/columns.ts";
 export {
   attachKind, attachTargets, defaultPlacement, resolvePlacement, NO_ATTACH_CTX,
