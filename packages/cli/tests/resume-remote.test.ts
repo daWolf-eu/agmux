@@ -58,6 +58,8 @@ interface SetupOpts {
   polls?: SessionRow[][];  // /sessions responses, one per poll (the last one repeats)
   env?: Record<string, string | undefined>;
   attachError?: string;
+  kickStatus?: number;
+  oldHub?: boolean;
 }
 
 function setup(o: SetupOpts = {}) {
@@ -72,7 +74,11 @@ function setup(o: SetupOpts = {}) {
       const u = String(url);
       calls.push(`${init?.method ?? "GET"} ${u.replace("http://hub", "")}`);
       if (u.endsWith("/hosts")) return Response.json({ hosts: o.hosts ?? [hostRow()], remotes: [] });
-      if (u.includes("/sync")) return new Response(null, { status: 204 });
+      if (u.includes("/sync")) {
+        const status = o.kickStatus ?? 204;
+        // The hub's kick endpoint answers an unknown host with JSON; a hub without the endpoint with text.
+        return status === 204 ? new Response(null, { status }) : status === 404 && !o.oldHub ? Response.json({ error: "not_found" }, { status }) : new Response("not found", { status });
+      }
       if (u.includes("/sessions")) {
         const sessions = polls[Math.min(poll, polls.length - 1)];
         poll++;
@@ -195,8 +201,27 @@ describe("resumeRemote", () => {
 
   test("host row on another agmux version → restage message after the status check, no exec", async () => {
     const s = setup({ hosts: [hostRow({ agmux_version: "0.0.1" })] });
-    await expect(s.resume()).rejects.toThrow(`${HOST} runs an older agmux; restage the image (stage-agmux)`);
+    await expect(s.resume()).rejects.toThrow(`${HOST} runs a different agmux version (0.0.1 vs ${AGMUX_VERSION}); restage the image (stage-agmux)`);
     expect(s.calls).toEqual(["GET /hosts", "status"]);
+  });
+
+  test("a refused version never leaves a stopped sandbox started", async () => {
+    const s = setup({ status: { state: "stopped" }, hosts: [hostRow({ agmux_version: "0.0.1" })] });
+    await expect(s.resume()).rejects.toThrow("restage the image (stage-agmux)");
+    expect(s.calls).toEqual(["GET /hosts", "status"]);
+  });
+
+  test("a missing sandbox names openshell's detail on a second line, sanitized", async () => {
+    const s = setup({ status: { state: "missing", detail: "sandbox wi-1\u0007\nnot found" } });
+    await expect(s.resume()).rejects.toThrow(`${GONE}\nagmux: sandbox wi-1 not found`);
+  });
+
+  test("a host the hub does not follow (kick 404) fails fast instead of waiting", async () => {
+    const s = setup({ kickStatus: 404 });
+    await expect(s.resume()).rejects.toThrow(
+      `resume: started in ${HOST}, but ${HOST} is not followed by the hub (check [[remote]] selector / sandbox label)`);
+    expect(s.calls.some((c) => c.includes("/sessions"))).toBe(false);
+    expect(s.attaches).toEqual([]);
   });
 
   test("an old sandbox agmux ignoring --resume-nearest (exit 0, no coords) → restage message", async () => {
@@ -219,9 +244,11 @@ describe("resumeRemote", () => {
   });
 
   test("an odd sandbox name in the host's transport or an odd session id is refused before any exec", async () => {
-    const s = setup({ hosts: [hostRow({ transport: { ...SPEC, target: "wi-1;rm -rf /" } })] });
-    await expect(s.resume()).rejects.toThrow("resume: ");
-    expect(s.execs).toEqual([]);
+    for (const target of ["wi-1;rm -rf /", "-n"]) {
+      const s = setup({ hosts: [hostRow({ transport: { ...SPEC, target } })] });
+      await expect(s.resume()).rejects.toThrow("resume: ");
+      expect(s.execs).toEqual([]);
+    }
     const s2 = setup();
     await expect(s2.resume(row({ session_id: "x; true" }))).rejects.toThrow("resume: invalid session id");
     expect(s2.calls).toEqual([]);

@@ -11,9 +11,10 @@ import { openshellControl, runCapture, transportArgv, type RemoteConfig, type Sa
 import { attachKind, resolvePlacement, type AttachCtx, type AttachRequest, type Handoff } from "@agmux/tui";
 import type { AttachSettings } from "./attach-place.ts";
 import { attachRemote, defaultAttachRemoteDeps } from "./attach-remote.ts";
+import { SANDBOX_NAME_RE } from "./parse-run.ts";
 import {
-  SANDBOX_NAME_RE, WAIT_POLL_MS, WAIT_TIMEOUT_MS, execCapture, fetchHostRow, kickFollower, matchesPrinted,
-  message, oldAgmux, printedCoords, waitForRemoteRow, type SandboxExecResult,
+  WAIT_POLL_MS, WAIT_TIMEOUT_MS, execCapture, fetchHostRow, kickFollower, matchesPrinted,
+  message, oldAgmux, printedCoords, unfollowed, versionSkew, waitForRemoteRow, type SandboxExecResult,
 } from "./run-remote.ts";
 
 export interface ResumeRemoteDeps {
@@ -86,14 +87,18 @@ export async function resumeRemote(
   try { remote = env.remotes().find((r) => r.name === hostRow.remote); }
   catch (e) { throw new Error(`resume: ${message(e)}`); }
 
+  // Order: status → version → start → exec, so a refused version never leaves a sandbox started.
   const status = await deps.control.status(spec);
-  if (status.state === "missing") throw gone();
+  if (status.state === "missing") {
+    const detail = sanitizeRemoteText(status.detail);
+    throw new Error(detail ? `${gone().message}\nagmux: ${detail}` : gone().message);
+  }
+  // After status: a deleted sandbox's stale host row must not report a version skew.
+  if (hostRow.agmux_version != null && hostRow.agmux_version !== AGMUX_VERSION) throw new Error(versionSkew(host, hostRow.agmux_version));
   if (status.state === "stopped") {
     try { await deps.control.start(spec); }
     catch (e) { throw new Error(`resume: cannot start sandbox ${host}: ${sanitizeRemoteText(message(e))}`); }
   }
-  // After status: a deleted sandbox's stale host row must not report a version skew.
-  if (hostRow.agmux_version != null && hostRow.agmux_version !== AGMUX_VERSION) throw new Error(oldAgmux(host));
 
   const cmd = sandboxResumeArgv(remote?.agmux_bin ?? "agmux", id, fallbackLaunch(remote, row));
   const res = await deps.exec(transportArgv(spec, cmd, { tty: false }));
@@ -104,7 +109,7 @@ export async function resumeRemote(
   // (exit 0, nothing printed); a current one always prints coords on success.
   if (!printed) throw new Error(oldAgmux(host));
 
-  await kickFollower(hubUrl, deps.fetchImpl, host);
+  if (await kickFollower(hubUrl, deps.fetchImpl, host) === "unfollowed") throw new Error(`resume: started in ${host}, but ${unfollowed(host)}`);
   const resumed = await waitForRemoteRow({
     hubUrl, fetchImpl: deps.fetchImpl, host, match: resumedRow(printed),
     timeoutMs: WAIT_TIMEOUT_MS, pollMs: WAIT_POLL_MS, now: deps.now, sleep: deps.sleep,
