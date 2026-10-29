@@ -372,3 +372,28 @@ test("drain: unreachable hub exits 1", async () => {
   expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, env.deps)).toBe(1);
   expect(env.kills).toEqual([]);
 });
+
+test("drain: a Mac that reconnects behind head is nudged again once its claim is 10 s old", async () => {
+  const env = drainEnv(10, { isAlive: (pid: number) => pid === 4242 || pid === 4343 || pid === 4444 });
+  env.consumer("mac", { pid: 4242, after: 7 });
+  const kill = env.deps.kill;
+  env.deps.kill = (pid: number, sig: string) => {
+    kill(pid, sig);
+    // Each SIGTERM → the Mac reconnects with its committed cursor: first still behind, then at head.
+    if (pid === 4242) env.consumer("mac", { pid: 4343, after: 8 });
+    if (pid === 4343) env.consumer("mac", { pid: 4444, after: 10 });
+  };
+  const t0 = env.now();
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 60 }, env.deps)).toBe(0);
+  expect(env.kills).toEqual([[4242, "SIGTERM"], [4343, "SIGTERM"]]);
+  expect(env.now() - t0).toBeGreaterThanOrEqual(10_000);
+  expect(env.now() - t0).toBeLessThan(12_000);
+  expect(env.errs).toEqual([]);
+});
+
+test("drain: a lagging consumer is re-nudged at most once per 10 s", async () => {
+  const env = drainEnv(10);
+  env.consumer("mac", { pid: 4242, after: 7 });   // never moves, pid stays
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 35 }, env.deps)).toBe(1);
+  expect(env.kills.length).toBe(4);   // t=0, 10, 20, 30
+});
