@@ -5,7 +5,7 @@ import {
   type Registry, type CanonicalEvent, type ManifestPoint, type SessionName,
 } from "@agmux/adapters";
 import type { AgentKind, CapabilitySourceType, IngestEnvelope, SessionMetadataPayload } from "@agmux/protocol";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, tmuxSocketFromEnv } from "@agmux/protocol";
+import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_LAUNCH_ENV, tmuxSocketFromEnv, isTmuxServerId, parseLaunchSpec } from "@agmux/protocol";
 import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
 import { probeGit, type GitExec } from "./git-meta.ts";
 import { portFileHubUrl } from "@agmux/wrapper";
@@ -88,7 +88,7 @@ export function resolveLiveHubUrl(
 export async function enrichTmuxCoords(
   events: Array<{ kind: string; payload: any }>,
   env: Record<string, string | undefined>,
-  resolve: (paneId: string) => Promise<{ session: string; window: string } | null>,
+  resolve: (paneId: string) => Promise<{ session: string; window: string; server?: string | null } | null>,
 ): Promise<void> {
   const pane = env.TMUX_PANE;
   if (!pane) return;
@@ -99,8 +99,27 @@ export async function enrichTmuxCoords(
   const socket = tmuxSocketFromEnv(env.TMUX);
   for (const e of reg) { e.payload.tmux_socket = socket; }
   const coords = await resolve(pane);
+  // "<pid>-<start_time>" from tmux, else the pid alone from $TMUX ("socket,pid,idx").
+  const server = coords?.server ?? env.TMUX?.split(",")[1];
+  if (server && isTmuxServerId(server)) for (const e of reg) { e.payload.tmux_server = server; }
   if (!coords) return;
   for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
+}
+
+// Record how agmux launched the agent (AGMUX_LAUNCH) on session.registered, so a
+// resume can replay the same command/args. Absent or invalid env leaves it alone.
+export function enrichLaunch(
+  events: Array<{ kind: string; payload: any }>,
+  env: Record<string, string | undefined>,
+): void {
+  const spec = parseLaunchSpec(env[AGMUX_LAUNCH_ENV]);
+  if (!spec) return;
+  for (const e of events) {
+    if (e.kind !== "session.registered" || !e.payload) continue;
+    e.payload.command = spec.command;
+    e.payload.args = spec.args;
+    e.payload.profile ??= spec.profile;
+  }
 }
 
 // The points at which emit also reports session.metadata: once at registration
@@ -184,6 +203,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
       agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now ?? hookFiredAt, newId: deps.newId,
     });
     await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)));
+    enrichLaunch(stamped as any, deps.env);
     await postOrQueue(stamped, {
       hubUrls: hubUrlCandidates(deps.env, deps.stateDir), stateDir: deps.stateDir,
       queueKey: nativeId ?? claimId!, // one of the two is set (guard above)

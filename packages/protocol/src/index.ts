@@ -1,4 +1,5 @@
 export * from "./env.ts";
+export * from "./launch.ts";
 export * from "./session.ts";
 export * from "./events.ts";
 export * from "./tmux.ts";

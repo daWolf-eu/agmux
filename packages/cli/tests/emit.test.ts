@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { parseEmitArgs, runEmit, enrichTmuxCoords, hookFiredAt } from "../src/emit.ts";
+import { parseEmitArgs, runEmit, enrichTmuxCoords, enrichLaunch, hookFiredAt } from "../src/emit.ts";
 import { createRegistry, createDefaultRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 import * as fs from "node:fs";
@@ -169,6 +169,47 @@ test("tmux_socket is null on the ambient server (no TMUX socket field)", async (
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
   await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
   expect(events[0].payload.tmux_socket).toBeNull();
+});
+
+test("stamps tmux_server from the resolver", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => ({ session: "a", window: "@4", server: "4242-1730000000" }));
+  expect(events[0].payload.tmux_server).toBe("4242-1730000000");
+});
+
+test("tmux_server falls back to the pid from $TMUX", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => null);
+  expect(events[0].payload.tmux_server).toBe("4242");
+});
+
+test("tmux_server drops an invalid id", async () => {
+  const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
+  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/s,x y,0" }, async () => null);
+  expect(events[0].payload.tmux_server).toBeUndefined();
+});
+
+const LAUNCH = '{"profile":null,"command":"claude","args":["--dangerously-skip-permissions"]}';
+
+test("enrichLaunch records command/args/profile on registration", () => {
+  const events = [{ kind: "session.registered", payload: {} }] as any;
+  enrichLaunch(events, { AGMUX_LAUNCH: LAUNCH });
+  expect(events[0].payload).toMatchObject({ command: "claude", args: ["--dangerously-skip-permissions"], profile: null });
+});
+
+test("enrichLaunch keeps an existing profile", () => {
+  const events = [{ kind: "session.registered", payload: { profile: "p1" } }] as any;
+  enrichLaunch(events, { AGMUX_LAUNCH: '{"profile":"p2","command":"claude","args":[]}' });
+  expect(events[0].payload.profile).toBe("p1");
+});
+
+test("enrichLaunch ignores invalid JSON and non-registration events", () => {
+  const reg = [{ kind: "session.registered", payload: {} }] as any;
+  enrichLaunch(reg, { AGMUX_LAUNCH: "{nope" });
+  expect(reg[0].payload).toEqual({});
+  const other = [{ kind: "turn.ended", payload: {} }] as any;
+  enrichLaunch(other, { AGMUX_LAUNCH: LAUNCH });
+  expect(other[0].payload).toEqual({});
 });
 
 test("no-ops when not in tmux (no TMUX_PANE)", async () => {

@@ -5,8 +5,13 @@ import * as path from "node:path";
 import { resolvePaneCoords, holdOnFailure, newWindow } from "../src/tmux-place.ts";
 
 test("parses session_name<TAB>window_id from tmux", async () => {
-  const fakeExec = async (_args: string[]) => "agmux\t@4\n";
-  expect(await resolvePaneCoords("%7", fakeExec)).toEqual({ session: "agmux", window: "@4" });
+  const fakeExec = async (_args: string[]) => "agmux\t@4\t4242-1730000000\n";
+  expect(await resolvePaneCoords("%7", fakeExec)).toEqual({ session: "agmux", window: "@4", server: "4242-1730000000" });
+});
+
+test("server is null when tmux omits or garbles the id", async () => {
+  expect(await resolvePaneCoords("%7", async () => "agmux\t@4\n")).toEqual({ session: "agmux", window: "@4", server: null });
+  expect(await resolvePaneCoords("%7", async () => "agmux\t@4\tbogus\n")).toEqual({ session: "agmux", window: "@4", server: null });
 });
 
 test("returns null on exec failure", async () => {
