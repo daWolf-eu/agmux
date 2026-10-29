@@ -133,3 +133,57 @@ export async function warmHub(cliBin: string, baseEnv: Record<string, string>): 
     return r.exitCode === 0;
   }, 15000);
 }
+
+// ---- Remote (sandbox) e2e: a Mac env and sandbox envs behind tests/e2e/fake-openshell.sh ----
+
+const repoRoot = path.resolve(__dirname, "..", "..");
+export const FAKE_OPENSHELL = path.join(repoRoot, "tests/e2e/fake-openshell.sh");
+
+/** The env a CLI of `e` runs with: its HOME and binaries, nothing of the caller's tmux. */
+export function envOf(e: TestEnv, extra: Record<string, string> = {}): Record<string, string> {
+  return {
+    HOME: e.root, XDG_CONFIG_HOME: `${e.root}/.config`,
+    AGMUX_HUB_BIN: e.hubBin, AGMUX_WRAP_BIN: e.wrapBin, PATH: process.env.PATH ?? "", ...extra,
+  };
+}
+
+export function hubUrl(e: TestEnv): string {
+  return `http://127.0.0.1:${fs.readFileSync(path.join(e.stateDir, "hub.port"), "utf8").trim()}`;
+}
+
+export async function getJson<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`GET ${url} → ${r.status}`);
+  return (await r.json()) as T;
+}
+
+export async function postIngest(url: string, ev: unknown): Promise<void> {
+  const r = await fetch(`${url}/ingest`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev),
+  });
+  if (r.status !== 202) throw new Error(`POST /ingest → ${r.status}: ${await r.text()}`);
+}
+
+/**
+ * The sandbox-side CLI (`agmux_bin`) and hub: HOME comes from the fake, so these
+ * shims must not pin it. AGMUX_BIN is the sandbox CLI itself (what a hook or a
+ * placed agent calls), never a Mac CLI the fake's env passed through. Returns
+ * the CLI's path.
+ */
+export function writeSandboxShims(dir: string): string {
+  const hub = path.join(dir, "sbx-agmux-hub");
+  const cli = path.join(dir, "sbx-agmux");
+  fs.writeFileSync(hub, `#!/bin/sh\nexec bun ${path.join(repoRoot, "packages/hub/bin/agmux-hub.ts")} "$@"\n`);
+  fs.writeFileSync(cli, [
+    "#!/bin/sh",
+    'export XDG_CONFIG_HOME="$HOME/.config"',
+    `export AGMUX_HUB_BIN=${JSON.stringify(hub)}`,
+    `export AGMUX_BIN=${JSON.stringify(cli)}`,
+    "unset AGMUX_WRAP_BIN",
+    `exec bun ${path.join(repoRoot, "packages/cli/bin/agmux.ts")} "$@"`,
+    "",
+  ].join("\n"));
+  fs.chmodSync(hub, 0o755);
+  fs.chmodSync(cli, 0o755);
+  return cli;
+}

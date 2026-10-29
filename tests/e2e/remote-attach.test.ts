@@ -2,7 +2,10 @@ import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { $ } from "bun";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { makeTestEnv, waitFor, warmHub, cleanupAllTestEnvs, type TestEnv } from "./helpers.ts";
+import {
+  FAKE_OPENSHELL, makeTestEnv, waitFor, warmHub, cleanupAllTestEnvs, envOf, hubUrl, getJson, postIngest,
+  writeSandboxShims, type TestEnv,
+} from "./helpers.ts";
 
 // Remote attach end to end, with no OpenShell: a sandbox hub (HOME=$FAKE_OS_DIR/box1)
 // whose session lives on an "inner" tmux server (the sandbox's tmux), the Mac hub
@@ -11,51 +14,7 @@ import { makeTestEnv, waitFor, warmHub, cleanupAllTestEnvs, type TestEnv } from 
 // sockets with `-f /dev/null`: nothing here touches the developer's tmux server.
 
 const hasTmux = !!Bun.which("tmux");
-const repo = path.resolve(__dirname, "..", "..");
-const fakeOpenshell = path.join(repo, "tests/e2e/fake-openshell.sh");
 const STEP_MS = 5_000;
-
-function envOf(e: TestEnv, extra: Record<string, string> = {}): Record<string, string> {
-  return {
-    HOME: e.root, XDG_CONFIG_HOME: `${e.root}/.config`,
-    AGMUX_HUB_BIN: e.hubBin, AGMUX_WRAP_BIN: e.wrapBin, PATH: process.env.PATH ?? "", ...extra,
-  };
-}
-
-function hubUrl(e: TestEnv): string {
-  return `http://127.0.0.1:${fs.readFileSync(path.join(e.stateDir, "hub.port"), "utf8").trim()}`;
-}
-
-async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`GET ${url} → ${r.status}`);
-  return (await r.json()) as T;
-}
-
-async function postIngest(url: string, ev: unknown): Promise<void> {
-  const r = await fetch(`${url}/ingest`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(ev),
-  });
-  if (r.status !== 202) throw new Error(`POST /ingest → ${r.status}: ${await r.text()}`);
-}
-
-// The sandbox-side CLI: HOME comes from the fake, so these shims must not pin it.
-function writeSandboxShims(dir: string): string {
-  const hub = path.join(dir, "sbx-agmux-hub");
-  const cli = path.join(dir, "sbx-agmux");
-  fs.writeFileSync(hub, `#!/bin/sh\nexec bun ${path.join(repo, "packages/hub/bin/agmux-hub.ts")} "$@"\n`);
-  fs.writeFileSync(cli, [
-    "#!/bin/sh",
-    'export XDG_CONFIG_HOME="$HOME/.config"',
-    `export AGMUX_HUB_BIN=${JSON.stringify(hub)}`,
-    "unset AGMUX_WRAP_BIN",
-    `exec bun ${path.join(repo, "packages/cli/bin/agmux.ts")} "$@"`,
-    "",
-  ].join("\n"));
-  fs.chmodSync(hub, 0o755);
-  fs.chmodSync(cli, 0o755);
-  return cli;
-}
 
 // One tmux call on a test server. Never the ambient server: always -S, always -f /dev/null.
 function tmux(sock: string, args: string[], env?: Record<string, string>): { ok: boolean; out: string } {
@@ -163,7 +122,7 @@ beforeAll(async () => {
 name = "t"
 gateway = "gw"
 interval = 0.2
-openshell_bin = ${JSON.stringify(fakeOpenshell)}
+openshell_bin = ${JSON.stringify(FAKE_OPENSHELL)}
 agmux_bin = ${JSON.stringify(sbxCli)}
 `);
   const macEnv = envOf(mac, { FAKE_OS_DIR: fakeDir });

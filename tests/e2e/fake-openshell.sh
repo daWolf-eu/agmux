@@ -1,8 +1,11 @@
 #!/bin/sh
 # Stand-in for the openshell CLI in e2e tests: the verbs the hub's sync loop and a remote attach run.
-#   -g <gw> sandbox list -o json --selector <sel>      → $FAKE_OS_DIR/list.json
-#   -g <gw> sandbox exec -n <name> --no-tty -- <cmd…>  → <cmd…> with HOME=$FAKE_OS_DIR/<name>
-#                                                         and AGMUX_HOST=<gw>/<name>, stdin closed
+#   -g <gw> sandbox list -o json --selector <sel>      → $FAKE_OS_DIR/list-<gw>.json if present,
+#                                                         else $FAKE_OS_DIR/list.json
+#   -g <gw> sandbox exec -n <name> --no-tty -- <cmd…>  → <cmd…> with HOME=$FAKE_OS_DIR/<name>,
+#                                                         TMUX_TMPDIR=<resolved $HOME> (the sandbox's
+#                                                         own default tmux server), AGMUX_HOST=<gw>/<name>,
+#                                                         $TMUX/$TMUX_PANE unset, stdin closed
 #   -g <gw> sandbox exec -n <name> --tty -- <cmd…>     → the same, with the terminal inherited
 #   -g <gw> sandbox get <name> -o json                 → $FAKE_OS_DIR/<name>/sandbox.json,
 #                                                         default {"phase":"Ready"}
@@ -30,6 +33,7 @@ case "$1" in
   list)
     [ "$2" = "-o" ] && [ "$3" = "json" ] && [ "$4" = "--selector" ] && [ -n "$5" ] \
       || die "expected 'list -o json --selector <sel>'"
+    [ -f "$FAKE_OS_DIR/list-$gw.json" ] && exec cat "$FAKE_OS_DIR/list-$gw.json"
     exec cat "$FAKE_OS_DIR/list.json"
     ;;
   get)
@@ -60,6 +64,11 @@ case "$1" in
     [ $# -gt 0 ] || die "exec needs -- <cmd…>"
     [ -d "$FAKE_OS_DIR/$name" ] || die "no sandbox '$name'"
     export HOME="$FAKE_OS_DIR/$name"
+    # The sandbox has its own tmux and never sees the Mac's. Resolved: a socket path is capped
+    # at 104 bytes, and $FAKE_OS_DIR/<name> is a symlink into a shorter temp root.
+    TMUX_TMPDIR=$(cd "$HOME" && pwd -P)
+    export TMUX_TMPDIR
+    unset TMUX TMUX_PANE
     if [ -f "$FAKE_OS_DIR/nohost" ] && grep -qxF "$name" "$FAKE_OS_DIR/nohost"; then
       unset AGMUX_HOST
     else
