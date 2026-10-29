@@ -147,7 +147,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   return child.exitCode ?? 0;
 }
 
-function settingsOrDefaults(load: (() => AttachSettings) | undefined): AttachSettings {
+export function settingsOrDefaults(load: (() => AttachSettings) | undefined): AttachSettings {
   if (!load) return DEFAULT_ATTACH_SETTINGS;
   try { return load(); } catch (e) {
     console.error(`agmux: config ignored, using attach defaults: ${e instanceof Error ? e.message : String(e)}`);

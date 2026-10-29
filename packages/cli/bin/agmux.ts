@@ -7,6 +7,7 @@ import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
 import { runHeadless } from "../src/headless.ts";
 import { parseRunArgs } from "../src/parse-run.ts";
+import { defaultRunRemoteDeps, isRemoteRun, runRemote } from "../src/run-remote.ts";
 import { lsCmd } from "../src/ls.ts";
 import { watchCmd } from "../src/watch.ts";
 import { parseWatchArgs } from "../src/parse-watch.ts";
@@ -225,10 +226,25 @@ async function main(): Promise<number> {
     case "run": {
       const parsed = parseRunArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
+
+      // Resolve --prompt-file to text (parse-run kept the path; IO lives here, on the Mac for a remote run too).
+      let prompt: string | undefined = parsed.prompt;
+      if (parsed.promptFile) {
+        try { prompt = await Bun.file(parsed.promptFile).text(); }
+        catch (e) { console.error(`agmux run: cannot read --prompt-file ${parsed.promptFile}: ${e instanceof Error ? e.message : String(e)}`); return 2; }
+      }
+
+      // --remote: the sandbox's agmux decides kind and launch mode; nothing local below applies.
+      if (isRemoteRun(parsed)) {
+        return runRemote({
+          parsed, prompt, hubUrl, env: process.env,
+          loadSettings: () => { warnUi(applyUiConfig(configPath)); return loadAttachSettings(configPath); },
+        }, defaultRunRemoteDeps);
+      }
 
       const registry = createDefaultRegistry();
       const agmuxBin = process.env.AGMUX_BIN ?? "agmux";
-      const configPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
 
       // Resolve the agent kind + profile env to decide direct-vs-wrapped. Inline
       // mode names its kind directly; profile mode reads it from the profile config.
@@ -267,13 +283,6 @@ async function main(): Promise<number> {
           if (parsed.direct) return 2; // hint already printed; --direct never falls back to wrapped
           mode = "wrapped";
         }
-      }
-
-      // Resolve --prompt-file to text (parse-run kept the path; IO lives here).
-      let prompt: string | undefined = parsed.prompt;
-      if (parsed.promptFile) {
-        try { prompt = await Bun.file(parsed.promptFile).text(); }
-        catch (e) { console.error(`agmux run: cannot read --prompt-file ${parsed.promptFile}: ${e instanceof Error ? e.message : String(e)}`); return 2; }
       }
 
       // Headless: no tmux, no wrapper, no launch-mode decision — spawn the agent
