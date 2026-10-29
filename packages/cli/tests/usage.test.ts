@@ -20,3 +20,9 @@ test("dash --preview help matches the parser (mirror|detail, no events)", () => 
   expect(HELP_TEXT).toContain("--preview <mirror|detail>");
   expect(HELP_TEXT).not.toContain("mirror|detail|events");
 });
+
+test("HELP_TEXT lists the remote run flags, --cwd, --direct and events --drain", () => {
+  for (const s of ["run --remote <remote> --sandbox <sandbox>", "[--cwd <path>]", "--direct", "events --drain [--timeout <s>]"]) {
+    expect(HELP_TEXT).toContain(s);
+  }
+});

@@ -2,8 +2,8 @@
 // (exit 0) for `agmux -h/--help/help`, and to stderr (exit 2) on a usage error.
 // Kept here (not inline in the bin) so it can be asserted in tests.
 export const HELP_TEXT = `usage: agmux <verb> [args]
-  run [placement] [--wrapped] [--kind=<claude|codex|pi>] [--prompt <text>|--prompt-file <path>] <command> [args...]
-  run [placement] [--wrapped] [--prompt <text>|--prompt-file <path>] -p <profile>
+  run [placement] [--wrapped|--direct] [--cwd <path>] [--kind=<claude|codex|pi>] [--prompt <text>|--prompt-file <path>] <command> [args...]
+  run [placement] [--wrapped|--direct] [--cwd <path>] [--prompt <text>|--prompt-file <path>] -p <profile>
     --prompt <text>   the prompt to run (--prompt-file <path> reads it from a file).
                       Requires a placement: injected into the new pane after spawn,
                       or run as the single turn under --headless.
@@ -15,10 +15,14 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
                       relaunches it interactively afterwards.
     placement: --headless | --new-pane | --new-window | --new-session (default: inherit current pane; -d/--detach implies --new-pane)
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
+    --direct    force direct exec: an adapter that is not ready fails (exit 2) naming its
+                config dir instead of falling back to the wrapper
+    --cwd       working dir of the agent (wins over the profile's cwd)
   run --remote <remote> --sandbox <sandbox> [--kind <k>] [-p <sandbox-profile>] [--cwd <path>]
       [--new-pane|--new-window|--new-session|-d] [--headless] [--prompt <text>|--prompt-file <path>] [-- <command> [args...]]
     start an agent in a sandbox of a [[remote]], then attach it here ([attach.remote]
-    defaults; -d starts only). Launch flags override the [[remote]] kind/profile/command/args.
+    defaults; -d starts only). Launch flags override the [[remote]] kind/profile/command/args;
+    --cwd is a sandbox path (default: [[remote]] workdir); --headless streams the output back.
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
      [--status <active|open|closed|s1,s2,...>] [--live] [--agent <kind>] [--profile <name>]
      [--remote|--local] [--host <glob>]
@@ -61,6 +65,9 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
      page size per hub request (default 500); --consumer <id> replaces a prior
      follower with the same id; --max-duration <s> ends a follow with exit 75
      after <s> seconds
+  events --drain [--timeout <s>]
+     in a sandbox, before deleting it: wait until the Mac has stored every event
+     (default 60 s). Exit 0 caught up, 1 timeout or hub unreadable, 3 no consumer
   kill <id|prefix> [--signal SIGTERM]
   inspect <id|prefix>
   adapter list|install|status|uninstall (<profile> | --kind <agent_kind>) [--config-dir <path>]

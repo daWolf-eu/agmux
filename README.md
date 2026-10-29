@@ -491,12 +491,18 @@ gateway = "ai-sandbox"     # openshell gateway; hosts are named <gateway>/<sandb
 # interval = 5             # seconds (>= 0.1): discovery period and reconnect backoff base
 # openshell_bin = "openshell"
 # agmux_bin = "agmux"      # path inside the sandbox
+# The launch for `agmux run --remote` (and a hand-started agent's resume), all optional:
+workdir = "/sandbox/work"  # sandbox cwd (`--cwd` wins)
+kind = "claude"            # claude | codex | pi; required for a launch unless profile is set
+# profile = "work"         # a profile in the SANDBOX's agmux config; excludes command/args
+# command = "claude"       # default: the kind's binary
+args = ["--dangerously-skip-permissions"]
 ```
 
 - The sandbox must be created with `AGMUX_HOST=<gateway>/<sandbox>` in its environment, or the stream is refused (`agmux hub status` shows the fix).
 - `agmux ls --remote | --local | --host <glob>` (`[ls] locality` sets the default); `agmux dash` takes the same flags and `r` cycles all/local/remote. In the dash, a remote session's name carries the remote mark (`⇄ fix`, `? fix` while the sync is stale), as do status-line chips; the remote view (`r` → remote) adds a `HOST` column (`<gateway>/<sandbox>`), and the detail pane shows the host, last sync and the tmux target inside the sandbox. Put `host` in `[dash] columns` to see the column in every view. `agmux ls` shows `⇄ <sandbox>` in a `HOST` column whenever remote rows are listed. The mark is `[ui] remote_mark` (one or two cells; also the default `window_name`'s): with a Nerd Font, `remote_mark = "\uf0c2"` gives a cloud. The default `⇄` renders in every font; plain `☁` (U+2601) does not.
 - `agmux hub status` lists each remote (gateway, sandbox count, last discovery and its error), each sandbox's sync state, and a broken `[[remote]]` config (also while the hub is down); `agmux inspect <id>` adds the host.
-- `kill` and `resume` of a remote session are refused (planned); resuming a closed one prints the command to run by hand.
+- `kill` of a remote session is refused. A closed one is resumed in its sandbox (below).
 
 ### Attach
 
@@ -532,7 +538,22 @@ set -g set-clipboard on
 set -g focus-events on
 ```
 
-Focusing a local pane that shows a remote session marks it seen. Peek is not built (slot 5 of the popup is dimmed). Known limit: for ≈30–60 s after a sandbox stop/start the old row stays live, and attaching it can open the new agent that reuses its tmux window (fix planned).
+Focusing a local pane that shows a remote session marks it seen. Peek is not built (slot 5 of the popup is dimmed). Known limit: for ≈30–60 s after a sandbox stop/start the old row stays live; attaching it fails cleanly (the local pane holds with exit 3) instead of opening the new agent that reuses its tmux window. Resume it once it reads closed.
+
+### Run and resume
+
+The Mac starts and resumes agents through the sandbox's own `agmux` (`openshell sandbox exec`), so the image must carry the same agmux build as the Mac; a sandbox on another version is refused with `<host> runs a different agmux version (…); restage the image (stage-agmux)` before anything starts. Sandbox starts are direct (no wrapper): the agent's adapter must be installed in the sandbox in the config dir the agent uses (`agmux adapter install --kind claude`; a `CLAUDE_CONFIG_DIR` in the sandbox env, or in a sandbox profile's `env`, is honoured).
+
+```sh
+agmux run --remote ai-sandbox --sandbox wi-1                 # [[remote]] launch, then attach ([attach.remote] defaults)
+agmux run --remote ai-sandbox --sandbox wi-1 -d --prompt "…" # start only, inject a first prompt
+agmux run --remote ai-sandbox --sandbox wi-1 --new-window -- claude --model opus   # CLI launch wins
+agmux run --remote ai-sandbox --sandbox wi-1 --headless --prompt "…" > out.md     # output and exit code streamed back
+```
+
+- The agent lands in a new detached window of tmux session `agmux` in the sandbox. A stopped sandbox is started first. The Mac waits up to 15 s for the session to replicate (it asks the hub to reconnect that sandbox's follower first); on a timeout the agent keeps running (`agmux ls --host <host>`). A sandbox the hub does not follow (not matched by the `[[remote]]` selector) fails at once.
+- `agmux attach <id>` or dash ⏎ on a closed remote session resumes it in the same sandbox next to where it ran (split into its old window if that tmux server still runs, else a new window in its old session, else a new session) with its recorded launch args, then attaches. An agent started by hand resumes with the `[[remote]]` launch. A deleted sandbox is not recreated.
+- Before deleting a sandbox, run `agmux events --drain [--timeout <s>]` in it: exit 0 once the Mac has stored every event, 1 on timeout, 3 when no Mac follows it.
 
 ## Troubleshooting
 
@@ -543,7 +564,7 @@ Focusing a local pane that shows a remote session marks it seen. Peek is not bui
 
 ## Status & roadmap
 
-Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Remote sandbox sessions (OpenShell) are visible and attachable (view/full). Not yet built: subagent spawning, remote kill/resume, other transports, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
+Implemented: foundation (`protocol + store + hub + wrapper`), adapters (`claude`, `codex`, `pi`) for native session-id capture and `running`/`waiting` status, and the `cli` + `tui` consumers. Remote sandbox sessions (OpenShell) are visible, attachable (view/full), and can be started and resumed from the Mac. Not yet built: subagent spawning, remote kill, other transports, full output capture, and the web dashboard / insights / inter-agent comms services. Architecture and standing principles live in [`docs/agmux-foundation.md`](docs/agmux-foundation.md).
 
 ## Contributing
 
