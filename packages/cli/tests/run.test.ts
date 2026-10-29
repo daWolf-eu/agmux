@@ -47,3 +47,53 @@ test("runInjectStep never throws even if the injector rejects", async () => {
   );
   expect(r).toMatch(/failed/);
 });
+
+import { runCmd, type PrintCoordsDeps } from "../src/run.ts";
+import { parsePrintedCoords } from "@agmux/protocol";
+
+const baseOpts = {
+  kind: "inline", mode: "direct", agent_kind: "claude", command: "claude", args: ["--dangerously-skip-permissions", "a b"],
+  hubUrl: "http://127.0.0.1:9", wrapBin: "agmux-wrap", placement: "print-coords", detach: true,
+} as any;
+
+function fakeDeps(sessionExists: boolean) {
+  const calls: { fn: string; args: any }[] = [];
+  const out: string[] = [];
+  const err: string[] = [];
+  const coords = { session: "agmux", window: "@3", pane: "%5", socket: null };
+  const deps: PrintCoordsDeps = {
+    hasSession: async () => sessionExists,
+    newWindow: async (a) => { calls.push({ fn: "newWindow", args: a }); return coords; },
+    newSession: async (a) => { calls.push({ fn: "newSession", args: a }); return coords; },
+    tmuxServerId: async () => "123-456",
+    inject: async () => ({ outcome: "submitted" as const }),
+    out: (l) => out.push(l), err: (l) => err.push(l),
+  };
+  return { deps, calls, out, err };
+}
+
+test("print-coords on a missing session uses newSession; stdout is one parsable line", async () => {
+  const f = fakeDeps(false);
+  expect(await runCmd({ ...baseOpts, prompt: "hi" }, "agmux", f.deps)).toBe(0);
+  expect(f.calls.map((c) => c.fn)).toEqual(["newSession"]);
+  expect(f.out).toHaveLength(1);
+  expect(parsePrintedCoords(f.out[0]!)).toEqual({ session: "agmux", window: "@3", pane: "%5", socket: null, server: "123-456" });
+  expect(f.err.join("\n")).toMatch(/spawned in agmux:@3\.%5/);
+  expect(f.err.join("\n")).toMatch(/prompt injected/);
+});
+
+test("print-coords on an existing session opens a detached window with AGMUX_LAUNCH and --cwd", async () => {
+  const f = fakeDeps(true);
+  await runCmd({ ...baseOpts, cwd: "/w" }, "agmux", f.deps);
+  expect(f.calls[0]!.fn).toBe("newWindow");
+  const a = f.calls[0]!.args;
+  expect(a.detach).toBe(true);
+  expect(a.socket).toBeNull();
+  expect(a.cwd).toBe("/w");
+  expect(JSON.parse(a.env.AGMUX_LAUNCH)).toEqual({ profile: null, command: "claude", args: ["--dangerously-skip-permissions", "a b"] });
+});
+
+test("buildDirectSpawn: --cwd wins over profile cwd", () => {
+  const s = buildDirectSpawn({ ...baseOpts, placement: "inherit", cwd: "/x" }, "agmux");
+  expect(s.cwd).toBe("/x");
+});

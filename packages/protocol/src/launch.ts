@@ -1,3 +1,5 @@
+import { isRemoteTmux, type RemoteTmux } from "./attach.ts";
+
 // How agmux launched an agent, handed to the hooks via AGMUX_LAUNCH so a
 // registration can record it and a later resume reuses the same argv.
 export interface LaunchSpec { profile: string | null; command: string; args: string[] }
@@ -12,4 +14,16 @@ export function parseLaunchSpec(s: string | undefined): LaunchSpec | null {
   if (!Array.isArray(args) || !args.every((a) => typeof a === "string")) return null;
   if (profile !== null && typeof profile !== "string") return null;
   return { profile, command, args: args as string[] };
+}
+
+// The single stdout line of `agmux run --direct --print-coords`: where the
+// sandbox-side agent landed (the Mac matches the registered row on it).
+export type PrintedCoords = { remote_tmux: RemoteTmux };
+
+export function parsePrintedCoords(line: string): RemoteTmux | null {
+  let v: unknown;
+  try { v = JSON.parse(line.trim()); } catch { return null; }
+  if (typeof v !== "object" || v === null) return null;
+  const t = (v as Record<string, unknown>).remote_tmux;
+  return isRemoteTmux(t) && t.pane !== null ? t : null;
 }

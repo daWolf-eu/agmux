@@ -12,6 +12,9 @@
 //   - "new-window"  → create a new window. Defaults to the caller's current
 //                     tmux session; falls back to AGMUX_TMUX_SESSION otherwise.
 //   - "new-session" → create a fresh detached tmux session.
+//   - "print-coords" → sandbox-side of remote starts (--print-coords, needs
+//                     --direct): new detached window in the agmux session on
+//                     the default socket; the coords go to stdout as JSON.
 //   - "headless"    → no tmux at all: run the prompt non-interactively, stream
 //                     the agent's stdout through, and exit with its exit code.
 //
@@ -19,11 +22,11 @@
 // new pane/window/session becomes the active one (the default for any explicit
 // --new-* placement is to follow the new spawn).
 
-export type Placement = "inherit" | "new-pane" | "new-window" | "new-session" | "headless";
+export type Placement = "inherit" | "new-pane" | "new-window" | "new-session" | "headless" | "print-coords";
 
 export type ParsedRun =
-  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean; prompt?: string; promptFile?: string }
-  | { kind: "inline"; agent_kind: "claude" | "codex" | "pi"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean; prompt?: string; promptFile?: string }
+  | { kind: "profile"; profileName: string; placement: Placement; detach: boolean; wrapped: boolean; direct: boolean; printCoords: boolean; cwd?: string; prompt?: string; promptFile?: string }
+  | { kind: "inline"; agent_kind: "claude" | "codex" | "pi"; command: string; args: string[]; placement: Placement; detach: boolean; wrapped: boolean; direct: boolean; printCoords: boolean; cwd?: string; prompt?: string; promptFile?: string }
   | { kind: "error"; message: string };
 
 function parseKind(v: string): "claude" | "codex" | "pi" | null {
@@ -36,6 +39,9 @@ export function parseRunArgs(argv: string[]): ParsedRun {
   let placement: Placement = "inherit";
   let detach = false;
   let wrapped = false;
+  let direct = false;
+  let printCoords = false;
+  let cwd: string | undefined;
   let prompt: string | undefined;
   let promptFile: string | undefined;
   // Track *explicit* --new-* selection so we can error on collisions; -d's
@@ -69,6 +75,15 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       continue;
     }
     if (a === "--wrapped") { wrapped = true; i += 1; continue; }
+    if (a === "--direct") { direct = true; i += 1; continue; }
+    if (a === "--print-coords") { printCoords = true; i += 1; continue; }
+    if (a === "--cwd") {
+      const v = argv[i + 1];
+      if (!v) return { kind: "error", message: `--cwd requires a non-empty value` };
+      cwd = v;
+      i += 2;
+      continue;
+    }
     if (a === "--prompt") {
       const v = argv[i + 1];
       if (v === undefined) return { kind: "error", message: `--prompt requires a value` };
@@ -118,6 +133,19 @@ export function parseRunArgs(argv: string[]): ParsedRun {
 
   const tail = argv.slice(i);
 
+  if (direct && wrapped) {
+    return { kind: "error", message: "cannot combine --direct with --wrapped" };
+  }
+  if (printCoords) {
+    if (!direct) return { kind: "error", message: "--print-coords requires --direct" };
+    if (explicitPlacementFlag) {
+      return { kind: "error", message: `cannot combine --print-coords with ${explicitPlacementFlag}` };
+    }
+    // Always detached; -d's soft new-pane default is superseded.
+    placement = "print-coords";
+    detach = true;
+  }
+
   if (prompt !== undefined && promptFile !== undefined) {
     return { kind: "error", message: "cannot combine --prompt with --prompt-file" };
   }
@@ -137,7 +165,7 @@ export function parseRunArgs(argv: string[]): ParsedRun {
     if (tail.length > 0) {
       return { kind: "error", message: "cannot combine -p/--profile with a positional command" };
     }
-    return { kind: "profile", profileName, placement, detach, wrapped, prompt, promptFile };
+    return { kind: "profile", profileName, placement, detach, wrapped, direct, printCoords, cwd, prompt, promptFile };
   }
 
   if (tail.length === 0) {
@@ -159,5 +187,5 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       message: `agmux run: cannot infer agent_kind from '${basename}'. Use --kind=claude, --kind=codex, or --kind=pi.`,
     };
   }
-  return { kind: "inline", agent_kind, command, args, placement, detach, wrapped, prompt, promptFile };
+  return { kind: "inline", agent_kind, command, args, placement, detach, wrapped, direct, printCoords, cwd, prompt, promptFile };
 }

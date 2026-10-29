@@ -244,6 +244,10 @@ async function main(): Promise<number> {
 
       const adapter = kind ? registry.lookup(kind) : undefined;
       let mode = decideLaunchMode({ wrapped: parsed.wrapped, hasAdapter: !!adapter });
+      if (parsed.direct) {
+        if (!adapter) { console.error(`agmux run --direct: no adapter for this agent; cannot launch direct`); return 2; }
+        mode = "direct";
+      }
 
       // Direct exec needs the plugin present; we NEVER install without consent.
       // If it isn't ready, adapterReadyOrHint prints the install hint and we fall
@@ -258,7 +262,10 @@ async function main(): Promise<number> {
           stateDir,
           configDirOverride: null,
         }, kind, (s) => console.error(s));
-        if (!ready) mode = "wrapped";
+        if (!ready) {
+          if (parsed.direct) return 2; // hint already printed; --direct never falls back to wrapped
+          mode = "wrapped";
+        }
       }
 
       // Resolve --prompt-file to text (parse-run kept the path; IO lives here).
@@ -296,13 +303,13 @@ async function main(): Promise<number> {
       if (parsed.kind === "profile") {
         return runCmd({
           kind: "profile", profileName: parsed.profileName,
-          placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode,
+          placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode, cwd: parsed.cwd,
           agentKind: kind, prompt,
         }, agmuxBin);
       }
       return runCmd({
         kind: "inline", agent_kind: parsed.agent_kind, command: parsed.command, args: parsed.args,
-        placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode,
+        placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode, cwd: parsed.cwd,
         agentKind: kind, prompt,
       }, agmuxBin);
     }
