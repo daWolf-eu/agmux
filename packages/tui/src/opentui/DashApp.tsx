@@ -188,14 +188,30 @@ export function DashApp(props: DashAppProps) {
       .catch((e) => setNotice(`copy failed: ${e?.message ?? String(e)}`));
   };
 
+  // Remote resumes in flight (session ids): one runs for seconds in its sandbox,
+  // a second ⏎ on that row must not start the agent twice.
+  const resuming = useRef(new Set<string>());
+
   // Open a row: resume a closed session, attach a live one. No request = the
   // configured default (⏎); the attach popup passes an explicit placement.
   const openRow = (row: SessionRow, req?: AttachRequest) => {
     const closed = TERMINAL_STATUSES.includes(row.status);
+    const remoteResume = closed && !!row.remote;
+    const waitNotice = stripControls(`resuming on ${row.host}…`);
+    if (remoteResume) {
+      setNotice(waitNotice);
+      if (resuming.current.has(row.session_id)) return;
+      resuming.current.add(row.session_id);
+    }
     const run = closed ? props.actions.resume(row, req) : props.actions.attach(row, req);
     void run
-      .then((h) => { if (h) { props.onHandoff(h); props.onQuit(); } })
-      .catch((e) => setNotice(`${closed ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`));
+      .then((h) => {
+        if (remoteResume) setNotice((n) => (n === waitNotice ? null : n));
+        if (h) { props.onHandoff(h); props.onQuit(); }
+      })
+      // Errors may carry sandbox text and a second line: one sanitized notice line.
+      .catch((e) => setNotice(stripControls(`${closed ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`).replace(/\s+/g, " ")))
+      .finally(() => { if (remoteResume) resuming.current.delete(row.session_id); });
   };
 
   const doAttach = (i: number) => {
