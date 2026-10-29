@@ -2,6 +2,7 @@ import type { SessionRow } from "@agmux/protocol";
 
 export function mkRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
+    tmux_server: null,
     session_id: "agx-000000001", agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
     tmux_session: null, tmux_window: null, tmux_socket: null, tmux_pane: null, host: "h", project: null,

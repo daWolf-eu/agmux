@@ -6,6 +6,7 @@ import type { SessionRow } from "@agmux/protocol";
 
 function row(over: Partial<SessionRow>): SessionRow {
   return {
+    tmux_server: null,
     session_id: "sid", agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: ["--foo"], env_overrides: { A: "1" }, cwd: "/work",
     pid: null, tmux_session: null, tmux_window: null, tmux_pane: null, tmux_socket: null, host: "h",

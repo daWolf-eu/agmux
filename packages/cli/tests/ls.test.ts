@@ -4,6 +4,7 @@ import { buildLsQuery, formatTable } from "../src/ls.ts";
 
 function mkRow(sid: string, start: string): SessionRow {
   return {
+    tmux_server: null,
     session_id: sid, agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
     tmux_session: null, tmux_window: null, tmux_pane: null, tmux_socket: null, host: "h", project: null,

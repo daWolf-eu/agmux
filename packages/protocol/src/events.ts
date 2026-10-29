@@ -130,6 +130,10 @@ export interface SessionRegisteredPayload {
   tmux_window: string | null;
   tmux_pane: string | null;
   tmux_socket: string | null;
+  tmux_server?: string | null;
+  // Launch recorded at registration (agmux-started agents); absent on older emitters.
+  command?: string;
+  args?: string[];
   profile: string | null;
   agent_version: string | null;
   parent: NativeIdentity | null;

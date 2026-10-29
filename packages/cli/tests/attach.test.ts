@@ -6,6 +6,7 @@ const coords = { tmux_session: "agmux", tmux_window: "@4", tmux_pane: "%3", tmux
 
 function sessionRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
+    tmux_server: null,
     session_id: "019f1898-8e0f-7000-ab55-07d09f673b59",
     agent_kind: "claude", profile: "claude-work", native_session_id: "n1",
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 18219,

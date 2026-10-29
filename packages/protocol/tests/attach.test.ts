@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import {
-  ATTACH_PLACEMENTS, isAttachPlacement, REMOTE_ATTACH_MODES, isRemoteAttachMode, isAttachTag, isTmuxKeyName, isRemoteTmux,
+  ATTACH_PLACEMENTS, isAttachPlacement, REMOTE_ATTACH_MODES, isRemoteAttachMode, isAttachTag, isTmuxKeyName, isRemoteTmux, isTmuxServerId, TMUX_SERVER_ID_FMT,
 } from "../src/attach.ts";
 
 test("placements are the popup's fixed slot order", () => {
@@ -52,4 +52,23 @@ test("isRemoteTmux rejects metacharacters", () => {
   for (const window of ["@1 -t x", "1"]) bad({ window });
   bad({ pane: "%1;" });
   for (const socket of ["tmp/x", "/tmp/a b"]) bad({ socket });
+});
+
+test("isRemoteTmux validates the optional server identity", () => {
+  expect(isRemoteTmux({ ...TMUX_OK, server: "123-1730000000" })).toBe(true);
+  expect(isRemoteTmux({ ...TMUX_OK, server: "123" })).toBe(true);
+  expect(isRemoteTmux({ ...TMUX_OK, server: null })).toBe(true);
+  expect(isRemoteTmux(TMUX_OK)).toBe(true);
+  expect(isRemoteTmux({ ...TMUX_OK, server: "12;rm" })).toBe(false);
+  expect(isRemoteTmux({ ...TMUX_OK, server: "" })).toBe(false);
+  expect(isRemoteTmux({ ...TMUX_OK, server: 5 })).toBe(false);
+});
+
+test("isTmuxServerId", () => {
+  expect(isTmuxServerId("42-100")).toBe(true);
+  expect(isTmuxServerId("42")).toBe(true);
+  expect(isTmuxServerId("42-")).toBe(false);
+  expect(isTmuxServerId("-1")).toBe(false);
+  expect(isTmuxServerId("12345678901")).toBe(false);
+  expect(TMUX_SERVER_ID_FMT).toBe("#{pid}-#{start_time}");
 });

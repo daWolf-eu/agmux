@@ -164,3 +164,8 @@ export const SCHEMA_V10 = `
 ALTER TABLE events ADD COLUMN source_db TEXT;
 ALTER TABLE sessions ADD COLUMN source_db TEXT;
 `;
+
+// tmux server identity ("<pid>-<start_time>") of the server hosting the pane.
+export const SCHEMA_V11 = `
+ALTER TABLE sessions ADD COLUMN tmux_server TEXT;
+`;

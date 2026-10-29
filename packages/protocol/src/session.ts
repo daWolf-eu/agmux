@@ -36,6 +36,8 @@ export interface SessionRow {
   tmux_pane: string | null;
   // tmux server socket path (null = ambient/default server)
   tmux_socket: string | null;
+  // tmux server identity "<pid>-<start_time>" (null = unknown / remote row)
+  tmux_server: string | null;
   host: string;
   project: string | null;
   parent_session_id: string | null;
