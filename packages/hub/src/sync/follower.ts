@@ -21,7 +21,8 @@ export interface FollowerStatus {
   connected: boolean; cursor: number; dbId: string | null; header: ReplicationHeader | null;
   rejected: number; lastError: string | null; failingSinceMs: number | null; permanent: boolean;
 }
-export interface Follower { status(): FollowerStatus; stop(): Promise<void> }
+// kick: ends a backoff wait now (no-op while connecting/connected or stopped); failure counters stay.
+export interface Follower { status(): FollowerStatus; kick(): void; stop(): Promise<void> }
 // kill() defaults to SIGTERM. stderrTail: the last ~2 KB the child wrote to stderr, for error messages.
 export interface ProcHandle {
   lines: AsyncIterable<string>; kill(signal?: "SIGTERM" | "SIGKILL"): void; exited: Promise<number>; stderrTail?(): string;
@@ -160,6 +161,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   let failures = 0;
   let abortAttempt: ((out: Outcome) => void) | null = null;
   const cancels = new Set<() => void>();
+  let cancelWait: (() => void) | null = null;   // set only while sleeping between attempts
 
   // A throwing listener must neither crash the hub nor read as a stream failure.
   const notify = () => {
@@ -322,13 +324,17 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
       const out = await attempt();
       if (stopping || out.kind === "stopped") return;
       if (out.kind === "reset" || out.kind === "rotate") continue;
-      await pause(out.permanent ? MAX_BACKOFF_MS : Math.min(o.intervalMs * 2 ** (failures - 1), MAX_BACKOFF_MS)).done;
+      const wait = pause(out.permanent ? MAX_BACKOFF_MS : Math.min(o.intervalMs * 2 ** (failures - 1), MAX_BACKOFF_MS));
+      cancelWait = wait.cancel;
+      await wait.done;
+      cancelWait = null;
     }
   }
 
   const loop = run().catch((e) => { console.error(`agmux-hub: follower ${o.node.host} crashed: ${errMsg(e)}`); });
   return {
     status: () => ({ ...st }),
+    kick: () => { if (!stopping) cancelWait?.(); },
     stop: async () => {
       stopping = true;
       for (const c of [...cancels]) c();

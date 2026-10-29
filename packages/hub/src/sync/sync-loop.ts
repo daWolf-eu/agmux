@@ -41,7 +41,8 @@ const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 // stop: stops every follower, flushes moved cursors and clears the timers.
 // remotes: per-remote discovery state (the hub's stdio is not visible anywhere).
-export interface SyncHandle { stop(): Promise<void>; remotes(): RemoteSyncState[] }
+// kick: reconnects that host's follower now if it is waiting in backoff; false when the host has no follower.
+export interface SyncHandle { stop(): Promise<void>; remotes(): RemoteSyncState[]; kick(host: string): boolean }
 
 interface DiscoveryState { last_discovery_ts: string | null; last_discovery_error?: string }
 
@@ -222,5 +223,11 @@ export function startSync(o: SyncOptions, deps: SyncDeps = {}): SyncHandle {
     await Promise.all([...removals.values(), ...all.map((ns) => stopNode(ns).catch((e) =>
       o.log(`sync: ${ns.node.host}: stop failed: ${errMsg(e)}`)))]);
   };
-  return { stop, remotes };
+  const kick = (host: string): boolean => {
+    const ns = nodes.get(host);
+    if (!ns || stopped) return false;
+    ns.follower.kick();
+    return true;
+  };
+  return { stop, remotes, kick };
 }

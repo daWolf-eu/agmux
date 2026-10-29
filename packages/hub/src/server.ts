@@ -17,6 +17,8 @@ export interface CreateServerOpts {
   hostname?: string; // default 127.0.0.1
   // In-memory sync state for GET /hosts (absent = no sync loop, e.g. in a sandbox).
   remotes?: () => RemoteSyncState[];
+  // POST /hosts/<host>/sync: reconnect that host's follower now; false = unknown host.
+  kickHost?: (host: string) => boolean;
 }
 
 export function createServer(opts: CreateServerOpts): Server<undefined> {
@@ -116,6 +118,14 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
       if (m === "GET" && url.pathname === "/hosts") {
         // `remotes` is additive: older clients read `hosts` only.
         return Response.json({ hosts: store.listHosts(), remotes: opts.remotes?.() ?? [] });
+      }
+
+      const mKick = url.pathname.match(/^\/hosts\/([^/]+)\/sync$/);
+      if (m === "POST" && mKick) {
+        let host: string;
+        try { host = decodeURIComponent(mKick[1]!); } catch { return Response.json({ error: "not_found" }, { status: 404 }); }
+        if (!opts.kickHost?.(host)) return Response.json({ error: "not_found" }, { status: 404 });
+        return new Response(null, { status: 204 });
       }
 
       if (m === "GET" && url.pathname === "/events") {

@@ -35,7 +35,8 @@ if (!lock) {
 const store = Store.open(path.join(stateDir, "agmux.sqlite"));
 // Set below, once the config is read; `hub status` shows it (stdio is not visible).
 let syncState: () => RemoteSyncState[] = () => [];
-const server = createServer({ store, port: 0, remotes: () => syncState() });
+let kickHost: (host: string) => boolean = () => false;
+const server = createServer({ store, port: 0, remotes: () => syncState(), kickHost: (h) => kickHost(h) });
 const drainRes = drainQueueDir(path.join(stateDir, "queue"), store);
 if (drainRes.eventsIngested > 0) {
   console.log(`drained ${drainRes.eventsIngested} events from ${drainRes.filesDrained} file(s)`);
@@ -59,6 +60,7 @@ try {
 // The sandbox-side `agmux events --consumer` id: [A-Za-z0-9._-]{1,64}.
 const consumer = resolveHost().replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 64) || "agmux-hub";
 const sync: SyncHandle = startSync({ store, remotes, consumer, log: (s) => console.log(s) });
+kickHost = (h) => sync.kick(h);
 syncState = () => (configError !== null ? [{ config_error: configError }] : sync.remotes());
 
 const SYNC_STOP_TIMEOUT_MS = 3_000;

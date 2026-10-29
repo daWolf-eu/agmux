@@ -25,6 +25,7 @@ const transport: Transport = {
 
 class FakeFollower {
   stopped = 0;
+  kicks = 0;
   private st: FollowerStatus;
   constructor(readonly o: FollowerOptions) {
     this.st = {
@@ -34,6 +35,7 @@ class FakeFollower {
   }
   emit(p: Partial<FollowerStatus>) { this.st = { ...this.st, ...p }; this.o.onChange({ ...this.st }); }
   status() { return { ...this.st }; }
+  kick() { this.kicks++; }
   async stop() { this.stopped++; }
 }
 
@@ -77,7 +79,7 @@ function harness(o: { remotes?: RemoteConfig[]; store?: Store } = {}) {
     newId: () => `ev-${++id}`,
   });
   return {
-    store, followers, logs, stop: sync.stop, remotes: sync.remotes, hostEvents,
+    store, followers, logs, stop: sync.stop, remotes: sync.remotes, kick: sync.kick, hostEvents,
     setListing: (l: Listing) => { listing = l; },
     listOnce: (...l: Listing[]) => { once.push(...l); },
     lists: () => lists,
@@ -101,6 +103,16 @@ function seedSynced(store: Store, host: string, cursor: number, remoteName = "la
 }
 
 describe("startSync", () => {
+  test("kick(host) kicks that node's follower; false for an unknown host", async () => {
+    const h = harness();
+    h.setListing([node("a"), node("b")]);
+    await until(() => h.followers.length === 2, "followers");
+    expect(h.kick("gw/a")).toBe(true);
+    expect(h.followers.map((f) => f.kicks)).toEqual([1, 0]);
+    expect(h.kick("gw/zzz")).toBe(false);
+    await h.stop();
+  });
+
   test("starts one follower per discovered node with the stored cursor", async () => {
     const store = Store.openInMemory();
     seedSynced(store, "gw/a", 42);

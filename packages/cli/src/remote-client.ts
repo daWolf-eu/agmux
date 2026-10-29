@@ -5,7 +5,7 @@
 // sandbox-side client on hangup or failure (`exec --no-tty`, stdin closed).
 // See remote-tmux.ts for the scripts.
 import { isRemoteTmux, isShellSafeId, LIVE_STATUSES, tmuxSocketArgs, tmuxSocketFromEnv, type HostRow, type RemoteAttachMode, type SessionRow } from "@agmux/protocol";
-import { runCapture, transportArgv, transportControlArgv } from "@agmux/hub";
+import { openshellControl, runCapture, transportArgv } from "@agmux/hub";
 import { fullScriptArgv, reapScriptArgv, viewScriptArgv, viewSessionName } from "./remote-tmux.ts";
 
 export interface RemoteClientOpts {
@@ -111,9 +111,9 @@ export async function runRemoteClient(o: RemoteClientOpts, deps: RemoteClientDep
     });
   }
   // A failing `get` is ignored: the exec reports the real error.
+  const control = openshellControl((argv, c) => deps.capture(argv, c?.timeoutMs ?? CAPTURE_TIMEOUT_MS));
   try {
-    const info = JSON.parse(await deps.capture(transportControlArgv(spec, "get"), CAPTURE_TIMEOUT_MS)) as { phase?: unknown };
-    if (info.phase === "Stopped") await deps.capture(transportControlArgv(spec, "start"), CAPTURE_TIMEOUT_MS * 6);
+    if ((await control.status(spec)).state === "stopped") await control.start(spec);
   } catch { /* see above */ }
 
   if (reapDone) { await reapDone; return signalCode; }
