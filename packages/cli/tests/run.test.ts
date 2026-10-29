@@ -1,4 +1,7 @@
 import { test, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { buildDirectSpawn, runInjectStep } from "../src/run.ts";
 
 test("buildDirectSpawn inline leaves cwd undefined", () => {
@@ -96,4 +99,21 @@ test("print-coords on an existing session opens a detached window with AGMUX_LAU
 test("buildDirectSpawn: --cwd wins over profile cwd", () => {
   const s = buildDirectSpawn({ ...baseOpts, placement: "inherit", cwd: "/x" }, "agmux");
   expect(s.cwd).toBe("/x");
+});
+
+test("buildDirectSpawn: the agent runs with agentEnv; agmux's own keys win", () => {
+  const s = buildDirectSpawn({ ...baseOpts, placement: "inherit", agentEnv: { CLAUDE_CONFIG_DIR: "/c", AGMUX_BIN: "evil" } }, "agmux");
+  expect(s.env.CLAUDE_CONFIG_DIR).toBe("/c");
+  expect(s.env.AGMUX_BIN).toBe("agmux");
+});
+
+test("buildDirectSpawn: a profile launch passes the profile env to the agent", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-run-cfg-"));
+  const configPath = path.join(dir, "config.toml");
+  fs.writeFileSync(configPath, [
+    `[profiles.work]`, `agent_kind = "claude"`, `command = "claude"`, `env = { CLAUDE_CONFIG_DIR = "/sandbox/.claude-chax" }`,
+  ].join("\n"));
+  const s = buildDirectSpawn({ kind: "profile", profileName: "work", mode: "direct", hubUrl: "http://h", wrapBin: "w", placement: "inherit", detach: false }, "agmux", configPath);
+  expect(s.env.CLAUDE_CONFIG_DIR).toBe("/sandbox/.claude-chax");
+  expect(s.env.AGMUX_PROFILE).toBe("work");
 });

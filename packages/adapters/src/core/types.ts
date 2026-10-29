@@ -84,6 +84,7 @@ export interface InstallStatus {
   drift: boolean;
   runtimeGate?: "hook-trust" | "none"; // provider trust/enable state (spec §6.2)
   detail?: string;
+  configDir?: string;                  // the agent config dir that was checked (for install hints)
 }
 
 // Opaque resume plan (spec §6.4). resumable=false => caller relaunches fresh.

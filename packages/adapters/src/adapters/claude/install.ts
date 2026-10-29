@@ -59,11 +59,12 @@ export function claudeUninstall(_ctx: InstallContext, record: InstallRecord): vo
 }
 
 export function claudeStatus(ctx: InstallContext): InstallStatus {
-  const dest = skillsPluginDir(resolveConfigDir(ctx));
+  const configDir = resolveConfigDir(ctx);
+  const dest = skillsPluginDir(configDir);
   const installedVersion = readInstalledVersion(dest);
   const installed = installedVersion !== null;
   const drift = installed && installedVersion !== PLUGIN_VERSION;
   // Hook activation may still be gated by Claude's trust model at session start
   // (spec §7.1); kept until a live wrapped session proves hooks fire ungated.
-  return { installed, version: installed ? ADAPTER_VERSION : null, drift, runtimeGate: "hook-trust" };
+  return { installed, version: installed ? ADAPTER_VERSION : null, drift, runtimeGate: "hook-trust", configDir };
 }

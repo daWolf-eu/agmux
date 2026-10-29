@@ -39,3 +39,19 @@ test("status throws → not ready, swallowed (no throw)", () => {
   const adapter = { status: () => { throw new Error("boom"); } } as any;
   expect(adapterReadyOrHint(adapter, ctx, "claude", () => {})).toBe(false);
 });
+
+test("strict (--direct): names the config dir checked and the install command for it, no wrapped fallback", () => {
+  const adapter = { status: () => ({ installed: false, version: null, drift: false, configDir: "/s/.claude-chax" }) } as any;
+  const lines: string[] = [];
+  expect(adapterReadyOrHint(adapter, ctx, "claude", (s) => lines.push(s), true)).toBe(false);
+  expect(lines).toEqual([
+    "agmux run --direct: claude adapter not installed in /s/.claude-chax; cannot launch direct. Install it with: agmux adapter install --kind claude --config-dir /s/.claude-chax",
+  ]);
+});
+
+test("strict: a status that throws is reported, not swallowed", () => {
+  const adapter = { status: () => { throw new Error("boom"); } } as any;
+  const lines: string[] = [];
+  expect(adapterReadyOrHint(adapter, ctx, "claude", (s) => lines.push(s), true)).toBe(false);
+  expect(lines).toEqual(["agmux run --direct: cannot read the claude adapter status: boom"]);
+});

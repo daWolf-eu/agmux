@@ -32,6 +32,7 @@ export interface RunProfileOpts {
   mode?: LaunchMode;
   agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
   prompt?: string;         // bootstrap prompt to inject after placement
+  agentEnv?: Record<string, string>;  // direct mode: the env the adapter was checked against (planLaunch)
 }
 
 // Ad-hoc mode → CLI builds an inline-profile spec and passes it via env. Wrapper
@@ -49,6 +50,7 @@ export interface RunInlineOpts {
   mode?: LaunchMode;
   agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
   prompt?: string;         // bootstrap prompt to inject after placement
+  agentEnv?: Record<string, string>;  // direct mode: the env the adapter was checked against (planLaunch)
 }
 
 export type RunOpts = RunProfileOpts | RunInlineOpts;
@@ -76,19 +78,21 @@ function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
   return { argv: [opts.wrapBin, label], env, label, cwd: opts.cwd };
 }
 
-export function buildDirectSpawn(opts: RunOpts, agmuxBin: string): WrapperSpawn {
-  const env: Record<string, string> = {
-    [AGMUX_HUB_URL_ENV]: opts.hubUrl,
-    AGMUX_BIN: agmuxBin,
-  };
+// The agent runs with agentEnv (a profile's env when none was planned), so it
+// uses the config dir its adapter was checked in; agmux's own keys win.
+export function buildDirectSpawn(
+  opts: RunOpts, agmuxBin: string, cfgPath: string = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH),
+): WrapperSpawn {
+  const agmuxEnv = { [AGMUX_HUB_URL_ENV]: opts.hubUrl, AGMUX_BIN: agmuxBin };
   if (opts.kind === "profile") {
-    const cfgPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
     const p = loadProfile(opts.profileName, cfgPath);
+    const env: Record<string, string> = { ...(opts.agentEnv ?? p.env), ...agmuxEnv };
     env[AGMUX_PROFILE_ENV] = opts.profileName;
     env[AGMUX_LAUNCH_ENV] = JSON.stringify({ profile: opts.profileName, command: p.command, args: p.args } satisfies LaunchSpec);
     return { argv: [p.command, ...p.args], env, label: opts.profileName, cwd: opts.cwd ?? p.cwd };
   }
   const label = opts.command.split("/").pop() ?? "agent";
+  const env: Record<string, string> = { ...opts.agentEnv, ...agmuxEnv };
   env[AGMUX_LAUNCH_ENV] = JSON.stringify({ profile: null, command: opts.command, args: opts.args } satisfies LaunchSpec);
   return { argv: [opts.command, ...opts.args], env, label, cwd: opts.cwd };
 }

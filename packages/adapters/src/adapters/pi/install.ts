@@ -77,11 +77,12 @@ export function piUninstall(_ctx: InstallContext, record: InstallRecord): void {
 }
 
 export function piStatus(ctx: InstallContext): InstallStatus {
-  const file = extensionPath(resolveConfigDir(ctx));
+  const configDir = resolveConfigDir(ctx);
+  const file = extensionPath(configDir);
   const installedVersion = readInstalledVersion(file);
   const installed = installedVersion !== null;
   const drift = installed && installedVersion !== PLUGIN_VERSION;
   // Auto-load may still be gated by a per-extension trust prompt at session start
   // (spec §8.3); kept until a live session proves the extension loads ungated.
-  return { installed, version: installed ? ADAPTER_VERSION : null, drift, runtimeGate: "hook-trust" };
+  return { installed, version: installed ? ADAPTER_VERSION : null, drift, runtimeGate: "hook-trust", configDir };
 }

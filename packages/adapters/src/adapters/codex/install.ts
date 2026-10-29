@@ -101,12 +101,13 @@ export function codexUninstall(ctx: InstallContext, record: InstallRecord): void
 }
 
 export function codexStatus(ctx: InstallContext): InstallStatus {
-  const env = { CODEX_HOME: resolveConfigDir(ctx) };
+  const configDir = resolveConfigDir(ctx);
+  const env = { CODEX_HOME: configDir };
   const res = runner(["plugin", "list"], env);
   const line = res.stdout.split("\n").find((l) => l.trim().startsWith(PLUGIN_REF));
   if (!line) {
     const detail = res.code !== 0 ? (res.stderr.trim() || `codex plugin list exited ${res.code}`) : undefined;
-    return { installed: false, version: null, drift: false, runtimeGate: "hook-trust", ...(detail ? { detail } : {}) };
+    return { installed: false, version: null, drift: false, runtimeGate: "hook-trust", configDir, ...(detail ? { detail } : {}) };
   }
   // `codex plugin list` columns are separated by runs of 2+ spaces. STATUS is a
   // phrase ("installed, enabled" / "installed, disabled" / "not installed"), so we
@@ -115,11 +116,11 @@ export function codexStatus(ctx: InstallContext): InstallStatus {
   const cols = line.trim().split(/\s{2,}/);
   const status = cols[1] ?? "";
   if (!status.startsWith("installed")) {  // "not installed" starts with "not"
-    return { installed: false, version: null, drift: false, runtimeGate: "hook-trust" };
+    return { installed: false, version: null, drift: false, runtimeGate: "hook-trust", configDir };
   }
   const reportedVersion = cols[2] ?? null;
   const drift = reportedVersion !== null && reportedVersion !== PLUGIN_VERSION;
   // Hook activation may still be gated by Codex's hook-trust model at session start
   // (spec §7.3); kept until a live wrapped session proves hooks fire ungated.
-  return { installed: true, version: ADAPTER_VERSION, drift, runtimeGate: "hook-trust" };
+  return { installed: true, version: ADAPTER_VERSION, drift, runtimeGate: "hook-trust", configDir };
 }
