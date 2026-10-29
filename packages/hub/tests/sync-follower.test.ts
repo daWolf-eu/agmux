@@ -153,6 +153,31 @@ describe("startFollower", () => {
     await h.f.stop();
   });
 
+  test("kick() during an in-flight connect skips the next backoff once", async () => {
+    const h = harness({ stderr: "boom" });
+    await until(() => h.procs.length === 1, "spawn");
+    h.f.kick();                       // connecting: no header yet, no wait to cut short
+    h.last().end(1);
+    await until(() => h.procs.length === 2, "respawn without a backoff");
+    expect(h.backoffs()).toEqual([]);
+    h.last().end(1);
+    await until(() => h.backoffs().length === 1, "the next failure backs off again");
+    expect(h.backoffs()).toEqual([INTERVAL * 2]);   // failure count kept
+    await h.f.stop();
+  });
+
+  test("a kick during a connect that then succeeds is not kept for a later failure", async () => {
+    const h = harness({ stderr: "boom" });
+    await until(() => h.procs.length === 1, "spawn");
+    h.f.kick();
+    h.last().push(header());
+    await until(() => h.f.status().connected, "connected");
+    h.last().end(1);
+    await until(() => h.backoffs().length === 1, "backoff after the stream ended");
+    expect(h.procs.length).toBe(1);
+    await h.f.stop();
+  });
+
   test("kick() is a no-op while connected", async () => {
     const h = harness();
     await until(() => h.procs.length === 1, "spawn");
