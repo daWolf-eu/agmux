@@ -380,3 +380,19 @@ test("GET /hosts carries the sync loop's remotes (empty without one)", async () 
   expect(body).toEqual({ hosts: [], remotes: state });
   s2.stop();
 });
+
+test("POST /hosts/<host>/sync kicks the follower: 204 known, 404 unknown or without a sync loop", async () => {
+  const kicked: string[] = [];
+  const s = createServer({ store: Store.openInMemory(), port: 0, kickHost: (h) => { kicked.push(h); return h === "gw/sbx"; } });
+  const base = `http://${s.hostname}:${s.port}`;
+  expect((await fetch(`${base}/hosts/${encodeURIComponent("gw/sbx")}/sync`, { method: "POST" })).status).toBe(204);
+  const miss = await fetch(`${base}/hosts/${encodeURIComponent("gw/nope")}/sync`, { method: "POST" });
+  expect(miss.status).toBe(404);
+  expect(await miss.json()).toEqual({ error: "not_found" });
+  expect((await fetch(`${base}/hosts/%E0%A4%A/sync`, { method: "POST" })).status).toBe(404);
+  expect(kicked).toEqual(["gw/sbx", "gw/nope"]);
+  s.stop();
+  const { server, url } = makeServer();
+  expect((await fetch(`${url}/hosts/gw%2Fsbx/sync`, { method: "POST" })).status).toBe(404);
+  server.stop();
+});

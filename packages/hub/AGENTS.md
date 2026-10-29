@@ -105,3 +105,8 @@ Point `openshell_bin` at the script.
 `bun test tests/e2e/remote-attach.test.ts` runs remote attach end to end on two private tmux servers (`-S <tmp>/inner.sock` = the sandbox's, `-S <tmp>/outer.sock` = the Mac's, both `-f /dev/null`). The outer server is started with the Mac env (`HOME`, `FAKE_OS_DIR`, `AGMUX_BIN` = the Mac CLI shim) because the placed pane process inherits the server's environment, not the caller's; a control-mode client (`tmux -C attach`) stands in for the user's terminal so `switch-client` has a client. Skipped without `tmux`.
 
 Unit tests for the follower inject `deps` (`spawn`, `nowMs`, `sleep`); the sync loop injects `discoveryFor`, `transportFor`, `follower`, `nowMs`, `newId`.
+
+## Sandbox control and follower kick
+
+- `sync/sandbox-control.ts`: `SandboxControl` (`status` → `ready | stopped | missing{detail}`, `start`) over `openshell sandbox get/start`; `openshellControl(runCapture)`. Used by the CLI to start a stopped sandbox.
+- `Follower.kick()` ends a backoff wait now (no-op while connected/stopped; failure counters kept). `SyncHandle.kick(host)` → `POST /hosts/<urlencoded host>/sync` (204; 404 unknown host or no sync loop). Callers kick after starting a sandbox so its follower does not sit in backoff.

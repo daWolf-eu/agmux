@@ -140,6 +140,40 @@ describe("startFollower", () => {
     await h.f.stop();
   });
 
+  test("kick() ends a backoff wait now; failure counters are not reset", async () => {
+    const h = harness({ stderr: "boom" });
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().end(1);
+    await until(() => h.backoffs().length === 1, "backoff");
+    h.f.kick();
+    await until(() => h.procs.length === 2, "respawn without advancing time");
+    h.last().end(1);
+    await until(() => h.backoffs().length === 2, "second backoff");
+    expect(h.backoffs()).toEqual([INTERVAL, INTERVAL * 2]);   // failures kept counting
+    await h.f.stop();
+  });
+
+  test("kick() is a no-op while connected", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    h.last().push(header());
+    await until(() => h.f.status().connected, "connected");
+    h.f.kick();
+    await turn();
+    expect(h.procs.length).toBe(1);
+    expect(h.last().killed).toBe(0);
+    await h.f.stop();
+  });
+
+  test("kick() after stop() does nothing", async () => {
+    const h = harness();
+    await until(() => h.procs.length === 1, "spawn");
+    await h.f.stop();
+    h.f.kick();
+    await turn();
+    expect(h.procs.length).toBe(1);
+  });
+
   test("not ready after the header (host ledger write failed): no record is ingested, the attempt backs off", async () => {
     let ok = false;
     const h = harness({ ready: () => ok });

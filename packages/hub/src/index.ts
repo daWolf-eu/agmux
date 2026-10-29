@@ -8,3 +8,4 @@ export * from "./sync/discovery.ts";
 export * from "./sync/ingest.ts";
 export * from "./sync/follower.ts";
 export * from "./sync/sync-loop.ts";
+export * from "./sync/sandbox-control.ts";
