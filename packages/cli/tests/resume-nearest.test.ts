@@ -20,7 +20,7 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
   };
 }
 
-interface World { server: string | null; windows: string[]; sessions: string[] }
+interface World { server: string | null; windows: string[]; sessions: string[]; panes?: string[] }
 
 function nearestDeps(w: World, calls: { fn: string; args: any }[] = []): NearestDeps {
   const coords = { session: "agmux", window: "@7", pane: "%9", socket: null };
@@ -83,6 +83,7 @@ function cmdDeps(rows: SessionRow[], w: World, over: Partial<ResumeNearestDeps> 
   const deps: ResumeNearestDeps = {
     ...nearestDeps(w, calls),
     fetchImpl: fakeFetch(rows),
+    paneExists: async (pane) => (w.panes ?? []).includes(pane),
     paneServerId: async () => "777-888",
     registry: createDefaultRegistry(),
     loadProfileLaunch: (name) => name === "p" ? { command: "claude", args: ["--model", "x"], env: { P: "1" } } : undefined,
@@ -155,12 +156,38 @@ test("resumeNearestCmd: unknown id → exit 2", async () => {
   expect(out).toEqual([]);
 });
 
-test("resumeNearestCmd: live row whose tmux session exists → prints its coords, places nothing", async () => {
+const live = (over: Partial<SessionRow> = {}) => row({ status: "idle", end_ts: null, ...over });
+
+test("resumeNearestCmd: live row, same server, pane present → prints its coords, places nothing", async () => {
   const out: string[] = [];
-  const f = cmdDeps([row({ status: "idle", end_ts: null })], { server: "100-200", windows: ["@3"], sessions: ["agmux"] });
+  const f = cmdDeps([live()], { server: "100-200", windows: ["@3"], sessions: ["agmux"], panes: ["%5"] });
   expect(await resumeNearestCmd(opts(out), f.deps)).toBe(0);
   expect(f.calls).toEqual([]);
+  expect(out).toHaveLength(1);
   expect(parsePrintedCoords(out[0]!)).toEqual({ session: "agmux", window: "@3", pane: "%5", socket: null, server: "100-200" });
+});
+
+test("resumeNearestCmd: live row on a restarted server (recreated session, reused @3/%5) → relaunches in a new window", async () => {
+  const out: string[] = [];
+  const f = cmdDeps([live()], { server: "777-888", windows: ["@3"], sessions: ["agmux"], panes: ["%5"] });
+  expect(await resumeNearestCmd(opts(out), f.deps)).toBe(0);
+  expect(f.calls.map((c) => c.fn)).toEqual(["newWindow"]);
+  expect(parsePrintedCoords(out[0]!)).toEqual({ session: "agmux", window: "@7", pane: "%9", socket: null, server: "777-888" });
+});
+
+test("resumeNearestCmd: live row, same server, pane gone → relaunches", async () => {
+  const out: string[] = [];
+  const f = cmdDeps([live()], { server: "100-200", windows: ["@3"], sessions: ["agmux"], panes: [] });
+  expect(await resumeNearestCmd(opts(out), f.deps)).toBe(0);
+  expect(f.calls.map((c) => c.fn)).toEqual(["splitPane"]);
+});
+
+test("resumeNearestCmd: live row without a recorded pane → relaunches, never prints unparsable coords", async () => {
+  const out: string[] = [];
+  const f = cmdDeps([live({ tmux_pane: null, tmux_server: null })], { server: "100-200", windows: ["@3"], sessions: ["agmux"], panes: ["%5"] });
+  expect(await resumeNearestCmd(opts(out), f.deps)).toBe(0);
+  expect(f.calls.map((c) => c.fn)).toEqual(["newWindow"]);
+  expect(parsePrintedCoords(out[0]!)).not.toBeNull();
 });
 
 test("resumeNearestCmd: placement failure → exit 1, message on stderr, no stdout", async () => {
