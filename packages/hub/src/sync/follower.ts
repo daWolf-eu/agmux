@@ -162,6 +162,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   let abortAttempt: ((out: Outcome) => void) | null = null;
   const cancels = new Set<() => void>();
   let cancelWait: (() => void) | null = null;   // set only while sleeping between attempts
+  let kickPending = false;   // a kick arrived while connecting: skip the next backoff once
 
   // A throwing listener must neither crash the hub nor read as a stream failure.
   const notify = () => {
@@ -215,6 +216,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
     notify();
     if (o.ready && !o.ready()) return fail("host ledger write failed");
     failures = 0;
+    kickPending = false;   // connected: nothing left to cut short
     return null;
   }
 
@@ -324,6 +326,7 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
       const out = await attempt();
       if (stopping || out.kind === "stopped") return;
       if (out.kind === "reset" || out.kind === "rotate") continue;
+      if (kickPending) { kickPending = false; continue; }
       const wait = pause(out.permanent ? MAX_BACKOFF_MS : Math.min(o.intervalMs * 2 ** (failures - 1), MAX_BACKOFF_MS));
       cancelWait = wait.cancel;
       await wait.done;
@@ -334,7 +337,11 @@ export function startFollower(o: FollowerOptions, deps: FollowerDeps = defaultDe
   const loop = run().catch((e) => { console.error(`agmux-hub: follower ${o.node.host} crashed: ${errMsg(e)}`); });
   return {
     status: () => ({ ...st }),
-    kick: () => { if (!stopping) cancelWait?.(); },
+    // Waiting → retry now; connecting → skip the backoff after this attempt; connected → nothing.
+    kick: () => {
+      if (stopping || st.connected) return;
+      if (cancelWait) cancelWait(); else kickPending = true;
+    },
     stop: async () => {
       stopping = true;
       for (const c of [...cancels]) c();
