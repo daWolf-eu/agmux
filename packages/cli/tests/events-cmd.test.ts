@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { EXIT_ROTATE } from "@agmux/protocol";
-import { parseEventsArgs, eventsCmd, isEventsProcess, KEEPALIVE_MS, FOLLOW_POLL_MS } from "../src/events-cmd.ts";
+import { parseEventsArgs, eventsCmd, drainCmd, isEventsProcess, KEEPALIVE_MS, FOLLOW_POLL_MS } from "../src/events-cmd.ts";
 
 test("parse: --after is required and a non-negative integer", () => {
   expect(parseEventsArgs([]).kind).toBe("error");
@@ -249,4 +249,126 @@ test("isEventsProcess: /proc cmdline must have an `events` argument; unreadable 
   expect(isEventsProcess(3, { platform: "linux", readFile: read })).toBe(false);
   expect(isEventsProcess(4, { platform: "darwin", ps: () => "/opt/bin/agmux events --follow --after 0" })).toBe(true);
   expect(isEventsProcess(5, { platform: "darwin", ps: () => { throw new Error("no such pid"); } })).toBe(false);
+});
+
+test("consumer start writes <c>.after atomically next to <c>.pid", async () => {
+  const { deps, stateDir } = mkDeps({ fetchImpl: fakeHub(0).fetchImpl, isAlive: () => false, pid: 99 });
+  let during = "";
+  const write = deps.write;
+  deps.write = (l: string) => { during = fs.readFileSync(path.join(stateDir, "follow", "mac.after"), "utf8"); return write(l); };
+  await eventsCmd({ hubUrl: "http://h", follow: false, after: 42, consumer: "mac", limit: 500 }, deps);
+  expect(during).toBe("42\n");
+  expect(fs.readdirSync(path.join(stateDir, "follow")).filter((f) => f.endsWith(".tmp"))).toEqual([]);
+  const none = mkDeps({ fetchImpl: fakeHub(0).fetchImpl });
+  await eventsCmd({ hubUrl: "http://h", follow: false, after: 5, consumer: null, limit: 500 }, none.deps);
+  expect(fs.existsSync(path.join(none.stateDir, "follow"))).toBe(false);
+});
+
+test("parse: --drain", () => {
+  expect(parseEventsArgs(["--drain"])).toEqual({ kind: "drain", timeoutS: 60 });
+  expect(parseEventsArgs(["--drain", "--timeout", "5"])).toEqual({ kind: "drain", timeoutS: 5 });
+  expect(parseEventsArgs(["--drain", "--follow"]).kind).toBe("error");
+  expect(parseEventsArgs(["--drain", "--after", "0"]).kind).toBe("error");
+  expect(parseEventsArgs(["--drain", "--timeout", "0"]).kind).toBe("error");
+  expect(parseEventsArgs(["--drain", "--timeout", "x"]).kind).toBe("error");
+  expect(parseEventsArgs(["--after", "0", "--timeout", "5"]).kind).toBe("error");
+});
+
+// Drain harness: a hub with the given head, a follow dir, a fake clock that advances on sleep.
+function drainEnv(head: number, over: Record<string, unknown> = {}) {
+  const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-drain-"));
+  const dir = path.join(stateDir, "follow");
+  fs.mkdirSync(dir);
+  const errs: string[] = [];
+  const kills: Array<[number, string]> = [];
+  let now = Date.now();
+  const deps = {
+    fetchImpl: (async (u: any) => {
+      expect(String(u)).toBe("http://h/events/head");
+      return Response.json({ id: head });
+    }) as unknown as typeof fetch,
+    sleep: async (ms: number) => { now += ms; },
+    nowMs: () => now,
+    stateDir,
+    err: (l: string) => { errs.push(l); },
+    kill: (pid: number, sig: string) => { kills.push([pid, sig]); },
+    isAlive: (pid: number) => pid === 4242,
+    isFollower: () => true,
+    ...over,
+  };
+  const consumer = (name: string, o: { pid?: number; after?: number; ageS?: number }) => {
+    if (o.pid !== undefined) fs.writeFileSync(path.join(dir, `${name}.pid`), `${o.pid}\n`);
+    if (o.after !== undefined) {
+      const f = path.join(dir, `${name}.after`);
+      fs.writeFileSync(f, `${o.after}\n`);
+      const t = (now - (o.ageS ?? 0) * 1000) / 1000;
+      fs.utimesSync(f, t, t);
+    }
+  };
+  return { deps: deps as any, errs, kills, dir, consumer, now: () => now };
+}
+
+test("drain: SIGTERMs the live follower and exits 0 once its reconnect writes .after = head", async () => {
+  const env = drainEnv(10);
+  env.consumer("mac", { pid: 4242, after: 7 });
+  let sleeps = 0;
+  const tick = env.deps.sleep;
+  env.deps.sleep = async (ms: number) => {
+    await tick(ms);
+    if (++sleeps === 2) env.consumer("mac", { after: 10 }); // the Mac reconnected with its cursor
+  };
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 60 }, env.deps)).toBe(0);
+  expect(env.kills).toEqual([[4242, "SIGTERM"]]);
+  expect(env.errs).toEqual([]);
+});
+
+test("drain: no consumer exits 3", async () => {
+  const env = drainEnv(10);
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 60 }, env.deps)).toBe(3);
+  expect(env.errs).toEqual(["agmux events --drain: no replication consumer"]);
+  const noDir = drainEnv(10);
+  fs.rmSync(noDir.dir, { recursive: true });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 60 }, noDir.deps)).toBe(3);
+});
+
+test("drain: a consumer that never reconnects times out with exit 1, naming it, head and .after", async () => {
+  const env = drainEnv(10);
+  env.consumer("mac", { pid: 4242, after: 7 });
+  const t0 = env.now();
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, env.deps)).toBe(1);
+  expect(env.now() - t0).toBeGreaterThanOrEqual(5000);
+  expect(env.errs).toHaveLength(1);
+  expect(env.errs[0]).toContain("head 10");
+  expect(env.errs[0]).toContain("mac (after 7)");
+});
+
+test("drain: a stale consumer (dead pid, old .after) is ignored; a recent dead-pid one still counts", async () => {
+  const stale = drainEnv(10);
+  stale.consumer("old", { pid: 1, after: 0, ageS: 301 });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, stale.deps)).toBe(3);
+
+  const mixed = drainEnv(10);
+  mixed.consumer("old", { pid: 1, after: 0, ageS: 3600 });
+  mixed.consumer("mac", { after: 10, ageS: 10 });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, mixed.deps)).toBe(0);
+  expect(mixed.kills).toEqual([]);
+
+  const lag = drainEnv(10);
+  lag.consumer("mac", { after: 3, ageS: 10 });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 1 }, lag.deps)).toBe(1);
+  expect(lag.errs[0]).toContain("mac (after 3)");
+});
+
+test("drain: a live pid that is not an agmux events process (pid reuse) is neither signalled nor counted", async () => {
+  const env = drainEnv(10, { isFollower: () => false });
+  env.consumer("mac", { pid: 4242, after: 0, ageS: 9999 });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, env.deps)).toBe(3);
+  expect(env.kills).toEqual([]);
+});
+
+test("drain: unreachable hub exits 1", async () => {
+  const env = drainEnv(10, { fetchImpl: (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch });
+  env.consumer("mac", { pid: 4242, after: 10 });
+  expect(await drainCmd({ hubUrl: "http://h", timeoutS: 5 }, env.deps)).toBe(1);
+  expect(env.kills).toEqual([]);
 });

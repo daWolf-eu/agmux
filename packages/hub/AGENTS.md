@@ -32,6 +32,10 @@ One `agmux events --follow` child per sandbox, through `Transport.argv(target, c
 - **Single stream per consumer:** `--consumer` = `resolveHost()` with `[^A-Za-z0-9._-]` -> `_`, max 64 chars (`bin/agmux-hub.ts`). A new `agmux events --consumer X` SIGTERMs the previous one via `<state>/follow/X.pid`, so a reconnect never leaves two streams. Only if that pid is alive **and** an `agmux events` process (`isEventsProcess`: an `events` argument in `/proc/<pid>/cmdline` on Linux, `ps -o command=` elsewhere; unreadable = stale): a pid reused by an unrelated process is never signalled, the file is just overwritten.
 - `onChange` throwing is logged, never a stream failure; a record that makes ingest throw is a rejected record. `ready()` (optional) gates ingest after each header (see the host ledger).
 
+## Drain (`agmux events --drain [--timeout <s>]`, default 60)
+
+Run in a sandbox before deleting it. Every `--consumer <c> --after <n>` start writes `<n>` to `<state>/follow/<c>.after` (tmp + rename, next to `<c>.pid`): the Mac's committed cursor. Drain reads `head` from `GET /events/head` → `{id}` (highest exportable rowid, 0 if empty), counts consumers whose pid is alive (incl. the `isEventsProcess` reuse guard) or whose `.after` mtime is within 300 s, SIGTERMs the live ones once, and polls (500 ms) until every counted `.after` >= head. Exit 0 caught up; 1 timeout (stderr names lagging consumers with `.after` and head) or hub unreadable; 3 no consumer. Excludes `--follow`/`--after`.
+
 ## Host ledger (`sync/sync-loop.ts`)
 
 Per `[[remote]]`: every `interval` s, `Discovery.list()` → one follower per discovered node; the same tick runs `ledger()` for every node (also while `sandbox list` is in flight). The hub writes `host.*` events (`session_id = NO_SESSION_ID`, `host` = the node host, `dedup_key` null); the `hosts` projection (`store/src/hosts.ts`) is derived from them, so it survives `--rebuild-projections`.

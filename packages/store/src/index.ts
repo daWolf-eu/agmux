@@ -86,6 +86,11 @@ export class Store {
     return { records, last_id: records.length ? records[records.length - 1]!.id : afterId };
   }
 
+  /** Highest rowid `listExportable` can return (0 when none). */
+  exportableHead(): number {
+    return this.db.query<{ id: number | null }, []>(`SELECT MAX(id) AS id FROM events WHERE source IS NULL`).get()?.id ?? 0;
+  }
+
   /** Stable per-store identity, minted on first use; cached (it never changes for a file). */
   dbId(): string {
     this.cachedDbId ??= this.db.transaction(() => {
