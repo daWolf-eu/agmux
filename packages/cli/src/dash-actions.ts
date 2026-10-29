@@ -4,7 +4,7 @@ import { attachKind, resolvePlacement, type Actions, type AttachRequest, type Ha
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
-import { loadProfileEnv } from "./profile-env.ts";
+import { loadProfileLaunch } from "./profile-env.ts";
 import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
@@ -98,7 +98,7 @@ export function makeActions(
     const { session, usage } = (await r.json()) as { session: SessionRow; usage: { turn_count: number } | null };
     const spec = buildRelaunchSpec(session, {
       hubUrl, wrapBin, registry: createDefaultRegistry(), baseEnv: process.env,
-      turnCount: usage?.turn_count ?? 0, loadProfileEnv,
+      turnCount: usage?.turn_count ?? 0, loadProfileLaunch,
     });
     // inline: hand the terminal (or the dash's own pane) to the relaunched agent.
     if (where === "inline") return { argv: spec.wrapArgv, env: spec.env };
