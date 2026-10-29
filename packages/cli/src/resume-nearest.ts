@@ -71,17 +71,26 @@ export async function runningServerId(socket: string | null, exec: TmuxExec = de
 }
 
 // `display-message -t <missing window>` exits 0 with empty output, so compare
-// the printed window id (Phase 2 note 12).
-export async function windowExists(win: string, socket: string | null, exec: TmuxExec = defaultExec): Promise<boolean> {
+// the printed id (Phase 2 note 12).
+async function idExists(id: string, fmt: string, socket: string | null, exec: TmuxExec): Promise<boolean> {
   try {
-    return (await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", win, "#{window_id}"])).trim() === win;
+    return (await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", id, fmt])).trim() === id;
   } catch {
     return false;
   }
 }
 
+export function windowExists(win: string, socket: string | null, exec: TmuxExec = defaultExec): Promise<boolean> {
+  return idExists(win, "#{window_id}", socket, exec);
+}
+
+export function paneExists(pane: string, socket: string | null, exec: TmuxExec = defaultExec): Promise<boolean> {
+  return idExists(pane, "#{pane_id}", socket, exec);
+}
+
 export interface ResumeNearestDeps extends NearestDeps {
   fetchImpl: typeof fetch;
+  paneExists(pane: string, socket: string | null): Promise<boolean>;
   paneServerId(pane: string, socket: string | null): Promise<string | null>;
   registry: Registry;
   loadProfileLaunch: (name: string) => ProfileLaunch | undefined;
@@ -93,6 +102,7 @@ export const defaultResumeNearestDeps = (): ResumeNearestDeps => ({
   windowExists: (win, socket) => windowExists(win, socket),
   hasSession, splitPane, newWindow, newSession,
   fetchImpl: fetch,
+  paneExists: (pane, socket) => paneExists(pane, socket),
   paneServerId: (pane, socket) => tmuxServerId(pane, socket),
   registry: createDefaultRegistry(),
   loadProfileLaunch,
@@ -125,6 +135,16 @@ async function place(t: NearestTarget, a: { cmd: string[]; env: Record<string, s
   return deps.newSession({ sessionName: t.name, windowName, cmd, env, cwd, socket });
 }
 
+// A live row is in place only if its pane still exists on the server it was
+// recorded on. A restarted server can have a recreated session of the same
+// name and reuse `@N`/`%N` for another agent (Review Focus 2).
+async function stillInPlace(session: SessionRow, deps: ResumeNearestDeps): Promise<boolean> {
+  if ((await decideAttach(session, deps.hasSession)) !== "attach" || !session.tmux_pane) return false;
+  const socket = session.tmux_socket;
+  if (session.tmux_server && (await deps.serverId(socket)) !== session.tmux_server) return false;
+  return deps.paneExists(session.tmux_pane, socket);
+}
+
 async function loadRow(o: ResumeNearestOpts, deps: ResumeNearestDeps): Promise<
   { ok: true; session: SessionRow; turnCount: number } | { ok: false; code: number }
 > {
@@ -155,8 +175,8 @@ export async function resumeNearestCmd(o: ResumeNearestOpts, deps: ResumeNearest
   }
 
   try {
-    // Still running in an existing tmux session: nothing to resume.
-    if ((await decideAttach(session, deps.hasSession)) === "attach") {
+    // Still running where the row says: nothing to resume.
+    if (await stillInPlace(session, deps)) {
       const c = { session: session.tmux_session!, window: session.tmux_window!, pane: session.tmux_pane!, socket: session.tmux_socket };
       return printCoords(c, session.tmux_server, o, deps.err);
     }
