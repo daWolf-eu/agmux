@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { resolvePaneCoords, holdOnFailure, newWindow } from "../src/tmux-place.ts";
+import { resolvePaneCoords, holdOnFailure, newWindow, newSession } from "../src/tmux-place.ts";
 
 test("parses session_name<TAB>window_id from tmux", async () => {
   const fakeExec = async (_args: string[]) => "agmux\t@4\t4242-1730000000\n";
@@ -28,7 +28,7 @@ test("prepends -S <socket> to the exec args when a socket is given", async () =>
   let seen: string[] = [];
   const fakeExec = async (args: string[]) => { seen = args; return "agmux\t@4\n"; };
   await resolvePaneCoords("%7", fakeExec, "/tmp/sock");
-  expect(seen.slice(0, 2)).toEqual(["-S", "/tmp/sock"]);
+  expect(seen.slice(0, 3)).toEqual(["-u", "-S", "/tmp/sock"]);
   expect(seen).toContain("display-message");
 });
 
@@ -36,7 +36,7 @@ test("omits -S when socket is null", async () => {
   let seen: string[] = [];
   const fakeExec = async (args: string[]) => { seen = args; return "agmux\t@4\n"; };
   await resolvePaneCoords("%7", fakeExec, null);
-  expect(seen[0]).toBe("display-message");
+  expect(seen.slice(0, 2)).toEqual(["-u", "display-message"]);
 });
 
 // ---- holdOnFailure: a placed command that fails keeps its pane until a key ----
@@ -98,6 +98,48 @@ test("a failed command in a new window keeps the window until a key, a successfu
     expect(await windows()).toContain(failed.window);
     await tmuxOn(sock, ["send-keys", "-t", failed.pane, "x"]);
     expect(await waitFor(async () => !(await windows()).includes(failed.window))).toBe(true);
+  } finally {
+    await tmuxOn(sock, ["kill-server"]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// Without a UTF-8 locale (a sandbox `exec` may set none) and outside tmux, tmux
+// prints a tab in a format as "_" unless the client runs with -u: coords would
+// not parse.
+test("placement and pane coords parse without a UTF-8 locale", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-locale-"));
+  const sock = path.join(dir, "s");
+  const keys = ["LANG", "LC_ALL", "LC_CTYPE", "TMUX", "TMUX_PANE"] as const;
+  const saved = keys.map((k) => process.env[k]);
+  for (const k of keys) delete process.env[k];
+  try {
+    const c = await newSession({ sessionName: "base", windowName: "w", cmd: ["sleep", "30"], env: {}, socket: sock });
+    expect(c.session).toBe("base");
+    const w = await newWindow({ sessionName: "base", windowName: "x", cmd: ["sleep", "30"], env: {}, detach: true, socket: sock });
+    expect(w.window).toMatch(/^@\d+$/);
+    expect(await resolvePaneCoords(w.pane, undefined, sock)).toMatchObject({ session: "base", window: w.window });
+  } finally {
+    keys.forEach((k, i) => { if (saved[i] !== undefined) process.env[k] = saved[i]; });
+    await tmuxOn(sock, ["kill-server"]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// `new-session -e` would set the SESSION environment: every later window in it
+// (a shell the user opens, an agent started by hand) inherited the agent's
+// AGMUX_LAUNCH / AGMUX_SESSION_ID. The env belongs to the placed command only.
+test("newSession gives its env to the placed command, not to the session", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-env-"));
+  const sock = path.join(dir, "s");
+  const out = (name: string) => path.join(dir, name);
+  const show = (file: string) => ["sh", "-c", `printf '%s' "$AGMUX_X" > ${file}; sleep 30`];
+  try {
+    await newSession({ sessionName: "base", windowName: "w", cmd: show(out("first")), env: { AGMUX_X: "a b; $HOME" }, socket: sock });
+    await tmuxOn(sock, ["new-window", "-d", "-t", "base:", "--", ...show(out("later"))]);
+    expect(await waitFor(async () => fs.existsSync(out("first")) && fs.existsSync(out("later")))).toBe(true);
+    expect(fs.readFileSync(out("first"), "utf8")).toBe("a b; $HOME");
+    expect(fs.readFileSync(out("later"), "utf8")).toBe("");
   } finally {
     await tmuxOn(sock, ["kill-server"]);
     fs.rmSync(dir, { recursive: true, force: true });

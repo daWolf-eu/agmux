@@ -11,6 +11,9 @@ import { $ } from "bun";
 import { tmuxSocketFromEnv, tmuxSocketArgs, TMUX_SERVER_ID_FMT, isTmuxServerId } from "@agmux/protocol";
 
 const COORDS_FMT = "#{session_name}\t#{window_id}\t#{pane_id}";
+// Every call that parses a tab-separated format runs `tmux -u`: a client outside
+// tmux without a UTF-8 locale (a sandbox `exec` may set none) prints tabs as "_".
+const UTF8 = "-u";
 
 export interface PaneCoords { session: string; window: string; pane: string; socket: string | null; }
 
@@ -47,7 +50,7 @@ export function holdOnFailure(cmd: string[]): string[] {
 export async function readCurrentPane(): Promise<PaneCoords | null> {
   if (!process.env.TMUX) return null;
   const socket = tmuxSocketFromEnv(process.env.TMUX);
-  const out = (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${COORDS_FMT}`.text()).trim();
+  const out = (await $`tmux ${UTF8} ${tmuxSocketArgs(socket)} display-message -p ${COORDS_FMT}`.text()).trim();
   return { ...parseCoords(out), socket };
 }
 
@@ -73,7 +76,7 @@ export async function splitPane(args: {
   const detachFlag = args.detach ? ["-d"] : [];
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
+    await $`tmux ${UTF8} ${tmuxSocketArgs(args.socket)} split-window -t ${args.targetPane} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
 }
@@ -96,9 +99,18 @@ export async function newWindow(args: {
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const target = `${args.sessionName}:`;
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
+    await $`tmux ${UTF8} ${tmuxSocketArgs(args.socket)} new-window -t ${target} -n ${args.windowName} ${detachFlag} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
+}
+
+// `new-session -e` sets the SESSION environment, which every later window in it
+// inherits (a shell the user opens there, an agent started by hand would carry
+// this agent's AGMUX_LAUNCH / AGMUX_SESSION_ID). The placed command alone gets
+// the env, through env(1) ahead of the hold wrapper.
+function withEnv(env: Record<string, string>, cmd: string[]): string[] {
+  const assignments = Object.entries(env).map(([k, v]) => `${k}=${v}`);
+  return assignments.length === 0 ? cmd : ["env", ...assignments, ...cmd];
 }
 
 export async function newSession(args: {
@@ -115,7 +127,7 @@ export async function newSession(args: {
   // `tmux new-session -d` returns coords via -P -F just like new-window.
   const cwdFlag = args.cwd ? ["-c", args.cwd] : [];
   const out = (
-    await $`tmux ${tmuxSocketArgs(args.socket)} new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} ${eFlags(args.env)} -P -F ${COORDS_FMT} -- ${holdOnFailure(args.cmd)}`.text()
+    await $`tmux ${UTF8} ${tmuxSocketArgs(args.socket)} new-session -d -s ${args.sessionName} -n ${args.windowName} ${cwdFlag} -P -F ${COORDS_FMT} -- ${withEnv(args.env, holdOnFailure(args.cmd))}`.text()
   );
   return { ...parseCoords(out), socket: args.socket ?? null };
 }
@@ -161,7 +173,7 @@ export async function resolvePaneCoords(
   socket: string | null = null,
 ): Promise<{ session: string; window: string; server: string | null } | null> {
   try {
-    const out = await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", paneId, `#{session_name}\t#{window_id}\t${TMUX_SERVER_ID_FMT}`]);
+    const out = await exec([UTF8, ...tmuxSocketArgs(socket), "display-message", "-p", "-t", paneId, `#{session_name}\t#{window_id}\t${TMUX_SERVER_ID_FMT}`]);
     const parts = out.trim().split("\t");
     const session = parts[0];
     const window = parts[1];
