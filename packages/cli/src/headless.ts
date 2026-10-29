@@ -4,6 +4,7 @@ import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_PROFILE_ENV, resolveHost
 import {
   HubClient, mintSessionId, buildStartedEvent, buildEndedEvent, type ProfileConfig,
 } from "@agmux/wrapper";
+import type { ParsedRun } from "./parse-run.ts";
 
 // A headless run inherits the caller's environment, which — when the caller sits
 // inside tmux — carries $TMUX and $TMUX_PANE pointing at THEIR pane. The agent's
@@ -19,6 +20,18 @@ export function scrubTmuxEnv(base: Record<string, string | undefined>): Record<s
     out[k] = v;
   }
   return out;
+}
+
+// The profile a headless run plans off: -p loads it (load throws on a missing
+// or invalid one), an inline command synthesizes one. --cwd overrides its cwd.
+export function headlessProfile(
+  parsed: Extract<ParsedRun, { kind: "profile" | "inline" }>, load: (name: string) => ProfileConfig,
+): { profile: ProfileConfig; profileName: string | null } {
+  const base: ProfileConfig = parsed.kind === "profile"
+    ? load(parsed.profileName)
+    : { agent_kind: parsed.agent_kind, command: parsed.command, args: parsed.args, env: {} };
+  const profile = parsed.cwd !== undefined ? { ...base, cwd: parsed.cwd } : base;
+  return { profile, profileName: parsed.kind === "profile" ? parsed.profileName : null };
 }
 
 export interface HeadlessOpts {
