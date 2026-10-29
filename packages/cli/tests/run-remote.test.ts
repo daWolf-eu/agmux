@@ -51,6 +51,9 @@ interface SetupOpts {
   hostVersion?: string | null;
   exec?: { code: number; stdout: string; stderr: string };
   headlessCode?: number;
+  headlessStderr?: string;
+  kickStatus?: number;
+  oldHub?: boolean;
   // /sessions responses, one per poll (the last one repeats).
   polls?: SessionRow[][];
   env?: Record<string, string | undefined>;
@@ -76,7 +79,11 @@ function setup(o: SetupOpts = {}) {
         const hosts = o.hostVersion === undefined ? [] : [{ host: HOST, agmux_version: o.hostVersion }];
         return Response.json({ hosts, remotes: [] });
       }
-      if (u.includes("/sync")) return new Response(null, { status: 204 });
+      if (u.includes("/sync")) {
+        const status = o.kickStatus ?? 204;
+        // The hub's kick endpoint answers an unknown host with JSON; a hub without the endpoint with text.
+        return status === 204 ? new Response(null, { status }) : status === 404 && !o.oldHub ? Response.json({ error: "not_found" }, { status }) : new Response("not found", { status });
+      }
       if (u.includes("/sessions")) {
         const sessions = polls[Math.min(poll, polls.length - 1)];
         poll++;
@@ -92,7 +99,7 @@ function setup(o: SetupOpts = {}) {
       calls.push("exec"); execs.push(argv);
       return o.exec ?? { code: 0, stdout: `${JSON.stringify({ remote_tmux: PRINTED })}\n`, stderr: "" };
     },
-    execInherit: async (argv) => { calls.push("execInherit"); inherits.push(argv); return o.headlessCode ?? 0; },
+    execInherit: async (argv) => { calls.push("execInherit"); inherits.push(argv); return { code: o.headlessCode ?? 0, stderr: o.headlessStderr ?? "" }; },
     attachRemote: async (r, req) => { calls.push("attach"); attaches.push({ row: r, req }); return null; },
     runHandoff: async () => 0,
     now: () => t,
@@ -218,12 +225,39 @@ describe("runRemote", () => {
     expect(s.err[0]).toMatch(/new pane: not in tmux/);
   });
 
-  test("-d prints where it started and never polls or attaches", async () => {
+  test("-d prints where it started, kicks the follower, never polls or attaches", async () => {
     const s = setup();
     expect(await s.run(["-d"])).toBe(0);
     expect(s.out).toEqual(["agmux: started on gw/wi-1 (agmux:@3)"]);
-    expect(s.calls.some((c) => c.includes("/sessions") || c.includes("/sync"))).toBe(false);
+    expect(s.calls.filter((c) => c.includes("/sync"))).toEqual([`POST /hosts/${encodeURIComponent(HOST)}/sync`]);
+    expect(s.calls.some((c) => c.includes("/sessions"))).toBe(false);
     expect(s.attaches).toEqual([]);
+  });
+
+  test("-d ignores a kick the hub does not know (404)", async () => {
+    const s = setup({ kickStatus: 404 });
+    expect(await s.run(["-d"])).toBe(0);
+    expect(s.err).toEqual([]);
+  });
+
+  test("a host the hub does not follow (kick 404) fails fast instead of waiting", async () => {
+    const s = setup({ kickStatus: 404 });
+    expect(await s.run([])).toBe(1);
+    expect(s.err).toEqual(["agmux run: started, but gw/wi-1 is not followed by the hub (check [[remote]] selector / sandbox label)"]);
+    expect(s.calls.some((c) => c.includes("/sessions"))).toBe(false);
+    expect(s.attaches).toEqual([]);
+  });
+
+  test("a hub without the kick endpoint (plain 404, not restarted) still waits for the row", async () => {
+    const s = setup({ kickStatus: 404, oldHub: true });
+    expect(await s.run([])).toBe(0);
+    expect(s.attaches).toHaveLength(1);
+  });
+
+  test("a kick the hub cannot answer (5xx / down) still waits for the row", async () => {
+    const s = setup({ kickStatus: 500 });
+    expect(await s.run([])).toBe(0);
+    expect(s.attaches).toHaveLength(1);
   });
 
   test("timeout: started, but not replicated → exit 1 with the ls hint", async () => {
@@ -240,11 +274,13 @@ describe("runRemote", () => {
     expect(s.calls).not.toContain("exec");
   });
 
-  test("a bad sandbox name is refused before any exec", async () => {
-    const s = setup();
-    const p = { ...parsed([]), remote: { name: "ai-sandbox", sandbox: "x;rm -rf /" } };
-    expect(await runRemote({ parsed: p, hubUrl: "http://hub", env: {}, settings: SETTINGS }, s.deps)).toBe(2);
-    expect(s.calls).toEqual([]);
+  test("a bad sandbox name (incl. a leading -) is refused before any exec", async () => {
+    for (const sandbox of ["x;rm -rf /", "-n"]) {
+      const s = setup();
+      const p = { ...parsed([]), remote: { name: "ai-sandbox", sandbox } };
+      expect(await runRemote({ parsed: p, hubUrl: "http://hub", env: {}, settings: SETTINGS }, s.deps)).toBe(2);
+      expect(s.calls).toEqual([]);
+    }
   });
 
   test("missing sandbox → exit 2", async () => {
@@ -254,17 +290,23 @@ describe("runRemote", () => {
     expect(s.calls).not.toContain("exec");
   });
 
-  test("a stopped sandbox is started before the exec", async () => {
-    const s = setup({ status: { state: "stopped" } });
+  test("a stopped sandbox is started after the version check, before the exec", async () => {
+    const s = setup({ status: { state: "stopped" }, hostVersion: AGMUX_VERSION });
     expect(await s.run([])).toBe(0);
-    expect(s.calls.indexOf("start")).toBeLessThan(s.calls.indexOf("exec"));
+    expect(s.calls.slice(0, 4)).toEqual(["status", "GET /hosts", "start", "exec"]);
   });
 
-  test("host row on another agmux version → restage message, no exec", async () => {
+  test("host row on another agmux version → restage message naming both versions, no exec", async () => {
     const s = setup({ hostVersion: "0.0.1" });
     expect(await s.run([])).toBe(2);
-    expect(s.err).toEqual(["gw/wi-1 runs an older agmux; restage the image (stage-agmux)"]);
+    expect(s.err).toEqual([`gw/wi-1 runs a different agmux version (0.0.1 vs ${AGMUX_VERSION}); restage the image (stage-agmux)`]);
     expect(s.calls).not.toContain("exec");
+  });
+
+  test("a refused version never leaves a stopped sandbox started", async () => {
+    const s = setup({ status: { state: "stopped" }, hostVersion: "0.0.1" });
+    expect(await s.run([])).toBe(2);
+    expect(s.calls).toEqual(["status", "GET /hosts"]);
   });
 
   test("host row on this version proceeds", async () => {
@@ -312,6 +354,12 @@ describe("runRemote", () => {
     expect(await s.run([])).toBe(1);
     expect(s.err).toEqual(["agmux run: gw/wi-1 printed no coordinates: warn: x"]);
     expect(s.calls).not.toContain("attach");
+  });
+
+  test("headless on an old sandbox agmux (no --cwd) → restage message after its own output", async () => {
+    const s = setup({ headlessCode: 2, headlessStderr: "agmux run: cannot infer agent_kind from '--cwd'. Use --kind=claude, --kind=codex, or --kind=pi.\n" });
+    expect(await s.run(["--headless", "--prompt", "hi"], "hi")).toBe(2);
+    expect(s.err).toEqual(["gw/wi-1 runs an older agmux; restage the image (stage-agmux)"]);
   });
 
   test("headless: inherited output, exit code passed through, no wait or attach", async () => {

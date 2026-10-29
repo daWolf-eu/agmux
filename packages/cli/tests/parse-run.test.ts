@@ -271,7 +271,9 @@ test("--remote / --sandbox names outside [A-Za-z0-9._-] are rejected", () => {
     expect(r.kind).toBe("error");
   }
   expect(parseRunArgs(["--remote", "a;b", "--sandbox", "wi-1"])).toEqual({ kind: "error", message: "--remote must match [A-Za-z0-9._-]+" });
-  expect(parseRunArgs(["--remote", "r", "--sandbox", "a b"])).toEqual({ kind: "error", message: "--sandbox must match [A-Za-z0-9._-]{1,64}" });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "a b"])).toEqual({ kind: "error", message: '--sandbox must match [A-Za-z0-9._-]{1,64} and not start with "-"' });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "-n"])).toEqual({ kind: "error", message: '--sandbox must match [A-Za-z0-9._-]{1,64} and not start with "-"' });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", ".x_1-"]).kind).toBe("remote-default");
   expect(parseRunArgs(["--remote", "r", "--sandbox", "x".repeat(64)]).kind).toBe("remote-default");
 });
 

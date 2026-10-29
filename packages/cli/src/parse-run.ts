@@ -40,8 +40,11 @@ export type ParsedRun =
   | { kind: "error"; message: string };
 
 // Remote names follow [[remote]] name; sandbox names are openshell's (bounded).
+// A sandbox name never starts with "-": openshell could parse it as a flag.
+// Shared by every place a sandbox name reaches an argv (run-remote, resume-remote).
 const REMOTE_NAME_RE = /^[A-Za-z0-9._-]+$/;
-const SANDBOX_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
+export const SANDBOX_NAME_RE = /^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/;
+export const SANDBOX_NAME_RULE = '[A-Za-z0-9._-]{1,64} and not start with "-"';
 
 function parseKind(v: string): RunKind | null {
   return v === "claude" || v === "codex" || v === "pi" ? v : null;
@@ -94,7 +97,7 @@ export function parseRunArgs(argv: string[]): ParsedRun {
       const v = argv[i + 1];
       if (!v) return { kind: "error", message: `${a} requires a value` };
       if (!(a === "--remote" ? REMOTE_NAME_RE : SANDBOX_NAME_RE).test(v)) {
-        return { kind: "error", message: `${a} must match ${a === "--remote" ? "[A-Za-z0-9._-]+" : "[A-Za-z0-9._-]{1,64}"}` };
+        return { kind: "error", message: `${a} must match ${a === "--remote" ? "[A-Za-z0-9._-]+" : SANDBOX_NAME_RULE}` };
       }
       if (a === "--remote") remoteName = v; else sandbox = v;
       i += 2;
