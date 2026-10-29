@@ -34,17 +34,15 @@ export async function attachPlacedCmd(opts: AttachPlacedOpts, deps: AttachPlaced
   const { session } = (await (await fetch(`${opts.hubUrl}/sessions/${res.id}`)).json()) as { session: SessionRow };
 
   const kind = attachKind(session);
-  // A closed remote row goes to resume, which refuses it with the manual command.
+  // A closed remote row goes to resume, which resumes it in its sandbox.
   const remoteClosed = !!session.remote && kind === "none";
   if (kind === "none" && !remoteClosed) { err("attach: session has no tmux pane"); return 1; }
 
   // Same bookkeeping as plain `agmux attach`: opening a session marks it seen.
-  if (!remoteClosed) {
-    void postSeen(session.session_id, "attach", {
-      hubUrl: opts.hubUrl, host: seenHost(session),
-      fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
-    }).catch(() => {});
-  }
+  void postSeen(session.session_id, "attach", {
+    hubUrl: opts.hubUrl, host: seenHost(session),
+    fetchImpl: fetch, now: () => new Date().toISOString(), newId: () => crypto.randomUUID(),
+  }).catch(() => {});
 
   const actions = (deps.makeActionsImpl ?? makeActions)(opts.hubUrl, opts.wrapBin, false, undefined, opts.settings);
   const req = opts.mode ? { placement: opts.placement, mode: opts.mode } : { placement: opts.placement };

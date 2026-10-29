@@ -34,6 +34,15 @@ export function loadAttachSettings(configPath: string): AttachSettings {
   return attachSettingsFrom(loadAttachConfig(configPath), bin);
 }
 
+// A broken config warns and falls back to the defaults (remote rows only read it).
+export function settingsOrDefaults(load: (() => AttachSettings) | undefined): AttachSettings {
+  if (!load) return DEFAULT_ATTACH_SETTINGS;
+  try { return load(); } catch (e) {
+    console.error(`agmux: config ignored, using attach defaults: ${e instanceof Error ? e.message : String(e)}`);
+    return DEFAULT_ATTACH_SETTINGS;
+  }
+}
+
 export function attachCtxFor(s: AttachSettings, env: Record<string, string | undefined>, popup: boolean): AttachCtx {
   return { inTmux: !!env.TMUX, popup, terminalWindow: !!s.terminal.newWindow, terminalTab: !!s.terminal.newTab };
 }

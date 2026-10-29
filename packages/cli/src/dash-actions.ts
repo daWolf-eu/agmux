@@ -13,9 +13,8 @@ import { remoteRefusal } from "./remote-guard.ts";
 import {
   DEFAULT_ATTACH_SETTINGS, attachCtxFor, expandTemplate, resumeSessionName, withoutTmuxEnv, type AttachSettings,
 } from "./attach-place.ts";
-import {
-  attachRemote, defaultAttachRemoteDeps, defaultRemotes, remoteResumeRefusal, spawnDetachedDefault,
-} from "./attach-remote.ts";
+import { attachRemote, defaultAttachRemoteDeps, defaultRemotes, spawnDetachedDefault } from "./attach-remote.ts";
+import { defaultResumeRemoteDeps, resumeRemote, type ResumeRemoteDeps } from "./resume-remote.ts";
 import type { RemoteConfig } from "@agmux/hub";
 
 // Resume-placement helpers live in ./resume-place.ts so both dash and the plain
@@ -47,8 +46,10 @@ export interface ActionDeps {
   splitPane?: typeof splitPane;
   // `tmux list-panes -a` in REMOTE_PANES_FMT (remote attach dedup).
   listPanes?: () => Promise<string>;
-  // [[remote]] entries (the sandbox agmux_bin for the manual resume hint).
+  // [[remote]] entries (the sandbox agmux_bin and fallback launch of a remote resume).
   remotes?: () => RemoteConfig[];
+  // Remote resume: sandbox IO over the defaults (tests).
+  resumeRemote?: Partial<ResumeRemoteDeps>;
 }
 
 const defaultActionDeps: ActionDeps = {
@@ -78,9 +79,12 @@ export function makeActions(
     splitPane: split, newWindow: placement.newWindow, newSession: placement.newSession,
     switchClient: placement.switchClient, spawnDetached,
   };
-  const remoteResume = async (row: SessionRow): Promise<never> => {
-    throw new Error(await remoteResumeRefusal(row, { hubUrl, fetchImpl: fetch, remotes: deps.remotes ?? defaultRemotes }));
-  };
+  // A closed remote row resumes in its sandbox, then opens like a live one.
+  const remoteResume = (row: SessionRow, req: AttachRequest | undefined): Promise<Handoff | null> =>
+    resumeRemote(row, req, { ctx, settings, hubUrl, remotes: deps.remotes ?? defaultRemotes }, {
+      ...defaultResumeRemoteDeps, fetchImpl: fetch,
+      attachRemote: (r, q, e) => attachRemote(r, q, e, remoteDeps), ...deps.resumeRemote,
+    });
 
   function openTerminal(where: "new-tab" | "new-terminal", row: SessionRow): Handoff | null {
     const tpl = where === "new-tab" ? settings.terminal.newTab : settings.terminal.newWindow;
@@ -91,7 +95,7 @@ export function makeActions(
   }
 
   async function resume(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
-    if (row.remote) return remoteResume(row);
+    if (row.remote) return remoteResume(row, req);
     const where = resolvePlacement("closed", ctx, req?.placement, settings.defaults);
     if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
     const r = await fetch(`${hubUrl}/sessions/${row.session_id}`);
@@ -126,9 +130,9 @@ export function makeActions(
 
   return {
     async attach(row: SessionRow, req?: AttachRequest): Promise<Handoff | null> {
-      // A live remote row opens through the sandbox; a closed one cannot be resumed here.
+      // A live remote row opens through the sandbox; a closed one is resumed there first.
       if (row.remote) {
-        return attachKind(row) === "remote" ? attachRemote(row, req, { ctx, settings }, remoteDeps) : remoteResume(row);
+        return attachKind(row) === "remote" ? attachRemote(row, req, { ctx, settings }, remoteDeps) : remoteResume(row, req);
       }
       // No tmux target to focus → nothing to attach to (unchanged no-op).
       if (attachKind(row) !== "live") return null;

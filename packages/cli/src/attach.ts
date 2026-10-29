@@ -10,8 +10,11 @@ import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 import { postSeen, seenHost } from "./seen.ts";
 import type { RemoteConfig } from "@agmux/hub";
 import { attachKind, resolvePlacement } from "@agmux/tui";
-import { attachCtxFor, DEFAULT_ATTACH_SETTINGS, type AttachSettings } from "./attach-place.ts";
-import { attachRemote, defaultAttachRemoteDeps, defaultRemotes, remoteResumeRefusal } from "./attach-remote.ts";
+import { attachCtxFor, settingsOrDefaults, type AttachSettings } from "./attach-place.ts";
+import { attachRemote, defaultAttachRemoteDeps, defaultRemotes } from "./attach-remote.ts";
+import { defaultResumeRemoteDeps, resumeRemote, type ResumeRemoteDeps } from "./resume-remote.ts";
+
+export { settingsOrDefaults } from "./attach-place.ts";
 
 export interface AttachOpts {
   idOrPrefix: string; hubUrl: string; wrapBin: string; registry?: Registry;
@@ -21,6 +24,7 @@ export interface AttachOpts {
   loadSettings?: () => AttachSettings;
   mode?: RemoteAttachMode;   // --mode: overrides the remote mode default
   remotes?: () => RemoteConfig[]; // [[remote]] entries; default: config.toml
+  resumeRemote?: Partial<ResumeRemoteDeps>; // closed remote row: sandbox IO (tests)
 }
 
 export interface AttachCoords { tmux_session: string; tmux_window: string; tmux_pane: string | null; tmux_socket: string | null; }
@@ -76,12 +80,6 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     session: SessionRow;
     usage: { turn_count: number } | null;
   };
-
-  // A closed remote session cannot be resumed from here; say how to do it by hand.
-  if (session.remote && attachKind(session) !== "remote") {
-    console.error(await remoteResumeRefusal(session, { hubUrl: opts.hubUrl, fetchImpl: fetch, remotes: opts.remotes ?? defaultRemotes }));
-    return 2;
-  }
 
   const inTmux = !!process.env.TMUX;
 
@@ -147,27 +145,25 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
   return child.exitCode ?? 0;
 }
 
-export function settingsOrDefaults(load: (() => AttachSettings) | undefined): AttachSettings {
-  if (!load) return DEFAULT_ATTACH_SETTINGS;
-  try { return load(); } catch (e) {
-    console.error(`agmux: config ignored, using attach defaults: ${e instanceof Error ? e.message : String(e)}`);
-    return DEFAULT_ATTACH_SETTINGS;
-  }
-}
-
-// A live remote row: the [attach.remote] default placement, then the pane
-// process in the foreground when it runs here (inline).
+// A remote row: the [attach.remote] default placement, then the pane process
+// in the foreground when it runs here (inline). A closed one is resumed in its
+// sandbox first; its errors carry their own prefix.
 async function attachRemoteCmd(session: SessionRow, opts: AttachOpts): Promise<number> {
   const settings = opts.settings ?? settingsOrDefaults(opts.loadSettings);
   const ctx = attachCtxFor(settings, process.env, false);
+  const live = attachKind(session) === "remote";
   let h;
   try {
     const req = opts.mode
       ? { placement: resolvePlacement("remote", ctx, undefined, { remote: settings.remote.placement }), mode: opts.mode }
       : undefined;
-    h = await attachRemote(session, req, { ctx, settings }, defaultAttachRemoteDeps);
+    h = live
+      ? await attachRemote(session, req, { ctx, settings }, defaultAttachRemoteDeps)
+      : await resumeRemote(session, req, { ctx, settings, hubUrl: opts.hubUrl, remotes: opts.remotes ?? defaultRemotes },
+        { ...defaultResumeRemoteDeps, fetchImpl: fetch, ...opts.resumeRemote });
   } catch (e) {
-    console.error(`attach: ${e instanceof Error ? e.message : String(e)}`);
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(live ? `attach: ${msg}` : msg);
     return 2;
   }
   if (!h || h.argv.length === 0) return 0;
