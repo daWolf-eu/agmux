@@ -204,10 +204,6 @@ export async function runRemote(o: RunRemoteOpts, deps: RunRemoteDeps): Promise<
     plan = { req, env: { ctx, settings } };
   }
 
-  const host = `${remote.gateway}/${sandbox}`;
-  const version = await hostVersion(o, deps, host);
-  if (version !== null && version !== AGMUX_VERSION) { deps.err(oldAgmux(host)); return 2; }
-
   const spec = openshellTransport(remote).spec(sandbox);
   const status = await deps.control.status(spec);
   if (status.state === "missing") {
@@ -220,6 +216,11 @@ export async function runRemote(o: RunRemoteOpts, deps: RunRemoteDeps): Promise<
     catch (e) { deps.err(`agmux run: cannot start sandbox ${sandbox}: ${sanitizeRemoteText(message(e))}`); return 1; }
   }
 
+  // After status: a deleted sandbox's stale host row must not report a version skew.
+  const host = `${remote.gateway}/${sandbox}`;
+  const version = await hostVersion(o, deps, host);
+  if (version !== null && version !== AGMUX_VERSION) { deps.err(oldAgmux(host)); return 2; }
+
   const cmd = sandboxRunArgv(remote, launch, { cwd: parsed.cwd ?? null, prompt: o.prompt, headless });
   const argv = transportArgv(spec, cmd, { tty: false });
   if (headless) return deps.execInherit(argv);
@@ -227,8 +228,8 @@ export async function runRemote(o: RunRemoteOpts, deps: RunRemoteDeps): Promise<
   const res = await deps.exec(argv);
   const stderr = sanitizeRemoteText(res.stderr);
   if (res.code !== 0) {
-    // An agmux without the remote-run flags reports them as an unknown command.
-    if (res.code === 2 && /--direct|--print-coords/.test(res.stderr)) { deps.err(oldAgmux(host)); return 2; }
+    // An agmux without the remote-run flags takes the first one for the command.
+    if (res.code === 2 && /cannot infer agent_kind from '--(direct|print-coords)'/.test(res.stderr)) { deps.err(oldAgmux(host)); return 2; }
     deps.err(`agmux run: ${host}: ${stderr || `exited ${res.code}`}`);
     return res.code;
   }

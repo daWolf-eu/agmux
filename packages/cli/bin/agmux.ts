@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { AGMUX_STATE_DIR_DEFAULT, AGMUX_CONFIG_SUBPATH, ATTACH_PLACEMENTS, isAttachPlacement, isRemoteAttachMode, isTmuxKeyName, resolveHost, type RemoteAttachMode } from "@agmux/protocol";
 import { ensureHubRunning } from "../src/hub-spawn.ts";
 import { runCmd } from "../src/run.ts";
-import { runHeadless } from "../src/headless.ts";
+import { headlessProfile, runHeadless } from "../src/headless.ts";
 import { parseRunArgs } from "../src/parse-run.ts";
 import { defaultRunRemoteDeps, isRemoteRun, runRemote } from "../src/run-remote.ts";
 import { lsCmd } from "../src/ls.ts";
@@ -41,7 +41,7 @@ import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
 import { adapterReadyOrHint } from "../src/adapter-ready.ts";
-import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig, type ProfileConfig } from "@agmux/wrapper";
+import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig } from "@agmux/wrapper";
 import { parseLsArgs } from "../src/parse-ls.ts";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -289,19 +289,10 @@ async function main(): Promise<number> {
       // directly, stream its stdout, exit with its code. Needs a concrete profile
       // (inline mode synthesizes one) because the adapter plans off command+args.
       if (parsed.placement === "headless") {
-        let profile: ProfileConfig;
-        let profileName: string | null;
-        if (parsed.kind === "profile") {
-          try { profile = loadProfile(parsed.profileName, configPath); }
-          catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
-          profileName = parsed.profileName;
-        } else {
-          profile = {
-            agent_kind: parsed.agent_kind, command: parsed.command,
-            args: parsed.args, env: {},
-          };
-          profileName = null;
-        }
+        let hp: ReturnType<typeof headlessProfile>;
+        try { hp = headlessProfile(parsed, (name) => loadProfile(name, configPath)); }
+        catch (e) { console.error(e instanceof Error ? e.message : String(e)); return 2; }
+        const { profile, profileName } = hp;
         const res = await runHeadless({
           profile, profileName, prompt: prompt!, hubUrl, stateDir, registry,
         });

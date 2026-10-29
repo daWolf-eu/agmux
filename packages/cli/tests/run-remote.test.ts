@@ -277,6 +277,30 @@ describe("runRemote", () => {
     expect(s.err).toEqual(["gw/wi-1 runs an older agmux; restage the image (stage-agmux)"]);
   });
 
+  test("a current sandbox's --direct failure (e.g. unknown -p) is a plain failure, not restage", async () => {
+    const s = setup({ exec: { code: 2, stdout: "", stderr: "agmux run --direct: no adapter for this agent; cannot launch direct\n" } });
+    expect(await s.run(["-p", "typo"])).toBe(2);
+    expect(s.err).toEqual(["agmux run: gw/wi-1: agmux run --direct: no adapter for this agent; cannot launch direct"]);
+  });
+
+  test("old sandbox agmux rejecting --print-coords → restage message", async () => {
+    const s = setup({ exec: { code: 2, stdout: "", stderr: "agmux run: cannot infer agent_kind from '--print-coords'. Use --kind=claude." } });
+    expect(await s.run([])).toBe(2);
+    expect(s.err).toEqual(["gw/wi-1 runs an older agmux; restage the image (stage-agmux)"]);
+  });
+
+  test("a missing sandbox with a stale host row of another version reports not found", async () => {
+    const s = setup({ status: { state: "missing", detail: "" }, hostVersion: "0.0.1" });
+    expect(await s.run([])).toBe(2);
+    expect(s.err).toEqual(["agmux run: sandbox wi-1 not found on remote ai-sandbox (gateway gw)"]);
+  });
+
+  test("sandbox status comes before the version check", async () => {
+    const s = setup({ hostVersion: AGMUX_VERSION });
+    await s.run([]);
+    expect(s.calls.indexOf("status")).toBeLessThan(s.calls.indexOf("GET /hosts"));
+  });
+
   test("a failing sandbox run passes its exit code and stderr", async () => {
     const s = setup({ exec: { code: 2, stdout: "", stderr: "no adapter\n" } });
     expect(await s.run([])).toBe(2);

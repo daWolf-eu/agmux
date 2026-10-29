@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { scrubTmuxEnv, planFor } from "../src/headless.ts";
+import { scrubTmuxEnv, planFor, headlessProfile } from "../src/headless.ts";
+import { parseRunArgs } from "../src/parse-run.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 
 const registry = createDefaultRegistry();
@@ -53,4 +54,21 @@ test("plan carries cwd and env through", () => {
   const plan = planFor({ ...base, profile: profile("claude") }, "/w", { FOO: "bar" });
   expect(plan.cwd).toBe("/w");
   expect(plan.env).toEqual({ FOO: "bar" });
+});
+
+test("headlessProfile: --cwd sets the cwd of an inline headless run", () => {
+  const p = parseRunArgs(["--headless", "--prompt", "x", "--cwd", "/sandbox/work", "--", "claude", "--y"]);
+  if (p.kind !== "inline") throw new Error(p.kind);
+  expect(headlessProfile(p, () => { throw new Error("no load"); })).toEqual({
+    profile: { agent_kind: "claude", command: "claude", args: ["--y"], env: {}, cwd: "/sandbox/work" }, profileName: null,
+  });
+});
+
+test("headlessProfile: --cwd overrides a loaded profile's cwd; without it the profile's stays", () => {
+  const load = (name: string) => ({ ...profile("codex"), cwd: `/from/${name}` });
+  const withCwd = parseRunArgs(["--headless", "--prompt", "x", "--cwd", "/o", "-p", "work"]);
+  const without = parseRunArgs(["--headless", "--prompt", "x", "-p", "work"]);
+  if (withCwd.kind !== "profile" || without.kind !== "profile") throw new Error("parse");
+  expect(headlessProfile(withCwd, load)).toEqual({ profile: { ...profile("codex"), cwd: "/o" }, profileName: "work" });
+  expect(headlessProfile(without, load).profile.cwd).toBe("/from/work");
 });
