@@ -1,7 +1,7 @@
 # Remote Sandbox Control — Design (Phase 3)
 
 **Date:** 2026-10-28
-**Status:** draft
+**Status:** implemented (2026-10-29); see [Implementation notes](#implementation-notes)
 **Builds on:** [`2026-10-08-remote-sandbox-sessions-design.md`](2026-10-08-remote-sandbox-sessions-design.md)
 (Phase 1 visibility, Phase 2 attach — both built; its §10 "Phase 3 — control" is this spec),
 foundation §7 (remote attach), §14 (standing principles).
@@ -327,3 +327,61 @@ rejecting an unknown flag must surface on the Mac as
   prompts), resume after sandbox stop/start.
 - Mechanisms documented in `packages/cli/AGENTS.md` / `packages/hub/AGENTS.md`; Phase 3
   implementation notes appended here; the remote-sandbox spec's §10 points to this doc.
+
+## Implementation notes
+
+Refinements made while implementing; the code is authoritative (`cli/src/run-remote.ts`,
+`resume-remote.ts`, `resume-nearest.ts`, `run.ts`, `emit.ts`; `hub/src/sync/sandbox-control.ts`).
+
+1. **Coords only, no session id (deviates from §5.1.1).** A direct-launched agent's
+   `session_id` is minted by the hub when its hook registers, so there is nothing to print
+   up front. `agmux run --direct --print-coords` prints one line
+   `{"remote_tmux":{"session","window","pane","socket","server"}}` (`PrintedCoords`). The Mac
+   waits (15 s, 500 ms poll) for a row on that host with the printed `pane` and `window`, and
+   the printed `server` only when it is non-null (`matchesPrinted`). The recorded launch is
+   not a pre-posted started event (§5.1.2) but `AGMUX_LAUNCH` (below), recorded at
+   registration.
+2. **Resume without a native id or with zero turns** relaunches fresh, and the fresh agent
+   registers under a NEW session id (the old row stays closed). So the resume wait also
+   matches coords (plus "live remote row"), not the session id.
+3. **Fallback launch** for a row without a recorded launch (agent started by hand): from
+   `[[remote]]` = `{profile, command: command ?? kind ?? row.agent_kind, args}`, passed as
+   `attach <id> --resume-nearest --print-coords --fallback-launch <json>`. No launch keys on
+   the remote → no `--fallback-launch`; the row is relaunched as recorded.
+4. **Recorded launch:** `AGMUX_LAUNCH` (`{profile, command, args}` JSON, `parseLaunchSpec`) is
+   set on every direct start and direct relaunch; `emit` copies it onto
+   `session.registered`. The projection takes command/args from a registration only while the
+   row still has the hook default (`command = agent_kind`, `args = []`).
+5. **tmux server identity:** `TMUX_SERVER_ID_FMT = "#{pid}-#{start_time}"` (protocol
+   `attach.ts`), shared by `emit` (registration; falls back to `$TMUX`'s pid), `run
+   --print-coords`, `--resume-nearest` and the Phase 2 view/full scripts (exit 3 on a
+   mismatch). Rows without it are "unknown": attach as before, nearest-resume skips the split.
+6. **Restage detection:** the real guard is the version check against
+   `HostRow.agmux_version` before any exec (after the status check, so a deleted sandbox's
+   stale host row doesn't report skew). Behind it: an old `run` parser fails with
+   `cannot infer agent_kind from '--direct'|'--print-coords'` (exit 2) → restage message. An
+   old sandbox `attach` ignores unknown flags (exit 0, no coords line) → restage message, best
+   effort only (that old attach has relaunched the agent the old way). A headless run of an
+   old agmux streams its output and is caught only by the version check.
+7. `--cwd` is a general `run` flag, headless included; for a remote run it is a sandbox path
+   and wins over `[[remote]] workdir`.
+8. **Found by the e2e:** a `sandbox exec` client has no UTF-8 locale (Phase 2 already runs
+   `tmux -u` for that), and tmux then prints a tab in a format as `_`: every placement call
+   that parses tab-separated coords now runs `tmux -u`. And `new-session -e` sets the session
+   environment, so a window opened later in the sandbox's `agmux` session (a shell, an agent
+   started by hand) inherited the first agent's `AGMUX_LAUNCH`; `newSession` now hands the env
+   to the placed command only (`env K=V … cmd`). Both in `cli/src/tmux-place.ts`, local
+   placement included.
+9. **Known limits:**
+   - A live-but-stale remote row (§5.2.3) now fails cleanly through the server check (exit 3)
+     but is not auto-resumed. claude has no end hook wired, so after `/exit` the row reads live
+     until the sandbox hub's pid sweep (≤ 30 s) has replicated; resume works after that.
+   - A kick during an in-flight follower connect is dropped; if that attempt fails the follower
+     backs off as usual.
+   - Prompts with newlines over real openshell are unverified (argv transport; covered by the
+     e2e only through the fake) — smoke test.
+   - Sandbox names are `[A-Za-z0-9._-]{1,64}` and may start with `-` (openshell could parse
+     one as a flag; discovery skips such names).
+   - Direct starts check the claude adapter against `~/.claude` for a `kind` launch (a
+     sandbox profile's `CLAUDE_CONFIG_DIR` is honoured); a `CLAUDE_CONFIG_DIR` only in the
+     process env is not consulted.

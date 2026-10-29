@@ -660,9 +660,11 @@ adapter install).
 **Phase 2 — attach (done 2026-10-21).** `agmux attach --mode view|full` (N1 + N2), `[attach.remote]` (not `[remote.attach]`, see note 1); remote attach path in `attach`/dash/status
 line; local pane bookkeeping; image `/etc/tmux.conf`; focus-seen for remote panes.
 
-**Phase 3 — control (separate spec).** Remote resume (`exec -- agmux attach` creates the
-window remotely, then view), kill, `agmux run` into a sandbox from the dash, final-sync
-hook in `sag-sandbox-finish`.
+**Phase 3 — control (done 2026-10-29).** See
+[`2026-10-28-remote-sandbox-control-design.md`](2026-10-28-remote-sandbox-control-design.md):
+`agmux run --remote <r> --sandbox <s>`, remote resume (CLI and dash) with nearest placement,
+tmux-server identity in the coords, `agmux events --drain` for `sag-sandbox-finish`. Remote kill
+and starting agents from the dash stay out.
 
 **Later (own specs).** SSH transport + static discovery (§4.8); cross-host comms via
 Mac-routed downstream replication (§4.8); per-gateway relay if stream count demands it.
@@ -704,13 +706,13 @@ Refinements made while implementing; the code is authoritative (`cli/src/remote-
 5. Reap state: one line in `$HOME/.agmux/attach/<tag>`, `view <socket|-> <view>` or `full <socket|-> <pid>`. Full mode records `$$` then `exec`s tmux; view mode records before building the view. Reap kills the view session, or the pid only if `ps -o comm=` is a tmux and `ps -o args=` contains `attach-session` (never the server, whose Linux title `tmux: server` also matches comm, e.g. after pid reuse). A normal exit leaves the file; the next reap of the tag clears it.
 6. Mode default: `[attach.remote] mode` inside tmux, `full` outside (N4). Explicit `--mode` / `m` wins.
 7. Not built: peek (popup slot 5 dimmed) and N3.
-8. A closed remote session: resume is refused with the command to run by hand (§4.7): `<openshell> -g <gw> sandbox exec -n <sbx> --tty -- <agmux_bin> attach <id>`.
+8. A closed remote session: resume is refused with the command to run by hand (§4.7): `<openshell> -g <gw> sandbox exec -n <sbx> --tty -- <agmux_bin> attach <id>`. Superseded in Phase 3: a closed remote row resumes in its sandbox (`cli/src/resume-remote.ts`).
 9. Stopped sandbox: the pane process runs `sandbox get -o json` and, if `phase === "Stopped"`, `sandbox start`; a failing `get` is ignored.
 10. `session.seen` for a remote row is stamped with the local host (`resolveHost()`), not `row.host` (§4.5).
 11. `{title}` = session name or first 8 id chars; `stripControls`, `#` doubled, capped at 40 columns. The `window_name` template itself is the user's and is format-expanded by tmux.
 12. Script deviations found by testing: `tmux display-message -t <missing window>` exits 0 with empty output (observed on 3.6a and 3.7c), so the window check compares the printed `#{window_id}`; macOS `ps -o comm=` prints the full path, so the full-mode reap matches `tmux*|*/tmux`.
 13. Review notes: the reap awaits on SIGHUP/SIGTERM before the process exits; plain local `agmux attach` never reads config (remote rows load it lazily; a broken config gives a warning and defaults); a trailing `;` in a window name is escaped as `\;` (tmux argv separator).
-14. Known limits: tags share one sandbox state dir, so two Macs / local tmux servers with the same pane id can reap each other's client; a detach key stays bound in the server-wide `agmux-view` table until the sandbox tmux server restarts; stale coords after a sandbox stop/start — until the sandbox hub's lost-sweep (≈30–60 s) the old row stays live, and a new tmux server reusing the socket path and `@0` makes an attach of it open the NEW agent (fix: a tmux-server identity in the replicated coords, Phase 3).
+14. Known limits: tags share one sandbox state dir, so two Macs / local tmux servers with the same pane id can reap each other's client; a detach key stays bound in the server-wide `agmux-view` table until the sandbox tmux server restarts; stale coords after a sandbox stop/start — until the sandbox hub's lost-sweep (≈30–60 s) the old row stays live, and a new tmux server reusing the socket path and `@0` made an attach of it open the NEW agent. Fixed in Phase 3: the coords carry the tmux server identity (`remote_tmux.server`, `#{pid}-#{start_time}`) and the view/full scripts exit 3 on a mismatch.
 15. Verified on openshell 0.1.5 (ai-sag): `sandbox exec -- sh -c '…' x 'a b' '$HOME' ';' '"q"' "it's" ''` delivers every positional arg verbatim; sandbox tmux 3.7c.
 
 ## 11. Open questions / verify list

@@ -81,6 +81,13 @@ Reject-reason prefixes (stable, tests pin them): `invalid envelope`, `host event
 | `interval` | `5` | seconds, >= `MIN_INTERVAL_S` (0.1); discovery period and backoff base |
 | `openshell_bin` | `openshell` | |
 | `agmux_bin` | `agmux` | path of the binary inside the sandbox |
+| `workdir` | none | sandbox cwd of `agmux run --remote` (CLI `--cwd` wins) |
+| `kind` | none | `claude`/`codex`/`pi`; required for a launch unless `profile` is set |
+| `profile` | none | a profile in the **sandbox's** agmux config; excludes `command`/`args` |
+| `command` | `kind`'s binary | |
+| `args` | `[]` | array of strings, e.g. `["--dangerously-skip-permissions"]` |
+
+The launch keys (`RemoteConfig.launch`, null when none is set) are read by the Mac CLI only (remote run, and the fallback launch of a remote resume); the hub ignores them.
 
 Host naming is discovery's job: `<gateway>/<sandbox>` (not `name`). Sandbox names starting with `-` are skipped (would parse as a flag).
 
@@ -91,15 +98,15 @@ Host naming is discovery's job: `<gateway>/<sandbox>` (not `name`). Sandbox name
 ## Remote sessions in the CLI
 
 - `agmux events` (`cli/src/events-cmd.ts`): the remote end of replication (above). `--after <n>` is required; `--follow`, `--consumer <id>`, `--limit <1..5000>` (default 500), `--max-duration <s>` (positive integer, `--follow` only). One-shot mode exits after the first page that is not full. Exits 0 on SIGTERM/SIGINT or when stdout closes (EPIPE); `EXIT_ROTATE` (75) once `--max-duration` has passed (checked at each loop boundary).
-- Remote guard (`cli/src/remote-guard.ts`): `resume` and `kill` on a `remote` row print `<verb>: <id> runs on <host>; remote <verb> is not supported yet` and exit 2 (Phase 3). Without it `kill` would signal a local pid and resume would relaunch the agent on the Mac. The dash's `x` on a remote row shows the same message as a footer notice (no kill confirm); `Actions.kill` refuses remote rows as the second line. `attach` on a live remote row is supported (Phase 2: `remote-client`, see `packages/cli/AGENTS.md`); a closed one is refused with the by-hand command.
+- Remote guard (`cli/src/remote-guard.ts`): `kill` on a `remote` row prints `kill: <id> runs on <host>; remote kill is not supported yet` and exits 2; without it `kill` would signal a local pid. The dash's `x` on a remote row shows the same message as a footer notice (no kill confirm); `Actions.kill` refuses remote rows as the second line. `attach` on a live remote row is supported (Phase 2: `remote-client`); a closed one is resumed in its sandbox and then attached (Phase 3: `resume-remote.ts`, CLI and dash), and `agmux run --remote <r> --sandbox <s>` starts one there (see `packages/cli/AGENTS.md`).
 - `agmux ls`: `--remote | --local` (exclusive), `--host <glob>` (SQLite GLOB on `sessions.host`), `[ls] locality`. `parse-ls.ts`.
 - `agmux hub status` (`hub-cmd.ts`) prints one `remote …` line per host (state, `last sync <rel> ago`, agmux version, cursor, rejected, last error); `agmux inspect` adds the `host` row for remote sessions (a `/hosts` failure is ignored).
 
 ## Running the e2e
 
 `bun test tests/e2e/remote-sync.test.ts` — no OpenShell needed. It starts real hubs in temp HOMEs (the Mac and sandboxes `box1`/`box2`); `tests/e2e/fake-openshell.sh` stands in for `openshell`:
-- `sandbox list -o json --selector <sel>` prints `$FAKE_OS_DIR/list.json`.
-- `sandbox exec -n <name> --no-tty -- cmd…` drains stdin to EOF first, like 0.0.116, so a follower holding stdin open hangs the e2e; then runs `cmd` with `HOME=$FAKE_OS_DIR/<name>`, `AGMUX_HOST=<gw>/<name>` and stdin closed. Names listed in `$FAKE_OS_DIR/nohost` get no `AGMUX_HOST` (an old sandbox).
+- `sandbox list -o json --selector <sel>` prints `$FAKE_OS_DIR/list-<gw>.json` if present, else `$FAKE_OS_DIR/list.json`.
+- `sandbox exec -n <name> --no-tty -- cmd…` drains stdin to EOF first, like 0.0.116, so a follower holding stdin open hangs the e2e; then runs `cmd` with `HOME=$FAKE_OS_DIR/<name>`, `TMUX_TMPDIR` = that HOME resolved (the sandbox's own default tmux server; resolved because a socket path is capped at 104 bytes), `AGMUX_HOST=<gw>/<name>`, `$TMUX`/`$TMUX_PANE` unset (a sandbox never sees the Mac's tmux) and stdin closed. Names listed in `$FAKE_OS_DIR/nohost` get no `AGMUX_HOST` (an old sandbox).
 - `sandbox exec … --tty -- cmd…` runs `cmd` the same way with the terminal inherited, no drain.
 - `sandbox get <name> -o json` prints `$FAKE_OS_DIR/<name>/sandbox.json`, default `{"phase":"Ready"}`; `sandbox start <name>` exits 0.
 - Every call appends its argv, tab-joined, to `$FAKE_OS_DIR/calls.log` (one line per call; newlines inside an argument become spaces).
@@ -108,9 +115,11 @@ Point `openshell_bin` at the script.
 
 `bun test tests/e2e/remote-attach.test.ts` runs remote attach end to end on two private tmux servers (`-S <tmp>/inner.sock` = the sandbox's, `-S <tmp>/outer.sock` = the Mac's, both `-f /dev/null`). The outer server is started with the Mac env (`HOME`, `FAKE_OS_DIR`, `AGMUX_BIN` = the Mac CLI shim) because the placed pane process inherits the server's environment, not the caller's; a control-mode client (`tmux -C attach`) stands in for the user's terminal so `switch-client` has a client. Skipped without `tmux`.
 
+`bun test tests/e2e/remote-control.test.ts` runs Phase 3 end to end: `agmux run --remote` (`-d` with the `[[remote]]` launch, a CLI override with a local attach, headless on a stopped sandbox), remote resume in all three nearest placements (split, new window, new session after a tmux server restart), the fallback launch for a hand-started agent, a missing sandbox and an old sandbox agmux. The agent is `tests/e2e/stub-claude.sh` (see `packages/cli/AGENTS.md`); the sandbox shims (`writeSandboxShims` in `tests/e2e/helpers.ts`) pin `AGMUX_BIN` to the sandbox CLI. Skipped without `tmux`.
+
 Unit tests for the follower inject `deps` (`spawn`, `nowMs`, `sleep`); the sync loop injects `discoveryFor`, `transportFor`, `follower`, `nowMs`, `newId`.
 
 ## Sandbox control and follower kick
 
-- `sync/sandbox-control.ts`: `SandboxControl` (`status` → `ready | stopped | missing{detail}`, `start`) over `openshell sandbox get/start`; `openshellControl(runCapture)`. Used by the CLI to start a stopped sandbox.
-- `Follower.kick()` ends a backoff wait now (no-op while connected/stopped; failure counters kept). `SyncHandle.kick(host)` → `POST /hosts/<urlencoded host>/sync` (204; 404 unknown host or no sync loop). Callers kick after starting a sandbox so its follower does not sit in backoff.
+- `sync/sandbox-control.ts`: `SandboxControl` (`status` → `ready | stopped | missing{detail}`, `start`) over `openshell sandbox get -o json` / `sandbox start` (10 s / 60 s timeouts); a failing `get` is `missing` with openshell's first stderr line as `detail`, unparseable `get` output is `ready`. `openshellControl(runCapture)`. Used by the CLI's remote run and resume. The seam for a later `ensure()` (on-demand creation); not built.
+- `Follower.kick()` ends a backoff wait now (no-op while connecting/connected or stopped; failure counters kept). `SyncHandle.kick(host)` → `POST /hosts/<urlencoded host>/sync` (204; 404 unknown host or no sync loop). The CLI kicks after the sandbox command returned and before waiting for the row, so a just-started sandbox's follower does not sit in backoff (up to 300 s). A kick that arrives during an in-flight connect is dropped; if that attempt fails, the normal backoff applies.
