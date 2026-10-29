@@ -884,3 +884,57 @@ test("help lists the attach-mode key", async () => {
   expect(captureCharFrame()).toContain("in A: attach mode (remote)");
   renderer.destroy();
 });
+
+test("⏎ on a closed remote row shows a resuming notice and ignores a second ⏎ while it runs", async () => {
+  let calls = 0;
+  let finish!: (h: null) => void;
+  const actions: Actions = {
+    ...noActions,
+    resume() { calls++; return new Promise((r) => { finish = r; }); },
+  };
+  const rows = [mkRow({ session_id: "0198abcd-remote", status: "lost", remote: true, host: "gw/sbx" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      initialGroup="all" onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 120, height: 24 },
+  );
+  await renderOnce();
+  const enter = () => (mockInput as unknown as { pressEnter: () => void }).pressEnter();
+  await act(async () => { enter(); });
+  await renderOnce();
+  expect(captureCharFrame()).toContain("resuming on gw/sbx…");
+  await act(async () => { enter(); });
+  await renderOnce();
+  expect(calls).toBe(1);
+  expect(captureCharFrame()).toContain("resuming on gw/sbx…");
+  await act(async () => { finish(null); });
+  await renderOnce();
+  expect(captureCharFrame()).not.toContain("resuming on");
+  await act(async () => { enter(); });   // done: a new ⏎ resumes again
+  expect(calls).toBe(2);
+  renderer.destroy();
+});
+
+test("a failed remote resume shows its multi-line error on one notice line", async () => {
+  const actions: Actions = {
+    ...noActions,
+    async resume() { throw new Error("resume: sandbox gw/sbx is gone; cannot resume\nagmux: not found"); },
+  };
+  const rows = [mkRow({ session_id: "0198abcd-remote", status: "lost", remote: true, host: "gw/sbx" })];
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="detail" intervalMs={1000} spinnerMs={0}
+      initialGroup="all" onHandoff={() => {}} onQuit={() => {}}
+    />,
+    { width: 160, height: 24 },
+  );
+  await renderOnce();
+  await act(async () => { (mockInput as unknown as { pressEnter: () => void }).pressEnter(); });
+  await renderOnce();
+  expect(captureCharFrame()).toContain("resume failed: resume: sandbox gw/sbx is gone; cannot resume agmux: not found");
+  renderer.destroy();
+});
