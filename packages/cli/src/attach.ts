@@ -4,7 +4,7 @@ import { LIVE_STATUSES, tmuxSocketArgs, AGMUX_TMUX_SESSION_DEFAULT } from "@agmu
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { resolvePrefix } from "./id-resolve.ts";
-import { loadProfileEnv } from "./profile-env.ts";
+import { loadProfileLaunch } from "./profile-env.ts";
 import { hasSession, readCurrentPane } from "./tmux-place.ts";
 import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
 import { postSeen, seenHost } from "./seen.ts";
@@ -124,7 +124,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     // native_session_id can only come from an attached adapter, so a missing
     // usage row safely means "watched, zero turns" — relaunch fresh.
     turnCount: usage?.turn_count ?? 0,
-    loadProfileEnv,
+    loadProfileLaunch,
   });
 
   // In tmux: place the resumed agent in a NEW window of the caller's current
