@@ -358,11 +358,16 @@ Refinements made while implementing; the code is authoritative (`cli/src/run-rem
    mismatch). Rows without it are "unknown": attach as before, nearest-resume skips the split.
 6. **Restage detection:** the real guard is the version check against
    `HostRow.agmux_version` before any exec (after the status check, so a deleted sandbox's
-   stale host row doesn't report skew). Behind it: an old `run` parser fails with
-   `cannot infer agent_kind from '--direct'|'--print-coords'` (exit 2) → restage message. An
+   stale host row doesn't report skew; before starting a stopped sandbox, so a refused version
+   leaves it stopped): `<host> runs a different agmux version (<remote> vs <local>); restage
+   the image (stage-agmux)`. The skew does not stop replication (`checkHeader` checks only the
+   host and the replication version), so a Phase 1/2 sandbox keeps syncing. Behind it: an old
+   `run` parser fails with `cannot infer agent_kind from '--direct'|'--print-coords'|'--cwd'`
+   (exit 2; `--cwd` = headless, whose streamed stderr is teed) → `<host> runs an older agmux;
+   restage the image (stage-agmux)`. An
    old sandbox `attach` ignores unknown flags (exit 0, no coords line) → restage message, best
    effort only (that old attach has relaunched the agent the old way). A headless run of an
-   old agmux streams its output and is caught only by the version check.
+   old agmux without a `--cwd` runs the old way and is caught only by the version check.
 7. `--cwd` is a general `run` flag, headless included; for a remote run it is a sandbox path
    and wins over `[[remote]] workdir`.
 8. **Found by the e2e:** a `sandbox exec` client has no UTF-8 locale (Phase 2 already runs
@@ -376,12 +381,30 @@ Refinements made while implementing; the code is authoritative (`cli/src/run-rem
    - A live-but-stale remote row (§5.2.3) now fails cleanly through the server check (exit 3)
      but is not auto-resumed. claude has no end hook wired, so after `/exit` the row reads live
      until the sandbox hub's pid sweep (≤ 30 s) has replicated; resume works after that.
-   - A kick during an in-flight follower connect is dropped; if that attempt fails the follower
-     backs off as usual.
+   - A kick during an in-flight follower connect skips the backoff after that attempt once; a
+     kick while connected does nothing. A kick answered by the endpoint's JSON 404 (host not
+     followed: not discovered, or no sync loop) fails the run/resume at once
+     (`<host> is not followed by the hub (check [[remote]] selector / sandbox label)`); a plain
+     404 (a hub not restarted since the upgrade) still waits. `-d` kicks too and ignores the answer.
    - Prompts with newlines over real openshell are unverified (argv transport; covered by the
      e2e only through the fake) — smoke test.
-   - Sandbox names are `[A-Za-z0-9._-]{1,64}` and may start with `-` (openshell could parse
-     one as a flag; discovery skips such names).
-   - Direct starts check the claude adapter against `~/.claude` for a `kind` launch (a
-     sandbox profile's `CLAUDE_CONFIG_DIR` is honoured); a `CLAUDE_CONFIG_DIR` only in the
-     process env is not consulted.
+   - Sandbox names are `[A-Za-z0-9._-]{1,64}` and must not start with `-` (one
+     `SANDBOX_NAME_RE` in `cli/src/parse-run.ts`; discovery skips such names too).
+   - Claude's first-run dialogs in a fresh workdir (trust the folder, accept
+     `--dangerously-skip-permissions`) take the injected prompt; the image or the sandbox
+     create must pre-accept them (smoke checklist step 0 in the homelab handoff).
+10. **Final-review fixes:**
+   - Direct starts check the adapter in the config dir the agent runs with: for a `kind`
+     launch the adapter's relaunch keys from the process env (claude: `CLAUDE_CONFIG_DIR` of the
+     `sandbox exec` environment), for `-p` the profile's `env` over them (`planLaunch`,
+     `cli/src/launch-mode.ts`); the agent is spawned with that same env (`buildDirectSpawn`
+     `agentEnv`; a profile launch now passes the profile `env`). `--direct` not ready → exit 2
+     naming the dir and `agmux adapter install --kind <k> --config-dir <dir>`. `agmux adapter
+     install` reads the same env.
+   - `events --drain` SIGTERMs a lagging consumer again once its live pid has held the claim
+     for 10 s (at most once per 10 s): a Mac that reconnected behind head streams the rest, but
+     `.after` moves only at its next claim.
+   - Dash: a remote resume shows `resuming on <host>…` and ignores a second ⏎ on that row
+     while it runs.
+   - `AGMUX_VERSION` is `0.1.0-alpha.3` (Phase 1/2 builds report `0.1.0-alpha.2`), so the
+     version check asks every sandbox on an older image for a restage.
