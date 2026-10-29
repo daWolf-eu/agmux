@@ -7,13 +7,12 @@ import * as path from "node:path";
 import { $ } from "bun";
 import {
   AGMUX_CONFIG_SUBPATH, isShellSafeId, stripControls, tmuxSocketArgs,
-  type HostRow, type RemoteAttachMode, type SessionRow, type TransportSpec,
+  type RemoteAttachMode, type SessionRow,
 } from "@agmux/protocol";
-import { loadRemotes, transportArgv, type RemoteConfig } from "@agmux/hub";
+import { loadRemotes, type RemoteConfig } from "@agmux/hub";
 import { resolvePlacement, type AttachCtx, type AttachRequest, type Handoff } from "@agmux/tui";
 import { newSession, newWindow, readCurrentPane, splitPane, switchClient, type PaneCoords } from "./tmux-place.ts";
-import { expandTemplate, resumeSessionName, shellQuote, withoutTmuxEnv, type AttachSettings } from "./attach-place.ts";
-import { remoteRefusal } from "./remote-guard.ts";
+import { expandTemplate, resumeSessionName, withoutTmuxEnv, type AttachSettings } from "./attach-place.ts";
 
 const TITLE_COLS = 40;
 
@@ -63,31 +62,8 @@ export function remotePaneCmd(agmuxBin: string, sessionId: string, mode: RemoteA
   return [agmuxBin, "attach", sessionId, "--remote-client", "--mode", mode, "--detach-key", detachKey];
 }
 
-// Closed remote session: what to run by hand to resume it in the sandbox (spec §4.7).
-export function manualResumeCommand(spec: TransportSpec, sandboxAgmuxBin: string, sessionId: string): string {
-  return stripControls(transportArgv(spec, [sandboxAgmuxBin, "attach", sessionId], { tty: true }).map(shellQuote).join(" "));
-}
-
 export function defaultRemotes(): RemoteConfig[] {
   return loadRemotes(path.join(os.homedir(), AGMUX_CONFIG_SUBPATH));
-}
-
-// The resume refusal for a remote row, with the manual command when the host's
-// transport is known. The sandbox agmux is its [[remote]] agmux_bin, else "agmux".
-export async function remoteResumeRefusal(
-  row: SessionRow, o: { hubUrl: string; fetchImpl: typeof fetch; remotes: () => RemoteConfig[] },
-): Promise<string> {
-  let manual: string | undefined;
-  try {
-    const r = await o.fetchImpl(`${o.hubUrl}/hosts`);
-    const spec = r.ok ? ((await r.json()) as { hosts: HostRow[] }).hosts.find((h) => h.host === row.host) : undefined;
-    if (spec?.transport && isShellSafeId(row.session_id)) {
-      let bin = "agmux";
-      try { bin = o.remotes().find((c) => c.name === spec.remote)?.agmux_bin ?? "agmux"; } catch { /* broken config */ }
-      manual = manualResumeCommand(spec.transport, bin, row.session_id);
-    }
-  } catch { /* hub unreachable: refuse without the hint */ }
-  return remoteRefusal({ ...row, remote: true }, "resume", manual)!;
 }
 
 export interface AttachRemoteDeps {

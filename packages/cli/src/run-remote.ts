@@ -13,9 +13,8 @@ import {
 } from "@agmux/hub";
 import { resolvePlacement, type AttachCtx, type AttachRequest, type Handoff } from "@agmux/tui";
 import type { ParsedRun, RemoteTarget } from "./parse-run.ts";
-import { attachCtxFor, type AttachSettings } from "./attach-place.ts";
+import { attachCtxFor, settingsOrDefaults, type AttachSettings } from "./attach-place.ts";
 import { attachRemote, defaultAttachRemoteDeps, defaultRemotes } from "./attach-remote.ts";
-import { settingsOrDefaults } from "./attach.ts";
 
 export type RemoteRun = Extract<ParsedRun, { kind: "profile" | "inline" | "remote-default" }> & { remote: RemoteTarget };
 
@@ -23,9 +22,9 @@ export function isRemoteRun(p: ParsedRun): p is RemoteRun {
   return p.kind !== "error" && p.remote !== undefined;
 }
 
-const SANDBOX_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
-const WAIT_TIMEOUT_MS = 15_000;
-const WAIT_POLL_MS = 500;
+export const SANDBOX_NAME_RE = /^[A-Za-z0-9._-]{1,64}$/;
+export const WAIT_TIMEOUT_MS = 15_000;
+export const WAIT_POLL_MS = 500;
 const EXEC_TIMEOUT_MS = 60_000;
 
 // CLI launch flags win over the [[remote]] launch keys. `--kind K` alone keeps
@@ -120,7 +119,7 @@ export interface RunRemoteDeps {
 }
 
 // `exec --no-tty` starts the remote command only at local stdin EOF (R19).
-async function execCapture(argv: string[]): Promise<SandboxExecResult> {
+export async function execCapture(argv: string[]): Promise<SandboxExecResult> {
   const p = Bun.spawn(argv, { stdin: "ignore", stdout: "pipe", stderr: "pipe" });
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; p.kill("SIGKILL"); }, EXEC_TIMEOUT_MS);
@@ -150,21 +149,36 @@ export const defaultRunRemoteDeps: RunRemoteDeps = {
   err: (s) => console.error(s),
 };
 
-function message(e: unknown): string {
+export function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function oldAgmux(host: string): string {
+export function oldAgmux(host: string): string {
   return `${host} runs an older agmux; restage the image (stage-agmux)`;
+}
+
+// The hub's row for `host`; undefined when it has none. Throws when the hub fails.
+export async function fetchHostRow(hubUrl: string, fetchImpl: typeof fetch, host: string): Promise<HostRow | undefined> {
+  const r = await fetchImpl(`${hubUrl}/hosts`);
+  if (!r.ok) throw new Error(`hub error ${r.status}`);
+  return ((await r.json()) as { hosts: HostRow[] }).hosts.find((h) => h.host === host);
 }
 
 // The host row's agmux version, when the hub has synced this sandbox before.
 async function hostVersion(o: RunRemoteOpts, deps: RunRemoteDeps, host: string): Promise<string | null> {
-  try {
-    const r = await deps.fetchImpl(`${o.hubUrl}/hosts`);
-    if (!r.ok) return null;
-    return ((await r.json()) as { hosts: HostRow[] }).hosts.find((h) => h.host === host)?.agmux_version ?? null;
-  } catch { return null; }
+  try { return (await fetchHostRow(o.hubUrl, deps.fetchImpl, host))?.agmux_version ?? null; }
+  catch { return null; }
+}
+
+// A just-started sandbox's follower may sit in backoff: reconnect it now.
+export async function kickFollower(hubUrl: string, fetchImpl: typeof fetch, host: string): Promise<void> {
+  try { await fetchImpl(`${hubUrl}/hosts/${encodeURIComponent(host)}/sync`, { method: "POST" }); }
+  catch { /* the regular follower schedule still applies */ }
+}
+
+// The coords line a sandbox agmux printed last; null when there is none.
+export function printedCoords(stdout: string): RemoteTmux | null {
+  return parsePrintedCoords(stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "").at(-1) ?? "");
 }
 
 // --new-* → that placement; no flag → the [attach.remote] default (undefined).
@@ -233,15 +247,12 @@ export async function runRemote(o: RunRemoteOpts, deps: RunRemoteDeps): Promise<
     deps.err(`agmux run: ${host}: ${stderr || `exited ${res.code}`}`);
     return res.code;
   }
-  const line = res.stdout.split("\n").map((l) => l.trim()).filter((l) => l !== "").at(-1) ?? "";
-  const printed = parsePrintedCoords(line);
+  const printed = printedCoords(res.stdout);
   if (!printed) { deps.err(`agmux run: ${host} printed no coordinates${stderr ? `: ${stderr}` : ""}`); return 1; }
 
   if (!plan) { deps.out(`agmux: started on ${host} (${printed.session}:${printed.window})`); return 0; }
 
-  // A just-started sandbox's follower may sit in backoff: reconnect it now.
-  try { await deps.fetchImpl(`${o.hubUrl}/hosts/${encodeURIComponent(host)}/sync`, { method: "POST" }); }
-  catch { /* the regular follower schedule still applies */ }
+  await kickFollower(o.hubUrl, deps.fetchImpl, host);
   const row = await waitForRemoteRow({
     hubUrl: o.hubUrl, fetchImpl: deps.fetchImpl, host, match: matchesPrinted(printed),
     timeoutMs: WAIT_TIMEOUT_MS, pollMs: WAIT_POLL_MS, now: deps.now, sleep: deps.sleep,

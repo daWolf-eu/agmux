@@ -2,12 +2,11 @@ import { describe, expect, test } from "bun:test";
 import type { SessionRow } from "@agmux/protocol";
 import type { AttachCtx } from "@agmux/tui";
 import {
-  attachRemote, findRemotePane, manualResumeCommand, remotePaneCmd, remoteWindowName, type AttachRemoteDeps,
+  attachRemote, findRemotePane, remotePaneCmd, remoteWindowName, type AttachRemoteDeps,
 } from "../src/attach-remote.ts";
 import { attachSettingsFrom } from "../src/attach-place.ts";
 
 const ID = "11111111-2222-4333-8444-555555555555";
-const SPEC = { kind: "openshell" as const, gateway: "gw", target: "box1", bin: "openshell" };
 const SETTINGS = attachSettingsFrom({ terminal: { newTab: ["term", "--tab", "-e", "{cmd}"] }, remote: {} }, "/bin/agmux");
 const IN_TMUX: AttachCtx = { inTmux: true, popup: false, terminalWindow: false, terminalTab: true };
 const NO_TMUX: AttachCtx = { ...IN_TMUX, inTmux: false };
@@ -67,12 +66,6 @@ describe("remoteWindowName", () => {
 test("remotePaneCmd: the Mac's agmux runs the pane process", () => {
   expect(remotePaneCmd("/bin/agmux", ID, "view", "M-d")).toEqual(
     ["/bin/agmux", "attach", ID, "--remote-client", "--mode", "view", "--detach-key", "M-d"]);
-});
-
-test("manualResumeCommand: the transport's tty exec of the sandbox agmux", () => {
-  expect(manualResumeCommand(SPEC, "agmux", ID)).toBe(`openshell -g gw sandbox exec -n box1 --tty -- agmux attach ${ID}`);
-  expect(manualResumeCommand({ ...SPEC, bin: "/opt/open shell" }, "/x/agmux", ID))
-    .toBe(`'/opt/open shell' -g gw sandbox exec -n box1 --tty -- /x/agmux attach ${ID}`);
 });
 
 describe("findRemotePane", () => {

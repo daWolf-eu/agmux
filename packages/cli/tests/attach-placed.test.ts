@@ -90,7 +90,7 @@ test("a live remote session is attached with the requested placement and mode", 
   expect(seen).toEqual([{ placement: "inline", mode: "view" }]);
 });
 
-test("a closed remote session goes to resume (which refuses it)", async () => {
+test("a closed remote session goes to resume; its errors exit 2", async () => {
   const errs: string[] = [];
   const actions: Actions = { ...fakeActions([]), async resume() { throw new Error("resume: refused"); } };
   const code = await withHub(row({ remote: true, status: "lost", pid: null }), () => attachPlacedCmd(

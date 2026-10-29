@@ -129,18 +129,52 @@ test("attachCmd on a live remote row outside tmux runs the pane process in full 
   }
 });
 
-test("attachCmd on a closed remote row refuses the resume with the manual command, never spawns", async () => {
+test("attachCmd on a closed remote row resumes it in the sandbox, then runs the pane process", async () => {
   const { attachCmd } = await import("../src/attach.ts");
+  const { DEFAULT_ATTACH_SETTINGS } = await import("../src/attach-place.ts");
   const row = sessionRow({ remote: true, host: "sbx-1", status: "lost", pid: null });
+  const printed = { session: "agmux", window: "@1", pane: "%4", socket: null, server: null };
+  const resumed = { ...row, status: "idle" as const, remote_tmux: printed };
   const calls: string[] = [];
+  const execs: string[][] = [];
   const origFetch = globalThis.fetch;
-  globalThis.fetch = remoteHub(row, calls);
+  const origTmux = process.env.TMUX;
+  delete process.env.TMUX;
+  const hub = remoteHub(row, calls);
+  globalThis.fetch = (async (url: string, init?: RequestInit) => String(url).includes("&host=")
+    ? Response.json({ sessions: [resumed] })
+    : hub(url, init)) as unknown as typeof fetch;
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({ exited: Promise.resolve(0), exitCode: 0 })) as never);
+  try {
+    expect(await attachCmd({
+      idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap", remotes: () => [],
+      settings: { ...DEFAULT_ATTACH_SETTINGS, agmuxBin: "/bin/agmux" },
+      resumeRemote: {
+        control: { status: async () => ({ state: "ready" }), start: async () => {} },
+        exec: async (argv) => { execs.push(argv); return { code: 0, stdout: JSON.stringify({ remote_tmux: printed }), stderr: "" }; },
+      },
+    })).toBe(0);
+    expect(execs).toEqual([["openshell", "-g", "gw", "sandbox", "exec", "-n", "box1", "--no-tty", "--",
+      "agmux", "attach", row.session_id, "--resume-nearest", "--print-coords"]]);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(spawn.mock.calls[0]![0]).toEqual(["/bin/agmux", "attach", row.session_id, "--remote-client", "--mode", "full", "--detach-key", "M-d"]);
+    expect(calls.some((c) => c.startsWith("POST") && c.includes("/ingest"))).toBe(true);
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore();
+    if (origTmux === undefined) delete process.env.TMUX; else process.env.TMUX = origTmux;
+  }
+});
+
+test("attachCmd on a closed remote row whose sandbox is gone exits 2 with the message, never spawns", async () => {
+  const { attachCmd } = await import("../src/attach.ts");
+  const row = sessionRow({ remote: true, host: "sbx-gone", status: "lost", pid: null });
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = remoteHub(row, []);
   const spawn = spyOn(Bun, "spawn").mockImplementation((() => { throw new Error("spawn"); }) as never);
   const err = spyOn(console, "error").mockImplementation(() => {});
   try {
     expect(await attachCmd({ idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap", remotes: () => [] })).toBe(2);
-    expect(err).toHaveBeenCalledWith(
-      `resume: 019f1898 runs on sbx-1; remote resume is not supported yet; run it by hand: openshell -g gw sandbox exec -n box1 --tty -- agmux attach ${row.session_id}`);
+    expect(err).toHaveBeenCalledWith("resume: sandbox sbx-gone is gone; cannot resume");
     expect(spawn).not.toHaveBeenCalled();
   } finally {
     globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
