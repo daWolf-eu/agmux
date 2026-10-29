@@ -241,3 +241,53 @@ test("--cwd and --direct are plain run flags", () => {
   expect(parseRunArgs(["--cwd", "/w", "-p", "p"])).toMatchObject({ kind: "profile", cwd: "/w", direct: false, printCoords: false });
   expect(parseRunArgs(["--cwd"]).kind).toBe("error");
 });
+
+const R = { name: "ai-sandbox", sandbox: "wi-1" };
+
+test("--remote --sandbox with no command or -p → remote-default", () => {
+  expect(parseRunArgs(["--remote", "ai-sandbox", "--sandbox", "wi-1"]))
+    .toEqual({ kind: "remote-default", remote: R, placement: "inherit", detach: false });
+  expect(parseRunArgs(["--remote", "ai-sandbox", "--sandbox", "wi-1", "--kind", "codex"]))
+    .toMatchObject({ kind: "remote-default", agent_kind: "codex", remote: R });
+});
+
+test("--remote carries onto -p and positional runs", () => {
+  expect(parseRunArgs(["--remote", "ai-sandbox", "--sandbox", "wi-1", "-p", "x"]))
+    .toMatchObject({ kind: "profile", profileName: "x", remote: R });
+  expect(parseRunArgs(["--sandbox", "wi-1", "--remote", "ai-sandbox", "--kind", "codex", "--", "codex", "--y"]))
+    .toMatchObject({ kind: "inline", agent_kind: "codex", command: "codex", args: ["--y"], remote: R });
+});
+
+test("--remote and --sandbox go together", () => {
+  for (const a of [["--remote", "ai-sandbox"], ["--sandbox", "wi-1"]]) {
+    const r = parseRunArgs(a);
+    expect(r).toEqual({ kind: "error", message: "--remote and --sandbox go together" });
+  }
+});
+
+test("--remote / --sandbox names outside [A-Za-z0-9._-] are rejected", () => {
+  for (const bad of ["a b", "a;b", "$HOME", "a/b", "", "x".repeat(65)]) {
+    const r = parseRunArgs(["--remote", "ai-sandbox", "--sandbox", bad]);
+    expect(r.kind).toBe("error");
+  }
+  expect(parseRunArgs(["--remote", "a;b", "--sandbox", "wi-1"])).toEqual({ kind: "error", message: "--remote must match [A-Za-z0-9._-]+" });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "a b"])).toEqual({ kind: "error", message: "--sandbox must match [A-Za-z0-9._-]{1,64}" });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "x".repeat(64)]).kind).toBe("remote-default");
+});
+
+test("--remote rejects the sandbox-side flags", () => {
+  for (const f of ["--wrapped", "--direct", "--print-coords"]) {
+    expect(parseRunArgs(["--remote", "r", "--sandbox", "s", f])).toEqual({ kind: "error", message: `cannot combine --remote with ${f}` });
+  }
+});
+
+test("--remote: --prompt needs no local placement; --headless and -d rules still apply", () => {
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "s", "--prompt", "hi"]))
+    .toMatchObject({ kind: "remote-default", prompt: "hi", placement: "inherit" });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "s", "--headless", "--prompt-file", "/p"]))
+    .toMatchObject({ kind: "remote-default", promptFile: "/p", placement: "headless" });
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "s", "--headless"]).kind).toBe("error");
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "s", "-d", "--headless", "--prompt", "x"]).kind).toBe("error");
+  expect(parseRunArgs(["--remote", "r", "--sandbox", "s", "-d", "--cwd", "/o"]))
+    .toMatchObject({ kind: "remote-default", detach: true, cwd: "/o" });
+});

@@ -15,6 +15,10 @@ export const HELP_TEXT = `usage: agmux <verb> [args]
                       relaunches it interactively afterwards.
     placement: --headless | --new-pane | --new-window | --new-session (default: inherit current pane; -d/--detach implies --new-pane)
     --wrapped   force the PTY wrapper (default: direct exec when the agent has an adapter)
+  run --remote <remote> --sandbox <sandbox> [--kind <k>] [-p <sandbox-profile>] [--cwd <path>]
+      [--new-pane|--new-window|--new-session|-d] [--headless] [--prompt <text>|--prompt-file <path>] [-- <command> [args...]]
+    start an agent in a sandbox of a [[remote]], then attach it here ([attach.remote]
+    defaults; -d starts only). Launch flags override the [[remote]] kind/profile/command/args.
   ls [-n <num>|--all] [--sort <started|activity>] [--asc|--desc] [-r/--reverse]
      [--status <active|open|closed|s1,s2,...>] [--live] [--agent <kind>] [--profile <name>]
      [--remote|--local] [--host <glob>]
