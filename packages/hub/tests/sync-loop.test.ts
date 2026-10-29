@@ -11,6 +11,7 @@ import type { Transport } from "../src/sync/transport.ts";
 const remote: RemoteConfig = {
   name: "lab", transport: "openshell", gateway: "gw", selector: "agmux=1",
   interval: 0.01, openshell_bin: "openshell", agmux_bin: "agmux",
+  workdir: null, launch: null,
 };
 const STALE_MS = 3 * remote.interval * 1000;
 const node = (name: string): DiscoveredNode => ({ target: name, host: `gw/${name}` });

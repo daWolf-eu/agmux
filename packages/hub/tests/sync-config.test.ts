@@ -10,7 +10,7 @@ describe("parseRemotes", () => {
   test("fills defaults", () => {
     expect(parseRemotes([{ name: "ai-sandbox", gateway: "ai-sandbox" }])).toEqual([
       { name: "ai-sandbox", transport: "openshell", gateway: "ai-sandbox", selector: "agmux=1",
-        interval: 5, openshell_bin: "openshell", agmux_bin: "agmux" },
+        interval: 5, openshell_bin: "openshell", agmux_bin: "agmux", workdir: null, launch: null },
     ]);
   });
 
@@ -37,6 +37,42 @@ describe("parseRemotes", () => {
     expect(() => parseRemotes([{ name: "a", gateway: "g", interval: 0.05 }])).toThrow('[[remote]] "a": interval must be a number >= 0.1');
     expect(parseRemotes([{ name: "a", gateway: "g", interval: 0.1 }])[0]!.interval).toBe(0.1);
     expect(() => parseRemotes([{ name: "a", gateway: "g", bogus: 1 }])).toThrow('[[remote]] "a": unknown key "bogus"');
+  });
+});
+
+describe("parseRemotes launch", () => {
+  const one = (extra: Record<string, unknown>) => parseRemotes([{ name: "ai-sandbox", gateway: "g", ...extra }])[0]!;
+  const err = (extra: Record<string, unknown>) => () => one(extra);
+
+  test("kind + args + workdir", () => {
+    const r = one({ workdir: "/sandbox/work", kind: "claude", args: ["--dangerously-skip-permissions"] });
+    expect(r.workdir).toBe("/sandbox/work");
+    expect(r.launch).toEqual({ kind: "claude", profile: null, command: null, args: ["--dangerously-skip-permissions"] });
+  });
+
+  test("no launch keys → launch null (workdir alone does not make a launch)", () => {
+    expect(one({}).launch).toBeNull();
+    const r = one({ workdir: "/w" });
+    expect(r.launch).toBeNull();
+    expect(r.workdir).toBe("/w");
+  });
+
+  test("profile alone, kind alone, kind + command", () => {
+    expect(one({ profile: "p" }).launch).toEqual({ kind: null, profile: "p", command: null, args: [] });
+    expect(one({ kind: "pi" }).launch).toEqual({ kind: "pi", profile: null, command: null, args: [] });
+    expect(one({ kind: "codex", command: "/bin/c" }).launch)
+      .toEqual({ kind: "codex", profile: null, command: "/bin/c", args: [] });
+  });
+
+  test("rules", () => {
+    expect(err({ profile: "p", command: "c" })).toThrow('[[remote]] "ai-sandbox": profile excludes command/args');
+    expect(err({ profile: "p", args: ["a"] })).toThrow('[[remote]] "ai-sandbox": profile excludes command/args');
+    expect(err({ command: "c" })).toThrow('[[remote]] "ai-sandbox": kind is required unless profile is set');
+    expect(err({ args: ["a"] })).toThrow('[[remote]] "ai-sandbox": kind is required unless profile is set');
+    expect(err({ kind: "gemini" })).toThrow('[[remote]] "ai-sandbox": kind must be one of claude, codex, pi');
+    expect(err({ kind: "claude", args: "x" })).toThrow('[[remote]] "ai-sandbox": args must be an array of strings');
+    expect(err({ kind: "claude", args: [1] })).toThrow("args must be an array of strings");
+    expect(err({ workdir: "" })).toThrow('[[remote]] "ai-sandbox": workdir must be a non-empty string');
   });
 });
 

@@ -1,15 +1,23 @@
 import fs from "node:fs";
 import { parse as parseToml } from "smol-toml";
+import { AGENT_KINDS, type AgentKind } from "@agmux/protocol";
+
+// How agmux starts an agent in the sandbox. All-null/empty never occurs: parseLaunch returns null instead.
+export interface RemoteLaunch {
+  kind: AgentKind | null; profile: string | null; command: string | null; args: string[];
+}
 
 export interface RemoteConfig {
   name: string; transport: "openshell"; gateway: string; selector: string;
   interval: number; openshell_bin: string; agmux_bin: string;
+  workdir: string | null; launch: RemoteLaunch | null;
 }
 
 const NAME_RE = /^[A-Za-z0-9._-]+$/;
 // Discovery period and backoff base: below this, `sandbox list` would run in a hot loop.
 export const MIN_INTERVAL_S = 0.1;
-const KEYS = new Set(["name", "transport", "gateway", "selector", "interval", "openshell_bin", "agmux_bin"]);
+const KEYS = new Set(["name", "transport", "gateway", "selector", "interval", "openshell_bin", "agmux_bin",
+  "workdir", "kind", "profile", "command", "args"]);
 
 function str(t: Record<string, unknown>, key: string, def: string | undefined, fail: (m: string) => never): string {
   const v = t[key];
@@ -19,6 +27,28 @@ function str(t: Record<string, unknown>, key: string, def: string | undefined, f
   }
   if (typeof v !== "string" || v === "") return fail(`${key} must be a non-empty string`);
   return v;
+}
+
+function optStr(t: Record<string, unknown>, key: string, fail: (m: string) => never): string | null {
+  return t[key] === undefined ? null : str(t, key, undefined, fail);
+}
+
+function parseLaunch(t: Record<string, unknown>, fail: (m: string) => never): RemoteLaunch | null {
+  const kind = optStr(t, "kind", fail);
+  if (kind !== null && !(AGENT_KINDS as readonly string[]).includes(kind)) {
+    return fail(`kind must be one of ${AGENT_KINDS.join(", ")}`);
+  }
+  const profile = optStr(t, "profile", fail);
+  const command = optStr(t, "command", fail);
+  const rawArgs = t.args;
+  if (rawArgs !== undefined && (!Array.isArray(rawArgs) || rawArgs.some((a) => typeof a !== "string"))) {
+    return fail("args must be an array of strings");
+  }
+  const args = (rawArgs as string[] | undefined) ?? [];
+  if (kind === null && profile === null && command === null && rawArgs === undefined) return null;
+  if (profile !== null && (command !== null || rawArgs !== undefined)) return fail("profile excludes command/args");
+  if (profile === null && kind === null) return fail("kind is required unless profile is set");
+  return { kind: kind as AgentKind | null, profile, command, args };
 }
 
 function parseOne(t: unknown, i: number, seen: Set<string>): RemoteConfig {
@@ -45,6 +75,8 @@ function parseOne(t: unknown, i: number, seen: Set<string>): RemoteConfig {
     selector: str(tbl, "selector", "agmux=1", fail),
     openshell_bin: str(tbl, "openshell_bin", "openshell", fail),
     agmux_bin: str(tbl, "agmux_bin", "agmux", fail),
+    workdir: optStr(tbl, "workdir", fail),
+    launch: parseLaunch(tbl, fail),
   };
 }
 
