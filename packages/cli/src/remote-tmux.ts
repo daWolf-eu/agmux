@@ -6,14 +6,14 @@
 // / isTmuxKeyName), are copied to named variables on the first line, and are
 // always expanded double-quoted. No eval, no value is ever part of the text.
 //
-// Exit codes: 0 the client ended normally; 3 the target is gone or the view
+// Exit codes: 0 the client ended normally; 3 the target is gone (or its tmux server restarted) or the view
 // could not be built (message on stderr); anything else comes from tmux.
 //
 // Reap state ($HOME/.agmux/attach/<tag>, one line): `view <socket|-> <view>`
 // or `full <socket|-> <client pid>`. Every script first reaps its tag, so a
 // client orphaned by a closed local window or a Mac crash dies on the next
 // attach from the same local pane; REAP_SCRIPT does only that.
-import type { RemoteTmux } from "@agmux/protocol";
+import { isTmuxServerId, TMUX_SERVER_ID_FMT, type RemoteTmux } from "@agmux/protocol";
 
 // `${sock:--}` (sh: "-" when empty) kept out of the template literals.
 const SOCK_OR_DASH = '"${sock:--}"';
@@ -39,19 +39,30 @@ reap() {
   return 0
 }`;
 
+// $srv is the server id recorded with the row ("-" unknown: skipped). A restarted
+// sandbox tmux server reuses the socket path and @0, so the window check alone
+// would pass for a different agent. An id without "-" is pid only (rows from a
+// tmux that did not report a start time). The formats are static text.
+const SERVER_CHECK = String.raw`if [ "$srv" != - ]; then
+  case $srv in *-*) cur=$(t display-message -p '${TMUX_SERVER_ID_FMT}' 2>/dev/null) ;; *) cur=$(t display-message -p '#{pid}' 2>/dev/null) ;; esac
+  [ "$cur" = "$srv" ] \
+    || { echo "agmux: the sandbox tmux server restarted; the session's window is gone" >&2; exit 3; }
+fi`;
+
 // Compares the output, not the status: display-message's target may fail, so
 // an unknown window prints "" and exits 0 (observed on tmux 3.6a).
 const WINDOW_CHECK = String.raw`[ "$(t display-message -p -t "$win" '#{window_id}' 2>/dev/null)" = "$win" ] \
   || { echo "agmux: the session's tmux window $win is gone" >&2; exit 3; }`;
 
-// $1 socket, $2 window, $3 pane, $4 view, $5 key, $6 tag (spec §8.1 order).
+// $1 socket, $2 window, $3 pane, $4 view, $5 key, $6 tag (spec §8.1 order), $7 server id.
 // key-table agmux-view replaces root for mouse events too, so the view rebinds
 // tmux's default click (select pane), drag (copy-mode) and wheel (copy-mode/scroll).
 // The view is a plain session holding the agent's window (linked, never
 // grouped: tmux 3.6a segfaults when a grouped session loses its last window).
-export const VIEW_SCRIPT = String.raw`sock=$1 win=$2 pane=$3 view=$4 key=$5 tag=$6
+export const VIEW_SCRIPT = String.raw`sock=$1 win=$2 pane=$3 view=$4 key=$5 tag=$6 srv=$7
 ${REAP_FN}
 mkdir -p "$st" && reap "$tag"
+${SERVER_CHECK}
 ${WINDOW_CHECK}
 # Recorded before the build: a crash mid-build leaves a reapable view.
 printf 'view %s %s\n' ${SOCK_OR_DASH} "$view" > "$st/$tag"
@@ -70,11 +81,12 @@ printf 'view %s %s\n' ${SOCK_OR_DASH} "$view" > "$st/$tag"
 if [ -n "$sock" ]; then exec tmux -u -S "$sock" attach-session -t "=$view" \; set -t "$view" destroy-unattached on
 else exec tmux -u attach-session -t "=$view" \; set -t "$view" destroy-unattached on; fi`;
 
-// $1 socket, $2 session, $3 window, $4 pane, $5 tag. Records $$, then execs
+// $1 socket, $2 session, $3 window, $4 pane, $5 tag, $6 server id. Records $$, then execs
 // the client in place, so the recorded pid is the client's.
-export const FULL_SCRIPT = String.raw`sock=$1 sess=$2 win=$3 pane=$4 tag=$5
+export const FULL_SCRIPT = String.raw`sock=$1 sess=$2 win=$3 pane=$4 tag=$5 srv=$6
 ${REAP_FN}
 mkdir -p "$st" && reap "$tag"
+${SERVER_CHECK}
 ${WINDOW_CHECK}
 printf 'full %s %s\n' ${SOCK_OR_DASH} "$$" > "$st/$tag"
 set -- attach-session -t "=$sess" \; select-window -t "$win"
@@ -90,12 +102,15 @@ export function viewSessionName(sessionId: string, tag: string): string {
   return `agmux-view-${sessionId.slice(0, 8)}-${tag}`;
 }
 
+// Unknown or malformed ids become "-" (check skipped).
+const serverArg = (c: RemoteTmux): string => (c.server && isTmuxServerId(c.server) ? c.server : "-");
+
 export function viewScriptArgv(c: RemoteTmux, view: string, key: string, tag: string): string[] {
-  return ["sh", "-c", VIEW_SCRIPT, "agmux", c.socket ?? "", c.window, c.pane ?? "", view, key, tag];
+  return ["sh", "-c", VIEW_SCRIPT, "agmux", c.socket ?? "", c.window, c.pane ?? "", view, key, tag, serverArg(c)];
 }
 
 export function fullScriptArgv(c: RemoteTmux, tag: string): string[] {
-  return ["sh", "-c", FULL_SCRIPT, "agmux", c.socket ?? "", c.session, c.window, c.pane ?? "", tag];
+  return ["sh", "-c", FULL_SCRIPT, "agmux", c.socket ?? "", c.session, c.window, c.pane ?? "", tag, serverArg(c)];
 }
 
 export function reapScriptArgv(tag: string): string[] {

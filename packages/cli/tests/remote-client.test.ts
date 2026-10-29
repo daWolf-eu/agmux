@@ -72,6 +72,17 @@ describe("runRemoteClient", () => {
     expect(await t.run("full")).toBe(0);
     expect(t.spawned).toEqual([transportArgv(SPEC, fullScriptArgv(COORDS, "p12"), { tty: true })]);
   });
+  test("passes the row's tmux server id as the last script arg (\"-\" when absent)", async () => {
+    for (const mode of ["view", "full"] as const) {
+      const t = setup({ session: row({ remote_tmux: { ...COORDS, server: "4242-1700000000" } }) });
+      await t.run(mode);
+      expect(t.spawned[0]).toContain("4242-1700000000");
+      expect(t.spawned[0]!.at(-1)).toBe("4242-1700000000");
+      const u = setup();
+      await u.run(mode);
+      expect(u.spawned[0]!.at(-1)).toBe("-");
+    }
+  });
   test("non-zero transport exit is returned and reaps", async () => {
     const t = setup({ childExit: 3 });
     expect(await t.run()).toBe(3);

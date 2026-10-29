@@ -19,19 +19,27 @@ test("script texts are exported constants built on the shared reap function", ()
 
 test("viewScriptArgv: $0 is agmux, null socket and pane become empty strings", () => {
   const argv = viewScriptArgv({ session: "work", window: "@0", pane: null, socket: null }, "agmux-view-019f1898-p1", "M-d", "p1");
-  expect(argv).toEqual(["sh", "-c", VIEW_SCRIPT, "agmux", "", "@0", "", "agmux-view-019f1898-p1", "M-d", "p1"]);
+  expect(argv).toEqual(["sh", "-c", VIEW_SCRIPT, "agmux", "", "@0", "", "agmux-view-019f1898-p1", "M-d", "p1", "-"]);
 });
 
 test("viewScriptArgv passes socket and pane through", () => {
   const argv = viewScriptArgv({ session: "work", window: "@3", pane: "%7", socket: "/tmp/tmux-998/default" }, "V", "M-q", "t0a1b2c3d");
-  expect(argv.slice(3)).toEqual(["agmux", "/tmp/tmux-998/default", "@3", "%7", "V", "M-q", "t0a1b2c3d"]);
+  expect(argv.slice(3)).toEqual(["agmux", "/tmp/tmux-998/default", "@3", "%7", "V", "M-q", "t0a1b2c3d", "-"]);
 });
 
 test("fullScriptArgv: socket, session, window, pane, tag", () => {
   expect(fullScriptArgv({ session: "work", window: "@0", pane: "%0", socket: "/s" }, "p1"))
-    .toEqual(["sh", "-c", FULL_SCRIPT, "agmux", "/s", "work", "@0", "%0", "p1"]);
+    .toEqual(["sh", "-c", FULL_SCRIPT, "agmux", "/s", "work", "@0", "%0", "p1", "-"]);
   expect(fullScriptArgv({ session: "work", window: "@0", pane: null, socket: null }, "p1"))
-    .toEqual(["sh", "-c", FULL_SCRIPT, "agmux", "", "work", "@0", "", "p1"]);
+    .toEqual(["sh", "-c", FULL_SCRIPT, "agmux", "", "work", "@0", "", "p1", "-"]);
+});
+
+test("script argv append the server id; invalid ids become -", () => {
+  const c = { session: "work", window: "@0", pane: null, socket: null };
+  expect(viewScriptArgv({ ...c, server: "42-1700" }, "V", "M-d", "p1").at(-1)).toBe("42-1700");
+  expect(fullScriptArgv({ ...c, server: "42" }, "p1").at(-1)).toBe("42");
+  expect(fullScriptArgv({ ...c, server: "$(x)" }, "p1").at(-1)).toBe("-");
+  expect(viewScriptArgv({ ...c, server: null }, "V", "M-d", "p1").at(-1)).toBe("-");
 });
 
 test("reapScriptArgv carries only the tag", () => {

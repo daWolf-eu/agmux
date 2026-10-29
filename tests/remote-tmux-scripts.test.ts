@@ -129,6 +129,62 @@ for (const shell of SHELLS) {
       expect(fs.existsSync(e.log)).toBe(false);
     });
 
+    describe("server identity", () => {
+      const MSG = "agmux: the sandbox tmux server restarted; the session's window is gone";
+      const serverId = async () => (await tmux(e, ["display-message", "-p", "#{pid}-#{start_time}"])).out;
+      const pidOnly = async () => (await tmux(e, ["display-message", "-p", "#{pid}"])).out;
+
+      test("view: a different server id exits 3 before touching anything", async () => {
+        const V = viewSessionName(ID, "p1");
+        const r = await run(shell, e, viewScriptArgv({ ...coords(), server: "1-2" }, V, "M-d", "p1"));
+        expect(r.code).toBe(3);
+        expect(r.err.trim()).toBe(MSG);
+        expect((await tmux(e, ["list-sessions", "-F", "#{session_name}"])).out).not.toContain("agmux-view-");
+        expect(fs.existsSync(e.log)).toBe(false);
+      });
+
+      test("view: the matching id attaches as before", async () => {
+        const V = viewSessionName(ID, "p1");
+        const r = await run(shell, e, viewScriptArgv({ ...coords(), server: await serverId() }, V, "M-d", "p1"));
+        expect(r.err).toBe("");
+        expect(r.code).toBe(0);
+        expect((await tmux(e, ["list-windows", "-t", `=${V}`, "-F", "#{window_id}"])).out).toBe(W);
+      });
+
+      test("view: a pid-only id compares the pid only", async () => {
+        const V = viewSessionName(ID, "p1");
+        expect((await run(shell, e, viewScriptArgv({ ...coords(), server: await pidOnly() }, V, "M-d", "p1"))).code).toBe(0);
+        const bad = await run(shell, e, viewScriptArgv({ ...coords(), server: "1" }, V, "M-d", "p2"));
+        expect(bad.code).toBe(3);
+        expect(bad.err.trim()).toBe(MSG);
+      });
+
+      test("view: unknown or malformed id skips the check", async () => {
+        for (const [i, server] of [null, undefined, "$(touch pwned)"].entries()) {
+          const V = viewSessionName(ID, `p${i}`);
+          const r = await run(shell, e, viewScriptArgv({ ...coords(), server }, V, "M-d", `p${i}`));
+          expect(r.code).toBe(0);
+        }
+        expect(fs.existsSync(path.join(e.dir, "pwned"))).toBe(false);
+      });
+
+      test("full: mismatch exits 3, match and unknown attach", async () => {
+        const bad = await run(shell, e, fullScriptArgv({ ...coords(), server: "1-2" }, "p1"));
+        expect(bad.code).toBe(3);
+        expect(bad.err.trim()).toBe(MSG);
+        expect(fs.existsSync(e.log)).toBe(false);
+        const ok = await run(shell, e, fullScriptArgv({ ...coords(), server: await serverId() }, "p2"));
+        expect(ok.err).toBe("");
+        expect(ok.code).toBe(0);
+        expect((await run(shell, e, fullScriptArgv(coords(), "p3"))).code).toBe(0);
+      });
+
+      test("the server check runs before the window check", async () => {
+        const r = await run(shell, e, fullScriptArgv({ ...coords(), window: "@99", server: "1-2" }, "p1"));
+        expect(r.err.trim()).toBe(MSG);
+      });
+    });
+
     test("view: the state is recorded before the view is built", async () => {
       const V = viewSessionName(ID, "p1");
       // A session of that name already exists: new-session fails mid-build.
