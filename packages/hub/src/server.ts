@@ -128,6 +128,9 @@ export function createServer(opts: CreateServerOpts): Server<undefined> {
         return new Response(null, { status: 204 });
       }
 
+      // Highest exportable rowid (the replication cursor domain); 0 when empty.
+      if (m === "GET" && url.pathname === "/events/head") return Response.json({ id: store.exportableHead() });
+
       if (m === "GET" && url.pathname === "/events") {
         // Cursor export for replication; the legacy filtered listing is below.
         const afterParam = url.searchParams.get("after_id");

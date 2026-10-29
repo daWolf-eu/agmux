@@ -36,7 +36,7 @@ import { execFile } from "node:child_process";
 import { loadAttentionConfigFile, loadAttentionConfig } from "../src/attention-config.ts";
 import { discoverHubUrl, resolveLiveHubUrl } from "../src/emit.ts";
 import { formatVersion } from "../src/version-cmd.ts";
-import { eventsCmd, parseEventsArgs } from "../src/events-cmd.ts";
+import { eventsCmd, drainCmd, parseEventsArgs } from "../src/events-cmd.ts";
 import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { decideLaunchMode } from "../src/launch-mode.ts";
@@ -405,6 +405,12 @@ async function main(): Promise<number> {
     case "events": {
       const parsed = parseEventsArgs(argv.slice(1));
       if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+      if (parsed.kind === "drain") {
+        return drainCmd({ hubUrl, timeoutS: parsed.timeoutS }, {
+          fetchImpl: fetch, stateDir, err: (l) => console.error(l),
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)), nowMs: () => Date.now(),
+        });
+      }
       // SIGTERM/SIGINT (incl. a replacing follower) end the stream cleanly so the
       // consumer pid file is removed.
       const ac = new AbortController();

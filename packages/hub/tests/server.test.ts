@@ -288,6 +288,16 @@ test("GET /events?after_id returns exportable records in id order with last_id",
   server.stop();
 });
 
+test("GET /events/head is 0 when empty, else the highest exportable rowid", async () => {
+  const { server, url } = makeServer();
+  expect(await (await fetch(`${url}/events/head`)).json()).toEqual({ id: 0 });
+  await post(url, startedEv);
+  const { last_id } = (await (await fetch(`${url}/events?after_id=0`)).json()) as { last_id: number };
+  expect(last_id).toBeGreaterThan(0);
+  expect(await (await fetch(`${url}/events/head`)).json()).toEqual({ id: last_id });
+  server.stop();
+});
+
 test("GET /events?after_id rejects invalid after_id and limit", async () => {
   const { server, url } = makeServer();
   for (const q of ["after_id=abc", "after_id=-1", "after_id=1.5", "after_id="]) {
