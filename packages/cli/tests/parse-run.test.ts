@@ -3,12 +3,12 @@ import { parseRunArgs } from "../src/parse-run.ts";
 
 test("profile mode: -p <name>", () => {
   expect(parseRunArgs(["-p", "claude-work"]))
-    .toEqual({ kind: "profile", profileName: "claude-work", placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "profile", profileName: "claude-work", placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("profile mode: --profile <name>", () => {
   expect(parseRunArgs(["--profile", "claude-work"]))
-    .toEqual({ kind: "profile", profileName: "claude-work", placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "profile", profileName: "claude-work", placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("profile mode rejects extra positional", () => {
@@ -19,67 +19,67 @@ test("profile mode rejects extra positional", () => {
 
 test("inline: basename 'claude' detects kind", () => {
   expect(parseRunArgs(["claude", "--resume", "abc"]))
-    .toEqual({ kind: "inline", agent_kind: "claude", command: "claude", args: ["--resume", "abc"], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "claude", command: "claude", args: ["--resume", "abc"], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: basename 'codex' detects kind", () => {
   expect(parseRunArgs(["codex"]))
-    .toEqual({ kind: "inline", agent_kind: "codex", command: "codex", args: [], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "codex", command: "codex", args: [], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: basename 'pi' detects kind", () => {
   expect(parseRunArgs(["pi", "--session", "abc"]))
-    .toEqual({ kind: "inline", agent_kind: "pi", command: "pi", args: ["--session", "abc"], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "pi", command: "pi", args: ["--session", "abc"], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: --kind=pi override", () => {
   expect(parseRunArgs(["--kind=pi", "/opt/pi-rc1"]))
-    .toEqual({ kind: "inline", agent_kind: "pi", command: "/opt/pi-rc1", args: [], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "pi", command: "/opt/pi-rc1", args: [], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: absolute path basename detection", () => {
   expect(parseRunArgs(["/opt/bin/claude", "--foo"]))
-    .toEqual({ kind: "inline", agent_kind: "claude", command: "/opt/bin/claude", args: ["--foo"], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "claude", command: "/opt/bin/claude", args: ["--foo"], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: --kind override", () => {
   expect(parseRunArgs(["--kind=codex", "/opt/agent-rc1", "--foo"]))
-    .toEqual({ kind: "inline", agent_kind: "codex", command: "/opt/agent-rc1", args: ["--foo"], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "codex", command: "/opt/agent-rc1", args: ["--foo"], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: --kind <v> form", () => {
   expect(parseRunArgs(["--kind", "claude", "myagent"]))
-    .toEqual({ kind: "inline", agent_kind: "claude", command: "myagent", args: [], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "claude", command: "myagent", args: [], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("inline: -- separator forces command parsing", () => {
   expect(parseRunArgs(["--kind=claude", "--", "--weird-binary", "--foo"]))
-    .toEqual({ kind: "inline", agent_kind: "claude", command: "--weird-binary", args: ["--foo"], placement: "inherit", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "claude", command: "--weird-binary", args: ["--foo"], placement: "inherit", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: -d defaults to --new-pane and sets detach", () => {
   expect(parseRunArgs(["-d", "-p", "claude-work"]))
-    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-pane", detach: true, wrapped: false });
+    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-pane", detach: true, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: --detach defaults to --new-pane (inline)", () => {
   expect(parseRunArgs(["--detach", "claude"]))
-    .toEqual({ kind: "inline", agent_kind: "claude", command: "claude", args: [], placement: "new-pane", detach: true, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "claude", command: "claude", args: [], placement: "new-pane", detach: true, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: --new-window without -d sets placement only (detach=false)", () => {
   expect(parseRunArgs(["--new-window", "-p", "claude-work"]))
-    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-window", detach: false, wrapped: false });
+    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-window", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: --new-session on inline (detach=false)", () => {
   expect(parseRunArgs(["--new-session", "codex"]))
-    .toEqual({ kind: "inline", agent_kind: "codex", command: "codex", args: [], placement: "new-session", detach: false, wrapped: false });
+    .toEqual({ kind: "inline", agent_kind: "codex", command: "codex", args: [], placement: "new-session", detach: false, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: -d then --new-window keeps detach=true with placement=new-window", () => {
   expect(parseRunArgs(["-d", "--new-window", "-p", "claude-work"]))
-    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-window", detach: true, wrapped: false });
+    .toEqual({ kind: "profile", profileName: "claude-work", placement: "new-window", detach: true, wrapped: false, direct: false, printCoords: false });
 });
 
 test("placement: conflicting --new-* flags is an error", () => {
@@ -107,22 +107,22 @@ test("error: empty argv", () => {
 
 test("inline run defaults wrapped:false", () => {
   const r = parseRunArgs(["claude"]);
-  expect(r).toMatchObject({ kind: "inline", agent_kind: "claude", wrapped: false });
+  expect(r).toMatchObject({ kind: "inline", agent_kind: "claude", wrapped: false, direct: false, printCoords: false });
 });
 
 test("--wrapped sets wrapped:true (inline)", () => {
   const r = parseRunArgs(["--wrapped", "claude"]);
-  expect(r).toMatchObject({ kind: "inline", wrapped: true });
+  expect(r).toMatchObject({ kind: "inline", wrapped: true, direct: false, printCoords: false });
 });
 
 test("--wrapped sets wrapped:true (profile)", () => {
   const r = parseRunArgs(["--wrapped", "-p", "work"]);
-  expect(r).toMatchObject({ kind: "profile", profileName: "work", wrapped: true });
+  expect(r).toMatchObject({ kind: "profile", profileName: "work", wrapped: true, direct: false, printCoords: false });
 });
 
 test("--wrapped composes with placement", () => {
   const r = parseRunArgs(["--new-window", "--wrapped", "claude"]);
-  expect(r).toMatchObject({ kind: "inline", placement: "new-window", wrapped: true });
+  expect(r).toMatchObject({ kind: "inline", placement: "new-window", wrapped: true, direct: false, printCoords: false });
 });
 
 test("--prompt requires a placement (inherit is rejected)", () => {
@@ -170,7 +170,7 @@ test("--headless sets the headless placement", () => {
   const r = parseRunArgs(["-p", "POSM", "--headless", "--prompt", "hi"]);
   expect(r).toEqual({
     kind: "profile", profileName: "POSM", placement: "headless",
-    detach: false, wrapped: false, prompt: "hi", promptFile: undefined,
+    detach: false, wrapped: false, direct: false, printCoords: false, prompt: "hi", promptFile: undefined,
   });
 });
 
@@ -220,4 +220,24 @@ test("the --prompt-without-placement error now mentions --headless", () => {
   const r = parseRunArgs(["-p", "POSM", "--prompt", "hi"]);
   expect(r.kind).toBe("error");
   if (r.kind === "error") expect(r.message).toMatch(/--headless/);
+});
+
+test("--direct --print-coords --cwd parses to print-coords placement", () => {
+  const r = parseRunArgs(["--direct", "--print-coords", "--cwd", "/w", "--", "claude", "--x"]);
+  expect(r).toMatchObject({
+    kind: "inline", command: "claude", args: ["--x"], placement: "print-coords",
+    direct: true, printCoords: true, cwd: "/w", detach: true,
+  });
+});
+
+test("--print-coords conflicts", () => {
+  expect(parseRunArgs(["--print-coords", "--", "claude"]).kind).toBe("error");
+  expect(parseRunArgs(["--direct", "--print-coords", "--new-pane", "--", "claude"]).kind).toBe("error");
+  expect(parseRunArgs(["--direct", "--print-coords", "--headless", "--prompt", "x", "--", "claude"]).kind).toBe("error");
+  expect(parseRunArgs(["--direct", "--wrapped", "--", "claude"]).kind).toBe("error");
+});
+
+test("--cwd and --direct are plain run flags", () => {
+  expect(parseRunArgs(["--cwd", "/w", "-p", "p"])).toMatchObject({ kind: "profile", cwd: "/w", direct: false, printCoords: false });
+  expect(parseRunArgs(["--cwd"]).kind).toBe("error");
 });

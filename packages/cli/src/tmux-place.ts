@@ -140,6 +140,21 @@ const defaultTmuxExec: TmuxExec = async (args) => {
   return out;
 };
 
+// tmux server identity of the server owning `pane` ("<pid>-<start_time>"), or
+// null when tmux fails or answers with something that is not a server id.
+export async function tmuxServerId(
+  pane: string,
+  socket: string | null,
+  exec: TmuxExec = defaultTmuxExec,
+): Promise<string | null> {
+  try {
+    const out = (await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", pane, TMUX_SERVER_ID_FMT])).trim();
+    return isTmuxServerId(out) ? out : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function resolvePaneCoords(
   paneId: string,
   exec: TmuxExec = defaultTmuxExec,

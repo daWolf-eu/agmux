@@ -12,3 +12,12 @@ test("null on absent, invalid JSON, or wrong types", () => {
     expect(parseLaunchSpec(s)).toBeNull();
   }
 });
+
+test("parsePrintedCoords accepts a coords line and rejects junk or a null pane", async () => {
+  const { parsePrintedCoords } = await import("../src/launch.ts");
+  const rt = { session: "agmux", window: "@1", pane: "%2", socket: null, server: "1-2" };
+  expect(parsePrintedCoords(JSON.stringify({ remote_tmux: rt }))).toEqual(rt);
+  expect(parsePrintedCoords(JSON.stringify({ remote_tmux: { ...rt, pane: null } }))).toBeNull();
+  expect(parsePrintedCoords("not json")).toBeNull();
+  expect(parsePrintedCoords("{}")).toBeNull();
+});

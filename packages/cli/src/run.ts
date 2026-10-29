@@ -6,14 +6,17 @@ import {
   AGMUX_TMUX_SESSION_DEFAULT,
   AGMUX_CONFIG_SUBPATH,
   AGMUX_PROFILE_ENV,
+  AGMUX_LAUNCH_ENV,
   type AgentKind,
+  type LaunchSpec,
+  type PrintedCoords,
 } from "@agmux/protocol";
 import { injectBootstrap, reportInject, type InjectOpts, type InjectResult } from "./tmux-inject.ts";
 import { loadProfile } from "@agmux/wrapper";
 import type { Placement } from "./parse-run.ts";
 import type { LaunchMode } from "./launch-mode.ts";
 import {
-  readCurrentPane, splitPane, newWindow, newSession, switchClient,
+  readCurrentPane, splitPane, newWindow, newSession, switchClient, hasSession, tmuxServerId,
   type PaneCoords,
 } from "./tmux-place.ts";
 
@@ -25,6 +28,7 @@ export interface RunProfileOpts {
   wrapBin: string;
   placement: Placement;
   detach: boolean;
+  cwd?: string;            // --cwd: working dir of the launched agent (wins over profile.cwd)
   mode?: LaunchMode;
   agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
   prompt?: string;         // bootstrap prompt to inject after placement
@@ -41,6 +45,7 @@ export interface RunInlineOpts {
   wrapBin: string;
   placement: Placement;
   detach: boolean;
+  cwd?: string;            // --cwd: working dir of the launched agent (wins over profile.cwd)
   mode?: LaunchMode;
   agentKind?: AgentKind;   // resolved kind for readiness glyph (may be undefined)
   prompt?: string;         // bootstrap prompt to inject after placement
@@ -58,7 +63,7 @@ export interface WrapperSpawn {
 function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
   const env: Record<string, string> = { [AGMUX_HUB_URL_ENV]: opts.hubUrl };
   if (opts.kind === "profile") {
-    return { argv: [opts.wrapBin, opts.profileName], env, label: opts.profileName };
+    return { argv: [opts.wrapBin, opts.profileName], env, label: opts.profileName, cwd: opts.cwd };
   }
   const inlineProfile = {
     agent_kind: opts.agent_kind,
@@ -68,7 +73,7 @@ function buildWrapperSpawn(opts: RunOpts): WrapperSpawn {
   };
   const label = opts.command.split("/").pop() ?? "agent";
   env.AGMUX_INLINE_PROFILE = JSON.stringify(inlineProfile);
-  return { argv: [opts.wrapBin, label], env, label };
+  return { argv: [opts.wrapBin, label], env, label, cwd: opts.cwd };
 }
 
 export function buildDirectSpawn(opts: RunOpts, agmuxBin: string): WrapperSpawn {
@@ -80,10 +85,12 @@ export function buildDirectSpawn(opts: RunOpts, agmuxBin: string): WrapperSpawn 
     const cfgPath = path.join(os.homedir(), AGMUX_CONFIG_SUBPATH);
     const p = loadProfile(opts.profileName, cfgPath);
     env[AGMUX_PROFILE_ENV] = opts.profileName;
-    return { argv: [p.command, ...p.args], env, label: opts.profileName, cwd: p.cwd };
+    env[AGMUX_LAUNCH_ENV] = JSON.stringify({ profile: opts.profileName, command: p.command, args: p.args } satisfies LaunchSpec);
+    return { argv: [p.command, ...p.args], env, label: opts.profileName, cwd: opts.cwd ?? p.cwd };
   }
   const label = opts.command.split("/").pop() ?? "agent";
-  return { argv: [opts.command, ...opts.args], env, label };
+  env[AGMUX_LAUNCH_ENV] = JSON.stringify({ profile: null, command: opts.command, args: opts.args } satisfies LaunchSpec);
+  return { argv: [opts.command, ...opts.args], env, label, cwd: opts.cwd };
 }
 
 function spawnFor(opts: RunOpts, agmuxBin: string): WrapperSpawn {
@@ -138,6 +145,43 @@ export async function runInjectStep(
   } catch (e) {
     return reportInject({ outcome: "failed", detail: e instanceof Error ? e.message : String(e) });
   }
+}
+
+// tmux + output seams for --print-coords (default: real tmux, process stdio).
+export interface PrintCoordsDeps {
+  hasSession: typeof hasSession;
+  newWindow: typeof newWindow;
+  newSession: typeof newSession;
+  tmuxServerId: typeof tmuxServerId;
+  inject: Injector;
+  out: (line: string) => void;
+  err: (line: string) => void;
+}
+
+const defaultPrintCoordsDeps: PrintCoordsDeps = {
+  hasSession, newWindow, newSession, tmuxServerId,
+  inject: injectBootstrap,
+  out: (l) => console.log(l),
+  err: (l) => console.error(l),
+};
+
+// Sandbox side of a remote start: no tmux client, default socket, never
+// switch-client. stdout carries exactly the coords JSON line, all else stderr.
+async function runPrintCoords(opts: RunOpts, agmuxBin: string, deps: PrintCoordsDeps): Promise<number> {
+  const spawn = spawnFor(opts, agmuxBin);
+  const session = process.env[AGMUX_TMUX_SESSION_ENV] ?? AGMUX_TMUX_SESSION_DEFAULT;
+  const windowName = `${spawn.label}-${shortRandomTag()}`;
+  const common = { windowName, cmd: spawn.argv, env: spawn.env, cwd: spawn.cwd, socket: null };
+  const coords = (await deps.hasSession(session, null))
+    ? await deps.newWindow({ ...common, sessionName: session, detach: true })
+    : await deps.newSession({ ...common, sessionName: session });
+  const server = await deps.tmuxServerId(coords.pane, null);
+  const line: PrintedCoords = { remote_tmux: { session: coords.session, window: coords.window, pane: coords.pane, socket: null, server } };
+  deps.out(JSON.stringify(line));
+  deps.err(`agmux: spawned in ${coords.session}:${coords.window}.${coords.pane}`);
+  const report = await runInjectStep({ pane: coords.pane, prompt: opts.prompt, agentKind: opts.agentKind, socket: null }, deps.inject);
+  if (report) deps.err(report);
+  return 0;
 }
 
 async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number> {
@@ -196,7 +240,12 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
   return 0;
 }
 
-export async function runCmd(opts: RunOpts, agmuxBin: string = process.env.AGMUX_BIN ?? "agmux"): Promise<number> {
+export async function runCmd(
+  opts: RunOpts,
+  agmuxBin: string = process.env.AGMUX_BIN ?? "agmux",
+  printDeps: PrintCoordsDeps = defaultPrintCoordsDeps,
+): Promise<number> {
+  if (opts.placement === "print-coords") return runPrintCoords(opts, agmuxBin, printDeps);
   if (opts.placement === "inherit") {
     // Direct + not in tmux → fall back to a fresh agmux session so the agent is
     // still tmux-tracked; otherwise run inline in the current pane.
