@@ -19,6 +19,7 @@ import { attachCmd } from "../src/attach.ts";
 import { runRemoteClient } from "../src/remote-client.ts";
 import { DEFAULT_ATTACH_SETTINGS, loadAttachSettings, type AttachSettings } from "../src/attach-place.ts";
 import { attachPlacedCmd } from "../src/attach-placed.ts";
+import { parseResumeNearestArgs, resumeNearestCmd } from "../src/resume-nearest.ts";
 import { applyUiConfig } from "../src/ui-config.ts";
 import { seenCmd } from "../src/seen.ts";
 import { runEmit } from "../src/emit.ts";
@@ -353,6 +354,15 @@ async function main(): Promise<number> {
         if (!isRemoteAttachMode(mode)) { console.error("attach: --mode must be view|full"); return 2; }
         if (key === undefined || !isTmuxKeyName(key)) { console.error("attach: --detach-key must be a tmux key name like M-d"); return 2; }
         return runRemoteClient({ sessionId: id, mode, detachKey: key, hubUrl, env: process.env });
+      }
+      if (argv.includes("--resume-nearest")) {
+        // Sandbox side of a remote resume; argv and stdout are a contract with the Mac.
+        const parsed = parseResumeNearestArgs(argv.slice(2));
+        if (parsed.kind === "error") { console.error(parsed.message); return 2; }
+        return resumeNearestCmd({
+          idOrPrefix: id, hubUrl, agmuxBin: process.env.AGMUX_BIN ?? "agmux",
+          fallbackLaunch: parsed.fallbackLaunch, out: (l) => console.log(l),
+        });
       }
       const mi = argv.indexOf("--mode");
       let mode: RemoteAttachMode | undefined;
