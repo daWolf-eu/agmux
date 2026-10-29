@@ -8,7 +8,7 @@
 // already create the session detached (-d) and just skip the post-create
 // switch-client.
 import { $ } from "bun";
-import { tmuxSocketFromEnv, tmuxSocketArgs } from "@agmux/protocol";
+import { tmuxSocketFromEnv, tmuxSocketArgs, TMUX_SERVER_ID_FMT, isTmuxServerId } from "@agmux/protocol";
 
 const COORDS_FMT = "#{session_name}\t#{window_id}\t#{pane_id}";
 
@@ -144,14 +144,15 @@ export async function resolvePaneCoords(
   paneId: string,
   exec: TmuxExec = defaultTmuxExec,
   socket: string | null = null,
-): Promise<{ session: string; window: string } | null> {
+): Promise<{ session: string; window: string; server: string | null } | null> {
   try {
-    const out = await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", paneId, "#{session_name}\t#{window_id}"]);
+    const out = await exec([...tmuxSocketArgs(socket), "display-message", "-p", "-t", paneId, `#{session_name}\t#{window_id}\t${TMUX_SERVER_ID_FMT}`]);
     const parts = out.trim().split("\t");
     const session = parts[0];
     const window = parts[1];
     if (!session || !window) return null;
-    return { session, window };
+    const server = parts[2] && isTmuxServerId(parts[2]) ? parts[2] : null;
+    return { session, window, server };
   } catch {
     return null;
   }

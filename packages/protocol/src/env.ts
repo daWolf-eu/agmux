@@ -21,3 +21,5 @@ export const WORKING_TIMEOUT_MS = 180_000;
 // this cadence even without a change, so the working timeout above sees a
 // thinking-only turn (no tool calls) as alive.
 export const TITLE_KEEPALIVE_MS = 60_000;
+// JSON LaunchSpec (see launch.ts) of how agmux started the agent; emit records it on registration.
+export const AGMUX_LAUNCH_ENV = "AGMUX_LAUNCH";
