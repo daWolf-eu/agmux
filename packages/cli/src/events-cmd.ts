@@ -21,6 +21,10 @@ export const DRAIN_POLL_MS = 500;
 // (its follower was just replaced or just dropped: the Mac may reconnect any moment).
 export const DRAIN_RECENT_MS = 300_000;
 export const EXIT_DRAIN_NO_CONSUMER = 3;
+// A lagging consumer whose live pid has held its claim this long is SIGTERMed
+// again (at most once per interval): a Mac that reconnected behind head streams
+// the rest, but `.after` only moves at the next claim.
+export const DRAIN_RENUDGE_MS = 10_000;
 
 export function parseEventsArgs(argv: string[]): EventsArgs {
   let follow = false;
@@ -224,21 +228,27 @@ function readInt(file: string): number | null {
   } catch { return null; }
 }
 
+// The consumer's lock pid while it is alive and an `agmux events` process; else null.
+function livePidOf(deps: DrainDeps, name: string): number | null {
+  const isAlive = deps.isAlive ?? isProcessAlive;
+  const isFollower = deps.isFollower ?? ((pid) => isEventsProcess(pid));
+  const pid = readInt(path.join(deps.stateDir, "follow", `${name}.pid`));
+  return pid !== null && pid > 0 && isAlive(pid) && isFollower(pid) ? pid : null;
+}
+
 // Every consumer known in <state>/follow with its live/recent status. Missing `.after` = -1 (lagging).
 function scanConsumers(deps: DrainDeps): DrainConsumer[] {
   const dir = path.join(deps.stateDir, "follow");
   let files: string[];
   try { files = fs.readdirSync(dir); } catch { return []; }
-  const isAlive = deps.isAlive ?? isProcessAlive;
-  const isFollower = deps.isFollower ?? ((pid) => isEventsProcess(pid));
   const names = new Set<string>();
   for (const f of files) {
     const m = f.match(/^(.+)\.(pid|after)$/);
     if (m && CONSUMER_RE.test(m[1]!)) names.add(m[1]!);
   }
   return [...names].sort().map((name) => {
-    const pid = readInt(path.join(dir, `${name}.pid`));
-    const livePid = pid !== null && pid > 0 && isAlive(pid) && isFollower(pid);
+    const pid = livePidOf(deps, name);
+    const livePid = pid !== null;
     const afterFile = path.join(dir, `${name}.after`);
     let recent = false;
     try { recent = deps.nowMs() - fs.statSync(afterFile).mtimeMs <= DRAIN_RECENT_MS; } catch { /* no .after */ }
@@ -266,9 +276,15 @@ export async function drainCmd(opts: { hubUrl: string; timeoutS: number }, deps:
     return EXIT_DRAIN_NO_CONSUMER;
   }
   const kill = deps.kill ?? ((pid, sig) => process.kill(pid, sig));
+  // Per consumer: the live pid last seen, since when it holds the claim, the last nudge.
+  const claims = new Map<string, { pid: number | null; sinceMs: number; nudgedMs: number }>();
+  const nudge = (name: string, pid: number) => {
+    try { kill(pid, "SIGTERM"); } catch { /* already gone */ }
+    claims.get(name)!.nudgedMs = deps.nowMs();
+  };
   for (const c of initial) {
-    if (c.pid === null) continue;
-    try { kill(c.pid, "SIGTERM"); } catch { /* already gone */ }
+    claims.set(c.name, { pid: c.pid, sinceMs: startMs, nudgedMs: -Infinity });
+    if (c.pid !== null) nudge(c.name, c.pid);
   }
   const names = initial.map((c) => c.name);
   const deadlineMs = startMs + opts.timeoutS * 1000;
@@ -278,7 +294,14 @@ export async function drainCmd(opts: { hubUrl: string; timeoutS: number }, deps:
       .map((name) => ({ name, after: readInt(path.join(dir, `${name}.after`)) ?? -1 }))
       .filter((c) => c.after < head);
     if (lagging.length === 0) return 0;
-    if (deps.nowMs() >= deadlineMs) {
+    const now = deps.nowMs();
+    for (const { name } of lagging) {
+      const claim = claims.get(name)!;
+      const pid = livePidOf(deps, name);
+      if (pid !== claim.pid) Object.assign(claim, { pid, sinceMs: now });
+      if (pid !== null && now - claim.sinceMs >= DRAIN_RENUDGE_MS && now - claim.nudgedMs >= DRAIN_RENUDGE_MS) nudge(name, pid);
+    }
+    if (now >= deadlineMs) {
       deps.err(`agmux events --drain: timed out after ${opts.timeoutS}s; head ${head}; lagging: ` +
         lagging.map((c) => `${c.name} (after ${c.after})`).join(", "));
       return 1;
