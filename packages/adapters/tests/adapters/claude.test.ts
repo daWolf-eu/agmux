@@ -302,3 +302,9 @@ test("tool.used reflects tool_response failure: is_error/success:false → fail,
   const bare = normalizeClaude({ point: "tool.used", source: "hook-command", raw: { tool_name: "Bash" }, target });
   expect(bare.events[0]?.payload).toEqual({ tool: "Bash", ok: true });
 });
+
+test("status names the config dir it read (for install hints)", () => {
+  const cfg = tmpCfg();
+  expect(claudeStatus(ictx(cfg)).configDir).toBe(cfg);
+  expect(claudeStatus(ictx(cfg, null, "/override")).configDir).toBe("/override");
+});

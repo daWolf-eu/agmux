@@ -2,8 +2,9 @@ import * as fs from "node:fs";
 import type { AgentKind } from "@agmux/protocol";
 import {
   installAdapter, uninstallAdapter, loadRecord,
-  type Registry, type InstallContext,
+  type Adapter, type Registry, type InstallContext,
 } from "@agmux/adapters";
+import { launchEnv } from "./adapter-ready.ts";
 import { parseConfig, expandTilde, type AgmuxConfig } from "@agmux/wrapper";
 
 export interface AdapterCmdDeps {
@@ -12,6 +13,9 @@ export interface AdapterCmdDeps {
   configPath: string;
   agmuxEmitPath: string;
   out: (line: string) => void;
+  // The process env: the adapter's config-dir keys (claude: CLAUDE_CONFIG_DIR)
+  // count like for `run --direct`'s readiness check; a profile's env wins.
+  env?: Record<string, string | undefined>;
 }
 
 interface Target { agentKind: AgentKind; profile: string | null; profileEnv: Record<string, string>; }
@@ -36,9 +40,9 @@ function resolveTarget(args: string[], cfg: AgmuxConfig): Target | { error: stri
   return { agentKind: p.agent_kind, profile, profileEnv: p.env };
 }
 
-function ctxFor(t: Target, deps: AdapterCmdDeps, configDirOverride: string | null, skills: boolean = true): InstallContext {
+function ctxFor(t: Target, adapter: Adapter, deps: AdapterCmdDeps, configDirOverride: string | null, skills: boolean = true): InstallContext {
   return {
-    agentKind: t.agentKind, profile: t.profile, profileEnv: t.profileEnv,
+    agentKind: t.agentKind, profile: t.profile, profileEnv: launchEnv(adapter, deps.env ?? {}, t.profileEnv),
     agmuxEmitPath: deps.agmuxEmitPath, stateDir: deps.stateDir,
     configDirOverride, skills,
   };
@@ -94,7 +98,7 @@ export async function runAdapterCmd(args: string[], deps: AdapterCmdDeps): Promi
     if ("error" in t) { deps.out(t.error); return 2; }
     const adapter = deps.registry.lookup(t.agentKind);
     if (!adapter) { deps.out(`no adapter registered for kind '${t.agentKind}'`); return 1; }
-    const ctx = ctxFor(t, deps, configDir, !noSkills);
+    const ctx = ctxFor(t, adapter, deps, configDir, !noSkills);
 
     if (sub === "install") {
       const rec = installAdapter(adapter, ctx);

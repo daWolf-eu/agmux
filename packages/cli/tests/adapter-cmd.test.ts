@@ -128,3 +128,22 @@ test("adapter install --no-skills omits skills but still installs the plugin", a
   expect(fs.existsSync(path.join(cfg, "skills", "agmux", ".claude-plugin", "plugin.json"))).toBe(true);
   expect(fs.existsSync(path.join(cfg, "skills", "agmux", "skills"))).toBe(false);
 });
+
+test("adapter install --kind claude honours CLAUDE_CONFIG_DIR from the env (same dir run --direct checks)", async () => {
+  const cfg = tmp("agmux-cli-cfg-");
+  const code = await runAdapterCmd(["install", "--kind", "claude"], { ...makeDeps(tmp("agmux-cli-state-")), env: { CLAUDE_CONFIG_DIR: cfg } });
+  expect(code).toBe(0);
+  expect(fs.existsSync(path.join(cfg, "skills", "agmux", ".claude-plugin", "plugin.json"))).toBe(true);
+});
+
+test("adapter install <profile>: the profile's CLAUDE_CONFIG_DIR wins over the env", async () => {
+  const state = tmp("agmux-cli-state-");
+  const mine = tmp("agmux-cli-cfg-");
+  const other = tmp("agmux-cli-cfg-");
+  const configPath = path.join(state, "config.toml");
+  fs.writeFileSync(configPath, [`[profiles.work]`, `agent_kind = "claude"`, `command = "claude"`, `env = { CLAUDE_CONFIG_DIR = "${mine}" }`].join("\n"));
+  const code = await runAdapterCmd(["install", "work"], { ...makeDeps(state), configPath, env: { CLAUDE_CONFIG_DIR: other } });
+  expect(code).toBe(0);
+  expect(fs.existsSync(path.join(mine, "skills", "agmux"))).toBe(true);
+  expect(fs.existsSync(path.join(other, "skills", "agmux"))).toBe(false);
+});

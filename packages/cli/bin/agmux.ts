@@ -39,8 +39,7 @@ import { formatVersion } from "../src/version-cmd.ts";
 import { eventsCmd, drainCmd, parseEventsArgs } from "../src/events-cmd.ts";
 import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
-import { decideLaunchMode } from "../src/launch-mode.ts";
-import { adapterReadyOrHint } from "../src/adapter-ready.ts";
+import { planLaunch } from "../src/launch-mode.ts";
 import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig } from "@agmux/wrapper";
 import { parseLsArgs } from "../src/parse-ls.ts";
 
@@ -115,6 +114,7 @@ async function main(): Promise<number> {
       configPath,
       agmuxEmitPath: `${process.env.AGMUX_BIN ?? "agmux"} emit`,
       out: (s) => console.log(s),
+      env: process.env,
     });
   }
 
@@ -245,45 +245,12 @@ async function main(): Promise<number> {
 
       const registry = createDefaultRegistry();
       const agmuxBin = process.env.AGMUX_BIN ?? "agmux";
-
-      // Resolve the agent kind + profile env to decide direct-vs-wrapped. Inline
-      // mode names its kind directly; profile mode reads it from the profile config.
-      // A profile that fails to load (missing/invalid) → leave kind undefined so we
-      // fall back to wrapped; the wrapper will surface the real profile error.
-      let kind: "claude" | "codex" | "pi" | undefined;
-      let profileEnv: Record<string, string> = {};
-      if (parsed.kind === "inline") {
-        kind = parsed.agent_kind;
-      } else {
-        try { const p = loadProfile(parsed.profileName, configPath); kind = p.agent_kind; profileEnv = p.env; }
-        catch { kind = undefined; }
-      }
-
-      const adapter = kind ? registry.lookup(kind) : undefined;
-      let mode = decideLaunchMode({ wrapped: parsed.wrapped, hasAdapter: !!adapter });
-      if (parsed.direct) {
-        if (!adapter) { console.error(`agmux run --direct: no adapter for this agent; cannot launch direct`); return 2; }
-        mode = "direct";
-      }
-
-      // Direct exec needs the plugin present; we NEVER install without consent.
-      // If it isn't ready, adapterReadyOrHint prints the install hint and we fall
-      // back to wrapped (tracked, no config writes). Headless uses neither mode, so
-      // the check (and its "launching wrapped" hint) would only be misleading noise.
-      if (mode === "direct" && adapter && kind && parsed.placement !== "headless") {
-        const ready = adapterReadyOrHint(adapter, {
-          agentKind: kind,
-          profile: parsed.kind === "profile" ? parsed.profileName : null,
-          profileEnv,
-          agmuxEmitPath: `${agmuxBin} emit`,
-          stateDir,
-          configDirOverride: null,
-        }, kind, (s) => console.error(s));
-        if (!ready) {
-          if (parsed.direct) return 2; // hint already printed; --direct never falls back to wrapped
-          mode = "wrapped";
-        }
-      }
+      const plan = planLaunch(parsed, {
+        registry, env: process.env, loadProfile: (name) => loadProfile(name, configPath),
+        agmuxEmitPath: `${agmuxBin} emit`, stateDir, err: (s) => console.error(s),
+      });
+      if ("exitCode" in plan) return plan.exitCode;
+      const { mode, kind, agentEnv } = plan;
 
       // Headless: no tmux, no wrapper, no launch-mode decision — spawn the agent
       // directly, stream its stdout, exit with its code. Needs a concrete profile
@@ -305,13 +272,13 @@ async function main(): Promise<number> {
         return runCmd({
           kind: "profile", profileName: parsed.profileName,
           placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode, cwd: parsed.cwd,
-          agentKind: kind, prompt,
+          agentKind: kind, prompt, agentEnv,
         }, agmuxBin);
       }
       return runCmd({
         kind: "inline", agent_kind: parsed.agent_kind, command: parsed.command, args: parsed.args,
         placement: parsed.placement, detach: parsed.detach, hubUrl, wrapBin, mode, cwd: parsed.cwd,
-        agentKind: kind, prompt,
+        agentKind: kind, prompt, agentEnv,
       }, agmuxBin);
     }
     case "ls": {
