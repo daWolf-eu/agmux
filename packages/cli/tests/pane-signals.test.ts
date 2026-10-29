@@ -4,6 +4,7 @@ import { collectPaneSignals, createPaneSignalState } from "../src/pane-signals.t
 
 function row(over: Partial<SessionRow>): SessionRow {
   return {
+    tmux_server: null,
     session_id: "s1", agent_kind: "claude", profile: null, native_session_id: null, command: "claude",
     args: [], env_overrides: {}, cwd: "/", pid: 1, tmux_session: "w", tmux_window: "@1", tmux_pane: "%1",
     tmux_socket: null, host: "h", project: null, parent_session_id: null, start_ts: "t", last_heartbeat_ts: null,

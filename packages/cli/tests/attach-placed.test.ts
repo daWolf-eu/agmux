@@ -7,6 +7,7 @@ import { DEFAULT_ATTACH_SETTINGS } from "../src/attach-place.ts";
 const ID = "019f1898-8e0f-7000-ab55-07d09f673b59";
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
+    tmux_server: null,
     session_id: ID, agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
     tmux_session: "work", tmux_window: "@3", tmux_pane: "%5", tmux_socket: null,

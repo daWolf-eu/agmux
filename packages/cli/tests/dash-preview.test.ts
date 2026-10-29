@@ -4,6 +4,7 @@ import { buildCapturePaneArgs, makePreviewSource } from "../src/dash-preview.ts"
 
 function mkRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
+    tmux_server: null,
     session_id: "s1", agent_kind: "claude", profile: null, native_session_id: null,
     command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
     tmux_session: "agmux", tmux_window: "@1", tmux_pane: "%1", tmux_socket: null, host: "h", project: null,

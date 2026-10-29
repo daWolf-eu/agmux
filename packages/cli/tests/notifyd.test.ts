@@ -33,6 +33,7 @@ test("a write failure is swallowed — the daemon must not die over a cache file
 // --- runNotifyd -------------------------------------------------------
 
 const row: SessionRow = {
+    tmux_server: null,
   session_id: "abc-1", agent_kind: "claude", profile: null, native_session_id: null,
   command: "claude", args: [], env_overrides: {}, cwd: "/tmp", pid: 1,
   tmux_session: "work", tmux_window: "@2", tmux_socket: null, tmux_pane: "%7",

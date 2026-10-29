@@ -77,3 +77,43 @@ test("mint: registered with no env_overrides stores an empty object", () => {
   applyEventToProjection(db, regEv("s-env0", { native_session_id: "n-e0", pid: 1 }));
   expect(JSON.parse(row(db, "s-env0").env_json)).toEqual({});
 });
+
+test("launch: registered INSERT records command, args and tmux server", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-l", { native_session_id: "n-l", command: "claude",
+    args: ["--dangerously-skip-permissions"], tmux_server: "42-100" }));
+  const r = row(db, "s-l");
+  expect(JSON.parse(r.args_json)).toEqual(["--dangerously-skip-permissions"]);
+  expect(r.command).toBe("claude");
+  expect(r.tmux_server).toBe("42-100");
+});
+
+test("launch: revive keeps recorded args, overwrites tmux server", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-r1", { native_session_id: "n", args: ["--x"], tmux_server: "42-100" }));
+  db.query(`UPDATE sessions SET status='ended', end_ts='x' WHERE session_id=?`).run("s-r1");
+  applyEventToProjection(db, regEv("s-r1", { native_session_id: "n", args: ["--y"], tmux_server: "43-200" }));
+  const r = row(db, "s-r1");
+  expect(JSON.parse(r.args_json)).toEqual(["--x"]);
+  expect(r.tmux_server).toBe("43-200");
+  expect(r.status).toBe("idle");
+});
+
+test("launch: revive of a row without recorded args takes the payload args and command", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-r2", { native_session_id: "n" }));
+  db.query(`UPDATE sessions SET status='ended', end_ts='x' WHERE session_id=?`).run("s-r2");
+  applyEventToProjection(db, regEv("s-r2", { native_session_id: "n", args: ["--y"], command: "/bin/claude" }));
+  const r = row(db, "s-r2");
+  expect(JSON.parse(r.args_json)).toEqual(["--y"]);
+  expect(r.command).toBe("/bin/claude");
+});
+
+test("launch: live re-register fills empty args but keeps tmux server when absent", () => {
+  const db = freshDb();
+  applyEventToProjection(db, regEv("s-r3", { native_session_id: "n", tmux_server: "42-100" }));
+  applyEventToProjection(db, regEv("s-r3", { native_session_id: "n", args: ["--y"] }));
+  const r = row(db, "s-r3");
+  expect(JSON.parse(r.args_json)).toEqual(["--y"]);
+  expect(r.tmux_server).toBe("42-100");
+});

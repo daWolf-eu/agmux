@@ -183,7 +183,7 @@ test("remote rows expose namespaced remote_tmux and remote_pid", () => {
   const r = s.getSession(REMOTE, NOW)!;
   expect(r.tmux_session).toBeNull();
   expect(r.pid).toBeNull();
-  expect(r.remote_tmux).toEqual({ session: "work", window: "@0", pane: "%0", socket: "/tmp/tmux-998/default" });
+  expect(r.remote_tmux).toEqual({ session: "work", window: "@0", pane: "%0", socket: "/tmp/tmux-998/default", server: null });
   expect(r.remote_pid).toBe(446);
   const l = s.getSession(LOCAL, NOW)!;
   expect(l.remote_tmux).toBeNull();
@@ -191,4 +191,15 @@ test("remote rows expose namespaced remote_tmux and remote_pid", () => {
   const R2 = "0190a3e0-0000-7000-8000-000000000003";
   s.appendReplicated(reg(R2, "gw/sbx", { tmux_session: "work" }), "gw/sbx", "db1");
   expect(s.getSession(R2, NOW)!.remote_tmux).toBeNull();
+});
+
+test("remote row surfaces tmux server as remote_tmux.server only", () => {
+  const s = Store.openInMemory();
+  s.append(synced());
+  const ev = registered(REMOTE, "gw/sbx");
+  ev.payload.tmux_server = "42-100";
+  s.appendReplicated(ev, "gw/sbx", "db1");
+  const r = s.getSession(REMOTE, NOW)!;
+  expect(r.remote_tmux?.server).toBe("42-100");
+  expect(r.tmux_server).toBeNull();
 });

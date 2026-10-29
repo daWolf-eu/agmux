@@ -261,6 +261,13 @@ function applyLinked(db: Database, ev: EventEnvelope): void {
 //   ended/lost       → reopen (rule 1): back to idle, clear terminal fields
 //   live             → set native_session_id (covers claim, rotate, and re-register)
 // Then resolve the optional parent lineage hint (spec §5); unresolvable → leave null.
+// Bind order matches the tmux_server / args_json / command assignments above.
+function launchParams(p: any): (string | null)[] {
+  const args = p.args ? JSON.stringify(p.args) : null;
+  const cmd = p.command ?? null;
+  return [p.tmux_server ?? null, args, args, cmd, cmd];
+}
+
 function applyRegistered(db: Database, ev: EventEnvelope): void {
   const p = ev.payload as any;
   const existing = db.query<{ status: string }, [string]>(
@@ -272,21 +279,21 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
       INSERT INTO sessions (
         session_id, agent_kind, profile, native_session_id,
         command, args_json, env_json, cwd, pid,
-        tmux_session, tmux_window, tmux_pane, tmux_socket, host,
+        tmux_session, tmux_window, tmux_pane, tmux_socket, host, tmux_server,
         project, parent_session_id, start_ts, last_heartbeat_ts,
         end_ts, exit_code, signal, status, origin, status_kind, status_ts
       ) VALUES (
         ?, ?, ?, ?,
-        ?, '[]', ?, ?, ?,
         ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?,
         NULL, NULL, ?, NULL,
         NULL, NULL, NULL, 'idle', 'native', ?, ?
       )
       ON CONFLICT(session_id) DO NOTHING
     `).run(
       ev.session_id, p.agent_kind, p.profile ?? null, p.native_session_id,
-      p.command ?? p.agent_kind, JSON.stringify(p.env_overrides ?? {}), p.cwd ?? "", p.pid ?? null,
-      p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host,
+      p.command ?? p.agent_kind, p.args ? JSON.stringify(p.args) : "[]", JSON.stringify(p.env_overrides ?? {}), p.cwd ?? "", p.pid ?? null,
+      p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.host, p.tmux_server ?? null,
       ev.ts, ev.kind, ev.ts,
     );
   } else if (existing.status === "ended" || existing.status === "lost") {
@@ -299,9 +306,12 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         tmux_session = COALESCE(?, tmux_session),
         tmux_window  = COALESCE(?, tmux_window),
         tmux_pane    = COALESCE(?, tmux_pane),
-        tmux_socket  = COALESCE(?, tmux_socket)
+        tmux_socket  = COALESCE(?, tmux_socket),
+        tmux_server  = COALESCE(?, tmux_server),
+        args_json    = CASE WHEN args_json = '[]' AND ? IS NOT NULL THEN ? ELSE args_json END,
+        command      = CASE WHEN command = agent_kind AND ? IS NOT NULL THEN ? ELSE command END
       WHERE session_id = ?
-    `).run(ev.ts, p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
+    `).run(ev.ts, p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ...launchParams(p), ev.session_id);
   } else {
     db.query(`
       UPDATE sessions SET
@@ -310,9 +320,12 @@ function applyRegistered(db: Database, ev: EventEnvelope): void {
         tmux_session = COALESCE(?, tmux_session),
         tmux_window  = COALESCE(?, tmux_window),
         tmux_pane    = COALESCE(?, tmux_pane),
-        tmux_socket  = COALESCE(?, tmux_socket)
+        tmux_socket  = COALESCE(?, tmux_socket),
+        tmux_server  = COALESCE(?, tmux_server),
+        args_json    = CASE WHEN args_json = '[]' AND ? IS NOT NULL THEN ? ELSE args_json END,
+        command      = CASE WHEN command = agent_kind AND ? IS NOT NULL THEN ? ELSE command END
       WHERE session_id = ?
-    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ev.session_id);
+    `).run(p.native_session_id, p.pid ?? null, p.tmux_session ?? null, p.tmux_window ?? null, p.tmux_pane ?? null, p.tmux_socket ?? null, ...launchParams(p), ev.session_id);
   }
 
   const par = p.parent;

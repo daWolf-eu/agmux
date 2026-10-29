@@ -35,7 +35,7 @@ function remoteTmux(raw: any): RemoteTmux | null {
   const clean = (v: unknown) => (v == null ? null : stripControls(String(v)));
   return {
     session: stripControls(String(raw.tmux_session)), window: stripControls(String(raw.tmux_window)),
-    pane: clean(raw.tmux_pane), socket: clean(raw.tmux_socket),
+    pane: clean(raw.tmux_pane), socket: clean(raw.tmux_socket), server: clean(raw.tmux_server),
   };
 }
 
@@ -56,6 +56,7 @@ function decodeRow(raw: any): SessionRow {
     tmux_window: remote ? null : raw.tmux_window,
     tmux_pane: remote ? null : raw.tmux_pane,
     tmux_socket: remote ? null : (raw.tmux_socket ?? null),
+    tmux_server: remote ? null : (raw.tmux_server ?? null),
     host: raw.host,
     project: raw.project,
     parent_session_id: raw.parent_session_id,
