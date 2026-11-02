@@ -5,6 +5,8 @@ import {
   attachRemote, findRemotePane, remotePaneCmd, remoteWindowName, type AttachRemoteDeps,
 } from "../src/attach-remote.ts";
 import { attachSettingsFrom } from "../src/attach-place.ts";
+import { holdOnFailure } from "../src/tmux-place.ts";
+import { fakeRex } from "./helpers/fake-rex.ts";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 const SETTINGS = attachSettingsFrom({ terminal: { newTab: ["term", "--tab", "-e", "{cmd}"] }, remote: {} }, "/bin/agmux");
@@ -31,6 +33,7 @@ function recorder(listing = "") {
   const spawned: string[][] = [];
   const coords = (window: string) => ({ session: "mac", window, pane: "%20", socket: null });
   const deps: AttachRemoteDeps = {
+    mux: "tmux",
     runTmux: async (a) => { tmux.push(a); },
     listPanes: async () => listing,
     currentPane: async () => ({ session: "mac", window: "@1", pane: "%2", socket: null }),
@@ -166,5 +169,100 @@ describe("attachRemote", () => {
   test("in a popup a placed window closes the popup", async () => {
     const r = recorder();
     expect(await attachRemote(remoteRow(), undefined, env({ ...IN_TMUX, popup: true }), r.deps)).toEqual({ argv: [] });
+  });
+});
+
+describe("attachRemote in Rex", () => {
+  const S = "session:s1";
+  const W = "window:w1";
+  const B = "block:b1";
+  const LABEL = (m: string) => `agmux:remote:11111111:${m}`;
+  const rexEnv = (ctx: Partial<AttachCtx> = {}) => ({ ctx: { ...IN_TMUX, ...ctx }, settings: SETTINGS });
+  const cmd = (m: "view" | "full") => holdOnFailure(remotePaneCmd("/bin/agmux", ID, m, "M-d"));
+  const run = (m: "view" | "full") => `run -s ${S} --label ${LABEL(m)} --json -- ${cmd(m).join(" ")}`;
+  const noBlocks = { "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: B, label: "shell" }] }) } };
+  const tab = { stdout: JSON.stringify({ window_id: "window:new", block_ids: ["block:new"], revision: 1 }) };
+
+  function rexRec(script: Record<string, { code?: number; stdout?: string }>) {
+    const r = recorder();
+    const exec = fakeRex(script);
+    const deps: AttachRemoteDeps = {
+      ...r.deps, mux: "rex", rexExec: exec,
+      currentPane: async () => ({ session: S, window: W, pane: B, socket: null }),
+    };
+    return { ...r, deps, exec };
+  }
+
+  test("in Rex the default mode is the configured mode (view), not full", async () => {
+    const r = rexRec({ ...noBlocks, [run("view")]: tab });
+    expect(await attachRemote(remoteRow(), undefined, rexEnv(), r.deps)).toBeNull();
+    expect(r.exec.calls.some((c) => c.join(" ").includes(LABEL("view")))).toBe(true);
+  });
+
+  test("in Rex new-window opens a labelled tab running the remote client", async () => {
+    const r = rexRec({ ...noBlocks, [run("view")]: tab });
+    await attachRemote(remoteRow(), { placement: "new-window" }, rexEnv(), r.deps);
+    expect(r.exec.calls.at(-1)!.slice(3).join(" ")).toBe(run("view"));
+    expect(r.placed).toEqual([]);
+    expect(r.tmux).toEqual([]);
+  });
+
+  test("in Rex new-pane splits the caller's block with the label", async () => {
+    const split = `split -s ${S} -b ${B} --json --label ${LABEL("full")} -- ${cmd("full").join(" ")}`;
+    const r = rexRec({ ...noBlocks, [split]: { stdout: JSON.stringify({ block_ids: ["block:new"] }) },
+      [`block inspect block:new -s ${S} --json`]: { stdout: JSON.stringify({ block: { window_id: W } }) } });
+    await attachRemote(remoteRow(), { placement: "new-pane", mode: "full" }, rexEnv(), r.deps);
+    expect(r.exec.calls.some((c) => c.join(" ").endsWith(split))).toBe(true);
+    expect(r.placed).toEqual([]);
+  });
+
+  test("in Rex new-session creates a session, labels the block, switches the app, never calls tmux", async () => {
+    const name = "agmux-11111111-view";
+    const r = rexRec({
+      ...noBlocks,
+      "ls --json": { stdout: JSON.stringify({ sessions: [] }) },
+      [`new ${name} --window ⇄ 11111111 --json -- ${cmd("view").join(" ")}`]: {
+        stdout: JSON.stringify({ session_id: "session:n", initial_windows: [{ window_id: "window:n", block_ids: ["block:n"] }] }) },
+      [`block rename block:n ${LABEL("view")} -s session:n`]: {},
+      "session inspect session:n --json": { stdout: JSON.stringify({ windows: [{ window_id: "window:n", focused_block_id: "block:n" }] }) },
+      [`api call -s session:n session.focus_block ${JSON.stringify({ session_id: "session:n", block_id: "block:n" })}`]: { stdout: "{}" },
+      "client ls --json": { stdout: JSON.stringify({ clients: [] }) },
+    });
+    await attachRemote(remoteRow(), { placement: "new-session" }, rexEnv(), r.deps);
+    const all = r.exec.calls.map((c) => c.join(" "));
+    expect(all.some((c) => c.includes("block rename block:n"))).toBe(true);
+    expect(r.tmux).toEqual([]);
+    expect(r.placed).toEqual([]);
+  });
+
+  test("in Rex an existing labelled block is focused, no second client starts", async () => {
+    const focus = `api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:old" })}`;
+    const r = rexRec({
+      "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:old", label: LABEL("view") }] }) },
+      [focus]: { stdout: "{}" },
+      "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
+      [`-C client:app do session.select session_id=${S}`]: {},
+    });
+    expect(await attachRemote(remoteRow(), undefined, rexEnv(), r.deps)).toBeNull();
+    const all = r.exec.calls.map((c) => c.join(" "));
+    expect(all.some((c) => c.includes("session.focus_block"))).toBe(true);
+    expect(all.some((c) => / run | split | new /.test(c))).toBe(false);
+    expect(r.tmux).toEqual([]);
+    expect(await attachRemote(remoteRow(), undefined, rexEnv({ popup: true }), r.deps)).toEqual({ argv: [] });
+  });
+
+  test("view and full of one session get different labels", async () => {
+    const blocks = { "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:v", label: LABEL("view") }] }) } };
+    const r = rexRec({ ...blocks, [run("full")]: tab });
+    await attachRemote(remoteRow(), { placement: "new-window", mode: "full" }, rexEnv(), r.deps);
+    expect(r.exec.calls.at(-1)!.slice(3).join(" ")).toBe(run("full"));
+  });
+
+  test("inline in Rex returns the client argv and sets no label", async () => {
+    const r = rexRec({});
+    const h = await attachRemote(remoteRow(), { placement: "inline" }, rexEnv(), r.deps);
+    expect(h).toEqual({ argv: remotePaneCmd("/bin/agmux", ID, "view", "M-d") });
+    expect(r.exec.calls.every((c) => !c.join(" ").includes("--label"))).toBe(true);
+    expect(r.tmux).toEqual([]);
   });
 });

@@ -85,7 +85,7 @@ export function makeActions(
   const remoteDeps = {
     runTmux: deps.runTmux, listPanes: deps.listPanes ?? defaultAttachRemoteDeps.listPanes, currentPane,
     splitPane: split, newWindow: placement.newWindow, newSession: placement.newSession,
-    switchClient: placement.switchClient, spawnDetached,
+    switchClient: placement.switchClient, spawnDetached, mux: caller, rexExec,
   };
   // A closed remote row resumes in its sandbox, then opens like a live one.
   const remoteResume = (row: SessionRow, req: AttachRequest | undefined): Promise<Handoff | null> =>

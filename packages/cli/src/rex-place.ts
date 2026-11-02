@@ -93,6 +93,7 @@ export async function rexSplitPane(args: {
   cwd?: string;
   socket?: string | null;
   session?: string;
+  label?: string;
 }, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
   const socket = args.socket ?? null;
   const session = args.session ?? process.env.REX_SESSION;
@@ -101,6 +102,7 @@ export async function rexSplitPane(args: {
     "split", "-s", session, "-b", args.targetPane, "--json",
     ...(args.detach ? ["--focus=false"] : []),
     ...(args.cwd ? ["-c", args.cwd] : []),
+    ...(args.label ? ["--label", args.label] : []),
     "--", ...placed(args.env, args.cmd),
   ]);
   const pane = j.block_ids?.[0];
@@ -145,6 +147,7 @@ export async function rexNewSession(args: {
   env: Record<string, string>;
   cwd?: string;
   socket?: string | null;
+  label?: string; // set on the first block (`rex new` has no label flag)
 }, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
   const socket = args.socket ?? null;
   if (await rexHasSession(args.sessionName, socket, exec)) {
@@ -160,6 +163,10 @@ export async function rexNewSession(args: {
   const pane = win?.block_ids?.[0];
   if (typeof session !== "string" || typeof win?.window_id !== "string" || typeof pane !== "string") {
     throw new Error("rex new: no ids in output");
+  }
+  if (args.label) {
+    const r = await exec([...rexTarget(socket), "block", "rename", pane, args.label, "-s", session]);
+    if (r.code !== 0) throw new Error(`rex block rename failed (exit ${r.code})`);
   }
   return { session, window: win.window_id, pane, socket };
 }
