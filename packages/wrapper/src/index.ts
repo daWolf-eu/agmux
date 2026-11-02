@@ -171,8 +171,8 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const mr = fs.createReadStream("", { fd: master, autoClose: false });
   mr.on("data", (chunk) => { process.stdout.write(chunk); onOutput(chunk as Buffer); });
   mr.on("error", () => {});
-  const writeToChild = ptyWriter(master);
-  process.stdin.on("data", (chunk: Buffer) => writeToChild(chunk));
+  const toChild = ptyWriter(master);
+  process.stdin.on("data", (chunk: Buffer) => toChild.write(chunk));
   if (stdinIsTty) process.stdin.resume();
 
   process.stdout.on("resize", () => {
@@ -191,7 +191,9 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   await child.exited;
   stopHeartbeat();
   restore();
-  try { fs.closeSync(master); } catch {}
+  // A write still blocked keeps the fd: closing under it could hit a reused number,
+  // and this process is about to exit anyway.
+  if (await toChild.stop(1000)) { try { fs.closeSync(master); } catch {} }
 
   const signal = child.signalCode ?? null;
   const exitCode = child.exitCode ?? null;

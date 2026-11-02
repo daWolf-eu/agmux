@@ -148,3 +148,23 @@ test("input larger than the tty queue reaches a child that is redrawing, in orde
   expect(got.length).toBe(total);
   expect(got.every((b, i) => b === 97 + (i % 26))).toBe(true);
 }, 12000);
+
+async function pump(role: string): Promise<number> {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-pty-pump-"));
+  const proc = Bun.spawn(["bun", path.join(import.meta.dir, "fixtures/pty-pump.ts"), role, path.join(dir, "reused")], { stdout: "ignore", stderr: "ignore" });
+  const timer = setTimeout(() => proc.kill("SIGKILL"), 8000);
+  const code = await proc.exited;
+  clearTimeout(timer);
+  fs.rmSync(dir, { recursive: true, force: true });
+  return code;
+}
+
+// The wrapper closes the master when the child exits. A queued chunk written after
+// that would land on whatever reused the fd number.
+test("after stop, queued input never reaches a reused fd", async () => {
+  expect(await pump("stop")).toBe(0);
+}, 12000);
+
+test("stop gives up on a write that stays blocked, so the wrapper can still exit", async () => {
+  expect(await pump("stuck")).toBe(0);
+}, 12000);

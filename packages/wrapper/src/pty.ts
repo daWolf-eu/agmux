@@ -93,21 +93,43 @@ export function openPty(initRows: number, initCols: number): PtyHandles {
   };
 }
 
-function writeFully(fd: number, chunk: Uint8Array): Promise<void> {
+function writeFully(fd: number, chunk: Uint8Array, stopped: () => boolean): Promise<void> {
   return new Promise((resolve, reject) => {
     const step = (off: number): void => {
-      if (off >= chunk.length) { resolve(); return; }
+      if (off >= chunk.length || stopped()) { resolve(); return; }
       fs.write(fd, chunk, off, chunk.length - off, null, (err, n) => { if (err) reject(err); else step(off + n); });
     };
     step(0);
   });
 }
 
+export interface PtyWriter {
+  write(chunk: Uint8Array): void;
+  // Drops what is queued. True once nothing can touch the fd, so it may be closed;
+  // false if a write is still blocked after timeoutMs (a grandchild can hold the
+  // tty open), and then the fd must stay open.
+  stop(timeoutMs: number): Promise<boolean>;
+}
+
 // Input for the child, in order and never on the event loop. A full tty queue
 // blocks the write; if the child is itself blocked writing output, only this loop
 // can drain that, so a synchronous write deadlocks both (about 2 KB of paste into
 // an agent that redraws). A failed write means the child has gone.
-export function ptyWriter(fd: number): (chunk: Uint8Array) => void {
+export function ptyWriter(fd: number): PtyWriter {
+  let stopped = false;
   let tail = Promise.resolve();
-  return (chunk) => { tail = tail.then(() => writeFully(fd, chunk)).catch(() => {}); };
+  return {
+    write(chunk) {
+      if (stopped) return;
+      tail = tail.then(() => writeFully(fd, chunk, () => stopped)).catch(() => {});
+    },
+    async stop(timeoutMs) {
+      stopped = true;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const gaveUp = new Promise<boolean>((resolve) => { timer = setTimeout(() => resolve(false), timeoutMs); });
+      const done = await Promise.race([tail.then(() => true), gaveUp]);
+      clearTimeout(timer);
+      return done;
+    },
+  };
 }
