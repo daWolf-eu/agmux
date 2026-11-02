@@ -100,3 +100,14 @@ test("a closed remote session goes to resume; its errors exit 2", async () => {
   expect(code).toBe(2);
   expect(errs).toEqual(["attach: resume: refused"]);
 });
+
+test("a notice is printed and nothing is spawned", async () => {
+  const out: string[] = [];
+  const actions: Actions = { ...fakeActions([]), async attach() { return { argv: [], notice: "opened in Rex" }; } };
+  const code = await withHub(row({ mux: "rex", tmux_session: "session:s", tmux_window: "window:w", tmux_pane: "block:b" }), () => attachPlacedCmd(
+    { idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "w", placement: "inline", settings: DEFAULT_ATTACH_SETTINGS },
+    { makeActionsImpl: () => actions, spawn: async () => { throw new Error("spawned"); }, out: (s) => out.push(s) },
+  ));
+  expect(code).toBe(0);
+  expect(out).toEqual(["opened in Rex"]);
+});

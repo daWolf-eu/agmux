@@ -1,12 +1,15 @@
 import { $ } from "bun";
 import type { RemoteAttachMode, SessionRow } from "@agmux/protocol";
-import { LIVE_STATUSES, tmuxSocketArgs, AGMUX_TMUX_SESSION_DEFAULT } from "@agmux/protocol";
+import { LIVE_STATUSES, detectMux, rowMux, tmuxSocketArgs } from "@agmux/protocol";
+import { defaultRexExec, type RexExec } from "@agmux/wrapper";
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { resolvePrefix } from "./id-resolve.ts";
 import { loadProfileLaunch } from "./profile-env.ts";
-import { hasSession, readCurrentPane } from "./tmux-place.ts";
-import { resumeIntoSession, defaultPlacementDeps } from "./resume-place.ts";
+import { hasSession } from "./tmux-place.ts";
+import { resumeIntoSession } from "./resume-place.ts";
+import { placementOps, type PlacementOps } from "./mux-ops.ts";
+import { openRexRow, openTmuxTab, planOpen, probeRow, resumeTarget, rexUnreachableMessage } from "./open-row.ts";
 import { postSeen, seenHost } from "./seen.ts";
 import type { RemoteConfig } from "@agmux/hub";
 import { attachKind, resolvePlacement } from "@agmux/tui";
@@ -25,6 +28,9 @@ export interface AttachOpts {
   mode?: RemoteAttachMode;   // --mode: overrides the remote mode default
   remotes?: () => RemoteConfig[]; // [[remote]] entries; default: config.toml
   resumeRemote?: Partial<ResumeRemoteDeps>; // closed remote row: sandbox IO (tests)
+  sessionExists?: (name: string, socket: string | null) => Promise<boolean>; // default: tmux has-session (tests)
+  rexExec?: RexExec;  // Rex commands (tests)
+  ops?: PlacementOps; // the caller's placements; default: placementOps(process.env) (tests)
 }
 
 export interface AttachCoords { tmux_session: string; tmux_window: string; tmux_pane: string | null; tmux_socket: string | null; }
@@ -81,7 +87,8 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     usage: { turn_count: number } | null;
   };
 
-  const inTmux = !!process.env.TMUX;
+  const caller = detectMux(process.env);
+  const inTmux = caller === "tmux";
 
   // Fire-and-forget: marking a session seen is bookkeeping, never a reason to
   // block or fail an attach. postSeen already resolves false rather than
@@ -94,7 +101,29 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
 
   if (session.remote) return attachRemoteCmd(session, opts);
 
-  if ((await decideAttach(session, hasSession)) === "attach") {
+  const rexExec = opts.rexExec ?? defaultRexExec;
+  const ops = opts.ops ?? placementOps(process.env, false, rexExec);
+  // A closed row isn't probed: only a live one can be still running.
+  const live = attachKind(session) === "live";
+  const presence = live ? await probeRow(session, opts.sessionExists ?? hasSession, rexExec) : "gone";
+  const plan = planOpen({ caller, row: rowMux(session), live, presence });
+
+  if (plan === "unreachable") { console.error(rexUnreachableMessage(session.session_id)); return 2; }
+
+  if (plan === "focus-rex" || plan === "tmux-tab") {
+    try {
+      const h = plan === "focus-rex"
+        ? await openRexRow(session, { caller, popup: false, currentPane: ops.currentPane }, rexExec)
+        : await openTmuxTab(session);
+      if (h?.notice) console.log(h.notice);
+      return 0;
+    } catch (e) {
+      console.error(e instanceof Error ? e.message : String(e));
+      return 2;
+    }
+  }
+
+  if (plan === "tmux-native") {
     const cmds = buildAttachCommands(
       { tmux_session: session.tmux_session!, tmux_window: session.tmux_window!, tmux_pane: session.tmux_pane, tmux_socket: session.tmux_socket },
       inTmux,
@@ -108,7 +137,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     return 0;
   }
 
-  // dead / lost / stale-live (tmux gone): relaunch under the same session_id,
+  // dead / lost / stale-live (pane gone): relaunch under the same session_id,
   // resuming natively if the adapter supports it (spec §6.4). buildRelaunchSpec
   // encapsulates the choice.
   const spec = buildRelaunchSpec(session, {
@@ -125,15 +154,15 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     loadProfileLaunch,
   });
 
-  // In tmux: place the resumed agent in a NEW window of the caller's current
-  // session and switch to it (mirrors the dash resume flow), rather than taking
-  // over the pane the user ran `attach` from. Outside tmux: hand the terminal to
-  // the relaunched agent — the wrapper creates/attaches the tmux session itself.
-  if (inTmux) {
-    const here = await readCurrentPane().catch(() => null);
-    const target = here?.session ?? session.tmux_session ?? AGMUX_TMUX_SESSION_DEFAULT;
+  // In a multiplexer: place the resumed agent in a NEW window of the caller's
+  // current session and switch to it (mirrors the dash resume flow), rather than
+  // taking over the pane the user ran `attach` from. Outside one: hand the terminal
+  // to the relaunched agent — the wrapper creates/attaches the tmux session itself.
+  if (caller !== null) {
+    const here = await ops.currentPane().catch(() => null);
+    const target = resumeTarget(session, caller, here, process.env);
     const socket = here?.socket ?? null;
-    await resumeIntoSession(spec, target, session.session_id.slice(0, 8), defaultPlacementDeps, socket);
+    await resumeIntoSession(spec, target, session.session_id.slice(0, 8), ops, socket);
     return 0;
   }
 

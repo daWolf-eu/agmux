@@ -20,6 +20,9 @@ export interface UsageSummary {
 export interface Handoff {
   argv: string[];
   env?: Record<string, string>;
+  // Something to tell the user. With a notice the dash shows it and stays open
+  // (a popup still closes); `agmux attach` prints it.
+  notice?: string;
 }
 
 // Side-effecting preview data sources; concrete impls live in cli.

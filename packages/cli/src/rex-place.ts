@@ -4,6 +4,7 @@
 //
 // Rex has no per-pane env flag, so env goes through env(1) ahead of the
 // hold-on-failure wrapper. Values are separate argv elements, never a shell string.
+import type { SessionRow } from "@agmux/protocol";
 import { defaultRexExec, readCurrentRexCoords, rexTarget, type RexExec } from "@agmux/wrapper";
 import { holdOnFailure, withEnv, type PaneCoords } from "./tmux-place.ts";
 
@@ -163,17 +164,105 @@ export async function rexNewSession(args: {
   return { session, window: win.window_id, pane, socket };
 }
 
-// Temporary: Task 8 replaces this with a focus that also switches the app.
-// `target` is "<session id>:<window id>", as the callers build it.
+export type Presence = "present" | "gone" | "unreachable";
+
+// Exit 3 is the only proof a block is gone: 4 (server down), a timeout or a
+// missing binary may leave the agent running. Likewise a row with nothing to ask about.
+export async function rexPresence(
+  row: Pick<SessionRow, "tmux_session" | "tmux_pane" | "tmux_socket">,
+  exec: RexExec = defaultRexExec,
+): Promise<Presence> {
+  if (!row.tmux_session || !row.tmux_pane) return "unreachable";
+  const r = await exec([...rexTarget(row.tmux_socket), "block", "inspect", row.tmux_pane, "-s", row.tmux_session, "--json"]);
+  return r.code === 0 ? "present" : r.code === 3 ? "gone" : "unreachable";
+}
+
+export interface RexCallerBlock { block: string; server: string | null }
+
+// The apps connected to a server; null when it can't be asked. `client ls` also
+// lists CLI clients and connections with no kind. Rex says to treat an unknown
+// connection_state as connected; "lost" has dropped and may never come back.
+async function connectedApps(server: string | null, exec: RexExec): Promise<string[] | null> {
+  const r = await exec([...rexTarget(server), "client", "ls", "--json"]);
+  const list = r.code === 0 ? parse(r.stdout)?.clients : null;
+  if (!Array.isArray(list)) return null;
+  return list
+    .filter((c: any) => c?.info?.kind === "app" && c.connection_state !== "lost" && typeof c.client_id === "string")
+    .map((c: any) => c.client_id);
+}
+
+// The app showing the caller's block, when the row is on the caller's server.
+// An owner is only trusted if it's a connected app: it can be a CLI client that
+// has already gone (Task 1). Otherwise the sole app, or nobody.
+async function chooseApp(
+  apps: string[],
+  callerBlock: RexCallerBlock | null,
+  rowServer: string | null,
+  exec: RexExec,
+): Promise<string | null> {
+  if (callerBlock && callerBlock.server === rowServer) {
+    const r = await exec([...rexTarget(rowServer), "block", "inspect", callerBlock.block, "--json"]);
+    const owner = r.code === 0 ? parse(r.stdout)?.block?.owner : null;
+    if (apps.includes(owner)) return owner;
+  }
+  return apps.length === 1 ? apps[0]! : null;
+}
+
+// callerBlock in a popup is the tiled block under the float, which may have no owner itself.
+export async function pickClient(
+  callerBlock: RexCallerBlock | null,
+  rowServer: string | null,
+  exec: RexExec = defaultRexExec,
+): Promise<string | null> {
+  const apps = await connectedApps(rowServer, exec);
+  return apps ? chooseApp(apps, callerBlock, rowServer, exec) : null;
+}
+
+export type RexFocusResult = "selected" | "focused-only" | "no-app";
+
+// focus_block alone doesn't move the app between sessions, so session.select
+// follows. Every call goes to the row's own server. In a popup this runs while
+// the float is still up: Rex doesn't restore focus when it closes, but focus set
+// from inside it sticks (Task 1).
+export async function rexFocus(
+  row: { session: string; window: string | null; pane: string; socket: string | null },
+  caller: RexCallerBlock | null,
+  exec: RexExec = defaultRexExec,
+): Promise<RexFocusResult> {
+  const g = rexTarget(row.socket, PLACE_TIMEOUT);
+  const args = JSON.stringify({ session_id: row.session, block_id: row.pane });
+  const f = await exec([...g, "api", "call", "-s", row.session, "session.focus_block", args]);
+  if (f.code !== 0) throw new Error(`rex focus failed (exit ${f.code})`);
+  const apps = await connectedApps(row.socket, exec);
+  if (!apps) throw new Error("rex client ls failed");
+  if (apps.length === 0) return "no-app";
+  const client = await chooseApp(apps, caller, row.socket, exec);
+  if (!client) return "focused-only";
+  const s = await exec([
+    ...g, "-C", client, "do", "session.select", `session_id=${row.session}`,
+    ...(row.window ? [`window_id=${row.window}`] : []),
+  ]);
+  if (s.code !== 0) throw new Error(`rex session.select failed (exit ${s.code})`);
+  return "selected";
+}
+
+// `target` is "<session id>:<window id>", as the callers build it. A placement
+// has already opened the tab, so an app that can't be switched isn't a failure.
 export async function rexSwitchClient(
   target: string,
   socket: string | null = null,
+  caller: RexCallerBlock | null = null,
   exec: RexExec = defaultRexExec,
 ): Promise<void> {
   const m = /^(session:[^:]+):(window:.+)$/.exec(target);
   if (!m) throw new Error(`rex focus: unparseable target ${JSON.stringify(target)}`);
-  const r = await exec([...rexTarget(socket, PLACE_TIMEOUT), "focus", "-s", m[1]!, m[2]!]);
-  if (r.code !== 0) throw new Error(`rex focus failed (exit ${r.code})`);
+  const session = m[1]!;
+  const window = m[2]!;
+  const ins = await exec([...rexTarget(socket), "session", "inspect", session, "--json"]);
+  const windows = ins.code === 0 ? parse(ins.stdout)?.windows : null;
+  const pane = Array.isArray(windows) ? windows.find((w: any) => w?.window_id === window)?.focused_block_id : null;
+  if (typeof pane !== "string") throw new Error(`rex focus: no block in ${window}`);
+  await rexFocus({ session, window, pane, socket }, caller, exec);
 }
 
 // A new tab (window) in `session` whose block carries `label`, so it can be found again.

@@ -1,6 +1,8 @@
 import { test, expect, spyOn } from "bun:test";
 import { buildAttachCommands, decideAttach } from "../src/attach.ts";
 import type { SessionRow } from "@agmux/protocol";
+import { fakeRex } from "./helpers/fake-rex.ts";
+import type { PlacementOps } from "../src/mux-ops.ts";
 
 const coords = { tmux_session: "agmux", tmux_window: "@4", tmux_pane: "%3", tmux_socket: null };
 
@@ -226,4 +228,138 @@ test("attachCmd on a remote row with a broken config warns and uses the attach d
     globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore();
     if (origTmux === undefined) delete process.env.TMUX; else process.env.TMUX = origTmux;
   }
+});
+
+// attachCmd across Rex and tmux (spec §5.2, §5.3).
+const RS = "session:01a1-row";
+const RB = "block:01a1-row";
+const RSERVER = "unix:///row";
+const rexRow = (over: Partial<SessionRow> = {}) => sessionRow({
+  mux: "rex", mux_label: "work", tmux_session: RS, tmux_window: "window:01a1-row", tmux_pane: RB, tmux_socket: RSERVER, ...over,
+});
+const presence = (code: number) => ({ [`block inspect ${RB} -s ${RS} --json`]: { code } });
+const focusable = {
+  ...presence(0),
+  [`api call -s ${RS} session.focus_block ${JSON.stringify({ session_id: RS, block_id: RB })}`]: { stdout: "{}" },
+  "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
+  [`-C client:app do session.select session_id=${RS} window_id=window:01a1-row`]: {},
+};
+
+function opsSpy(here: { session: string; window: string; pane: string; socket: string | null } | null, kind: "tmux" | "rex" = "tmux") {
+  const calls: { newWindow: any[]; newSession: any[]; switched: string[] } = { newWindow: [], newSession: [], switched: [] };
+  const ops: PlacementOps = {
+    kind, currentPane: async () => here,
+    splitPane: async () => { throw new Error("split"); },
+    hasSession: async () => here !== null,
+    newWindow: async (a: any) => { calls.newWindow.push(a); return { session: a.sessionName, window: "@7", pane: "%7", socket: a.socket ?? null }; },
+    newSession: async (a: any) => { calls.newSession.push(a); return { session: a.sessionName, window: "@1", pane: "%1", socket: a.socket ?? null }; },
+    switchClient: async (t: string) => { calls.switched.push(t); },
+  };
+  return { calls, ops };
+}
+
+async function runAttach(row: SessionRow, env: Record<string, string>, extra: object) {
+  const { attachCmd } = await import("../src/attach.ts");
+  const keys = ["TMUX", "REX_BLOCK", "REX_SESSION", "REX_SERVER"];
+  const orig = keys.map((k) => process.env[k]);
+  for (const k of keys) delete process.env[k];
+  Object.assign(process.env, env);
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = remoteHub(row, []);
+  const spawn = spyOn(Bun, "spawn").mockImplementation((() => ({ exited: Promise.resolve(0), exitCode: 0 })) as never);
+  const err = spyOn(console, "error").mockImplementation(() => {});
+  const log = spyOn(console, "log").mockImplementation(() => {});
+  try {
+    const code = await attachCmd({
+      idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "agmux-wrap",
+      sessionExists: async () => { throw new Error("tmux probed"); }, ...extra,
+    });
+    return {
+      code, spawnArgv: spawn.mock.calls.map((c) => (c as unknown as [string[]])[0]),
+      spawnEnv: spawn.mock.calls.map((c) => (c as unknown as [string[], { env: Record<string, string> }])[1].env),
+      errs: err.mock.calls.map((c) => String(c[0])), logs: log.mock.calls.map((c) => String(c[0])),
+    };
+  } finally {
+    globalThis.fetch = origFetch; spawn.mockRestore(); err.mockRestore(); log.mockRestore();
+    keys.forEach((k, i) => { if (orig[i] === undefined) delete process.env[k]; else process.env[k] = orig[i]; });
+  }
+}
+
+test("agmux attach outside Rex prints 'opened in Rex' and exits 0", async () => {
+  const r = await runAttach(rexRow(), {}, { rexExec: fakeRex(focusable) });
+  expect(r.code).toBe(0);
+  expect(r.logs).toEqual(["opened in Rex"]);
+  expect(r.spawnArgv).toEqual([]);
+});
+
+test("attach of an unreachable Rex row does not resume and reports it", async () => {
+  const envs: Record<string, string>[] = [{}, { TMUX: "/s,1,0" }, { REX_BLOCK: "block:me", REX_SESSION: "session:me", REX_SERVER: RSERVER }];
+  for (const env of envs) {
+    const r = await runAttach(rexRow(), env, { rexExec: fakeRex(presence(4)), ops: opsSpy(null).ops });
+    expect(r.code).toBe(2);
+    expect(r.errs).toEqual(["Rex server unreachable; not resuming 019f1898"]);
+    expect(r.spawnArgv).toEqual([]);
+  }
+});
+
+test("attach of a Rex row with no app reports it and does not resume", async () => {
+  const exec = fakeRex({ ...focusable, "client ls --json": { stdout: JSON.stringify({ clients: [] }) } });
+  const r = await runAttach(rexRow(), {}, { rexExec: exec });
+  expect(r.code).toBe(2);
+  expect(r.errs).toEqual(["Rex app not running"]);
+  expect(r.spawnArgv).toEqual([]);
+});
+
+test("attach of a live Rex row in Rex focuses it silently", async () => {
+  const exec = fakeRex({ ...focusable, "block inspect block:me --json": { stdout: JSON.stringify({ block: { owner: "client:app" } }) } });
+  const { ops } = opsSpy({ session: "session:me", window: "window:me", pane: "block:me", socket: RSERVER }, "rex");
+  const r = await runAttach(rexRow(), { REX_BLOCK: "block:me" }, { rexExec: exec, ops });
+  expect(r.code).toBe(0);
+  expect(r.logs).toEqual([]);
+  expect(exec.calls.flat()).toContain("session.select");
+});
+
+test("attach of a live tmux row in Rex picks the tmux tab", async () => {
+  const r = await runAttach(sessionRow({ tmux_session: "work", tmux_window: "@1" }), { REX_BLOCK: "block:me" }, {
+    rexExec: fakeRex({}), sessionExists: async () => true, ops: opsSpy(null, "rex").ops,
+  });
+  expect(r.code).toBe(2);
+  expect(r.errs).toEqual(["tmux tab not implemented"]);
+  expect(r.spawnArgv).toEqual([]);
+});
+
+test("resume of a closed Rex row from tmux targets the caller's tmux session, never the row's UUID", async () => {
+  const { calls, ops } = opsSpy({ session: "caller", window: "@1", pane: "%1", socket: "/sock" });
+  const r = await runAttach(rexRow({ status: "lost" }), { TMUX: "/s,1,0" }, { rexExec: fakeRex({}), ops });
+  expect(r.code).toBe(0);
+  expect(calls.newWindow.map((a) => [a.sessionName, a.socket])).toEqual([["caller", "/sock"]]);
+  expect(JSON.stringify(calls)).not.toContain("01a1-row");
+});
+
+test("resume of a closed Rex row from tmux with no readable pane uses the default session", async () => {
+  const { calls, ops } = opsSpy(null);
+  await runAttach(rexRow({ status: "lost" }), { TMUX: "/s,1,0" }, { rexExec: fakeRex({}), ops });
+  expect(calls.newSession[0].sessionName).toBe("agmux");
+});
+
+test("a closed tmux row from tmux with no readable pane keeps its session name", async () => {
+  const { calls, ops } = opsSpy(null);
+  await runAttach(sessionRow({ status: "lost", tmux_session: "work" }), { TMUX: "/s,1,0" }, { ops });
+  expect(calls.newSession[0].sessionName).toBe("work");
+});
+
+test("resume of a closed Rex row outside any mux does not pass the UUID to tmux", async () => {
+  const r = await runAttach(rexRow({ status: "lost" }), {}, { rexExec: fakeRex({}) });
+  expect(r.code).toBe(0);
+  expect(r.spawnArgv[0]![0]).toBe("agmux-wrap");
+  expect(JSON.stringify([r.spawnArgv, r.spawnEnv])).not.toContain("01a1-row");
+});
+
+test("resume of a closed tmux row inside Rex opens a new tab and never calls tmux", async () => {
+  const { calls, ops } = opsSpy({ session: "session:me", window: "window:me", pane: "block:me", socket: RSERVER }, "rex");
+  const r = await runAttach(sessionRow({ status: "lost", tmux_session: "work" }), { REX_BLOCK: "block:me" }, { ops });
+  expect(r.code).toBe(0);
+  expect(calls.newWindow.map((a) => a.sessionName)).toEqual(["session:me"]);
+  expect(calls.switched).toEqual(["session:me:@7"]);
+  expect(r.spawnArgv).toEqual([]);
 });

@@ -66,11 +66,31 @@ test("rexNewSession returns ids from .session_id and .initial_windows[0]", async
   await expect(rexNewSession({ sessionName: "agmux-x", windowName: "w", cmd: ["c"], env: {} }, dup)).rejects.toThrow("already exists");
 });
 
-test("rexSwitchClient parses 'session:<u>:window:<u>'", async () => {
-  const exec = fakeRex({ "focus -s session:aa window:bb": {} });
-  await rexSwitchClient("session:aa:window:bb", "unix:///x", exec);
-  expect(exec.calls[0]).toEqual([...G, "focus", "-s", "session:aa", "window:bb"]);
-  await expect(rexSwitchClient("nonsense", null, exec)).rejects.toThrow();
+test("rexSwitchClient focuses the window's block and switches the app", async () => {
+  const app = "client:app";
+  const exec = fakeRex({
+    "session inspect session:aa --json": { stdout: JSON.stringify({ windows: [{ window_id: "window:zz", focused_block_id: "block:no" }, { window_id: "window:bb", focused_block_id: "block:cc" }] }) },
+    [`api call -s session:aa session.focus_block ${JSON.stringify({ session_id: "session:aa", block_id: "block:cc" })}`]: { stdout: "{}" },
+    "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: app, info: { kind: "app" } }] }) },
+    [`-C ${app} do session.select session_id=session:aa window_id=window:bb`]: {},
+  });
+  await rexSwitchClient("session:aa:window:bb", "unix:///x", null, exec);
+  for (const c of exec.calls) expect(c.slice(0, 3)).toEqual(["--autostart=false", "-S", "unix:///x"]);
+  expect(exec.calls.at(-1)).toContain("session.select");
+  await expect(rexSwitchClient("nonsense", null, null, exec)).rejects.toThrow();
+});
+
+test("rexSwitchClient does not fail a placement that succeeded when no app can switch", async () => {
+  const exec = fakeRex({
+    "session inspect session:aa --json": { stdout: JSON.stringify({ windows: [{ window_id: "window:bb", focused_block_id: "block:cc" }] }) },
+    [`api call -s session:aa session.focus_block ${JSON.stringify({ session_id: "session:aa", block_id: "block:cc" })}`]: { stdout: "{}" },
+    "client ls --json": { stdout: JSON.stringify({ clients: [] }) },
+  });
+  await rexSwitchClient("session:aa:window:bb", null, null, exec);
+});
+
+test("rexSwitchClient without a block to focus reports it", async () => {
+  await expect(rexSwitchClient("session:aa:window:bb", null, null, fakeRex({}))).rejects.toThrow("rex focus");
 });
 
 test("rexNewLabelledTab and findLabelledBlock", async () => {
@@ -86,7 +106,7 @@ test("rexNewLabelledTab and findLabelledBlock", async () => {
 
 const inspect = {
   windows: [
-    { window_id: "window:other", layers: [{ kind: "tiled", blocks: [{ block_id: "block:zz" }] }] },
+    { window_id: "window:other", focused_block_id: "block:zz", layers: [{ kind: "tiled", blocks: [{ block_id: "block:zz" }] }] },
     { window_id: W, focused_block_id: "block:float", layers: [
       { kind: "floating", blocks: [{ block_id: "block:float" }] },
       { kind: "tiled", blocks: [{ block_id: "block:t1" }, { block_id: "block:t2" }] },
@@ -120,6 +140,20 @@ test("rexCurrentPane outside a popup uses REX_BLOCK", async () => {
   const exec = fakeRex({ "whoami --json": { stdout: JSON.stringify({ session_id: S, window_id: W, block_id: "block:me" }) } });
   const c = await rexCurrentPane({ REX_SESSION: S, REX_BLOCK: "block:me" }, false, exec);
   expect(c).toEqual({ session: S, window: W, pane: "block:me", socket: null });
+});
+
+test("placementOps' switchClient in a popup picks the app by the tiled block, on the Rex server", async () => {
+  const app = "client:app";
+  const exec = fakeRex({
+    ...popupScript,
+    [`api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:zz" })}`]: { stdout: "{}" },
+    "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:other", info: { kind: "app" } }, { client_id: app, info: { kind: "app" } }] }) },
+    "block inspect block:t1 --json": { stdout: JSON.stringify({ block: { owner: app } }) },
+    [`-C ${app} do session.select session_id=${S} window_id=window:other`]: {},
+  });
+  await placementOps(popupEnv, true, exec).switchClient(`${S}:window:other`, null);
+  expect(exec.calls.flat()).toContain("session.select");
+  for (const c of exec.calls) expect(c.slice(0, 3)).toEqual(["--autostart=false", "-S", "unix:///x"]);
 });
 
 test("placementOps picks rex only for detectMux rex", () => {

@@ -938,3 +938,47 @@ test("a failed remote resume shows its multi-line error on one notice line", asy
   expect(captureCharFrame()).toContain("resume failed: resume: sandbox gw/sbx is gone; cannot resume agmux: not found");
   renderer.destroy();
 });
+
+test("a handoff with a notice shows it and the dash stays open", async () => {
+  const handed: unknown[] = [];
+  let quit = 0;
+  const rows = [mkRow({ session_id: "agx-rex", status: "idle", tmux_session: "s", tmux_window: "w" })];
+  const actions: Actions = { ...noActions, async attach() { return { argv: [], notice: "opened in Rex" }; } };
+  const { renderer, renderOnce, captureCharFrame, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000} spinnerMs={0}
+      initialGroup="all" onHandoff={(h) => handed.push(h)} onQuit={() => { quit++; }}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressEnter(); await Promise.resolve(); });
+  await renderOnce();
+  expect(captureCharFrame()).toContain("opened in Rex");
+  expect(handed).toEqual([]);
+  expect(quit).toBe(0);
+  renderer.destroy();
+});
+
+test("in a popup a handoff with a notice closes the dash", async () => {
+  const handed: unknown[] = [];
+  let quit = 0;
+  const rows = [mkRow({ session_id: "agx-rex", status: "idle", tmux_session: "s", tmux_window: "w" })];
+  const actions: Actions = { ...noActions, async attach() { return { argv: [], notice: "opened in Rex" }; } };
+  const { renderer, renderOnce, mockInput } = await testRender(
+    <DashApp
+      feedFor={fakeFeed(rows)} source={noSource} actions={actions}
+      hubUrl="http://localhost:0" defaultPreview="mirror" intervalMs={1000} spinnerMs={0}
+      attachCtx={{ inMux: true, popup: true, terminalWindow: false, terminalTab: false }}
+      initialGroup="all" onHandoff={(h) => handed.push(h)} onQuit={() => { quit++; }}
+    />,
+    { width: 120, height: 30 },
+  );
+  await renderOnce();
+  await act(async () => { mockInput.pressEnter(); await Promise.resolve(); });
+  await renderOnce();
+  expect(handed).toHaveLength(1);
+  expect(quit).toBe(1);
+  renderer.destroy();
+});
