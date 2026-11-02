@@ -51,6 +51,38 @@ test("resumed from rex into tmux with null socket clears socket, mux and label",
   expect(r.tmux_session).toBe("t");
 });
 
+const resumed = (extra: Record<string, unknown> = {}) => ({
+  new_pid: 2, new_tmux_session: "t", new_tmux_window: "1", new_tmux_pane: "%2", new_tmux_socket: null, reason: "cli_attach_after_death", ...extra,
+});
+
+test("resumed from tmux into rex clears tmux_server", () => {
+  const db = freshDb();
+  applyEventToProjection(db, ev("a", "session.started", started()));
+  db.query(`UPDATE sessions SET tmux_server='srv' WHERE session_id='a'`).run();
+  applyEventToProjection(db, ev("a", "session.resumed", resumed({ new_mux: "rex", new_mux_label: "L" })));
+  const r = row(db, "a");
+  expect(r.mux).toBe("rex");
+  expect(r.tmux_server).toBeNull();
+});
+
+test("resumed from rex into tmux clears tmux_server", () => {
+  const db = freshDb();
+  applyEventToProjection(db, ev("a", "session.started", started({ mux: "rex", mux_label: "L" })));
+  db.query(`UPDATE sessions SET tmux_server='srv' WHERE session_id='a'`).run();
+  applyEventToProjection(db, ev("a", "session.resumed", resumed()));
+  const r = row(db, "a");
+  expect(r.mux).toBeNull();
+  expect(r.tmux_server).toBeNull();
+});
+
+test("resumed with the same mux keeps tmux_server", () => {
+  const db = freshDb();
+  applyEventToProjection(db, ev("a", "session.started", started()));
+  db.query(`UPDATE sessions SET tmux_server='srv' WHERE session_id='a'`).run();
+  applyEventToProjection(db, ev("a", "session.resumed", resumed()));
+  expect(row(db, "a").tmux_server).toBe("srv");
+});
+
 test("registered: rex row, tmux payload with coords and null socket replaces all location fields", () => {
   const db = freshDb();
   applyEventToProjection(db, ev("a", "session.started", started({ mux: "rex", mux_label: "L", tmux_socket: "/old" })));
