@@ -141,7 +141,7 @@ The sandbox side doesn't change. The local client (`agmux attach --remote-client
 | Injection: readiness | `capture-pane` polling | same logic, using the preview capture |
 | Native titles | `list-panes -a` | block method `title`, one call per block (R2) |
 | Watching-finish seen | `list-clients` focus flags | not available (L1) |
-| Toast | `display-message` | none; OS notifications unchanged (L2) |
+| Toast | `display-message` | none in Rex; a running tmux client may show `rex:<label>`; OS notifications unchanged (L2) |
 | Attached highlight | active pane via `display-message` | active window's `focused_block_id` from `session inspect` (R3) |
 | `agmux seen --pane` | pane id + socket | works with a block id, so a user's `rex.on` hook can call it |
 | Kill | `pid` | unchanged |
@@ -192,7 +192,7 @@ Builder's call on details. The intent: one seam, not `if (rex)` scattered throug
 ## 8. Known limits
 
 - **L1: no "seen while watching" in Rex.** Rex doesn't expose OS focus or which session an app is showing (`client.inspect` and `session.list_clients` have neither), so a session finishing in front of you stays `done` until you open or dismiss it. This errs the same way the tmux code does: it never hides a session. `focused_block_id` must not be used instead, because it's set even when the app is showing another session.
-- **L2: no in-app toast.** The tmux toast has no Rex equivalent in the actions available. OS notifications still fire, and suppress-when-visible only applies to the toast.
+- **L2: no in-app toast.** The tmux toast has no Rex equivalent in the actions available, so nothing shows inside Rex. The toast path doesn't branch on `mux`: a running tmux client may show a Rex row as `rex:<label>`. No Rex id reaches tmux. OS notifications still fire, and suppress-when-visible only applies to the toast.
 - **L3: bringing the app forward.** `session.select` changes what the app shows. It may not raise the app over other macOS apps. Accept that unless smoke testing shows it's a problem.
 - **L4: leaked `TMUX`.** A Rex server autostarted from inside tmux could give its blocks a stale `TMUX`, and §3 would then report tmux. Rex normally starts from the app, so this is accepted. Confirm during smoke testing.
 

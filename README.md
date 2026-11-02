@@ -198,10 +198,16 @@ The dash float. Rex doesn't say which tiled block was focused under a float, so 
 Known limits in Rex:
 
 - No "seen while watching": Rex doesn't expose OS focus or what an app is showing, so a session that finishes in front of you stays `done` until you open or dismiss it. It never hides a session.
-- No in-app toast. OS notifications still fire; `suppress_when_visible` applies only to the tmux toast.
+- No in-app toast in Rex. OS notifications still fire. A running tmux client can still show the toast for a Rex session, as `rex:<label>`; `suppress_when_visible` applies only to that toast.
 - Switching sessions changes what the app shows, but may not raise it over other macOS apps.
 - `[attach.remote] window_name` only names a new session: a remote client in a new tab is labelled by agmux for dedup instead.
 - A Rex server autostarted from inside tmux could give its blocks a stale `$TMUX`, and agmux would then report tmux. Rex normally starts from the app.
+
+### Known issue: large environments in a plain terminal
+
+A wrapped launch from a plain terminal (`agmux run --wrapped`, or a resume that goes through the wrapper) carries your whole environment to a new tmux window as `-e` flags, and tmux refuses a command over about 16 KB. With a larger environment it fails with `command too long` and an uncaught `ShellError`, and leaves an empty `agmux` session. A long `LS_COLORS` is enough; check yours with `env | wc -c`.
+
+This predates Rex and doesn't apply to Rex: inside a Rex block, or inside tmux, the wrapper runs in the current pane and never makes that call. To work around it, launch from inside tmux or Rex, or drop the large variable for the launch: `env -u LS_COLORS agmux run --wrapped ...`.
 
 ### Session glyphs
 
