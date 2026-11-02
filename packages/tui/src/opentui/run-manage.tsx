@@ -5,7 +5,7 @@ import { createCliRenderer } from "@opentui/core";
 import { createRoot } from "@opentui/react";
 import { PollingSessionFeed, type HubUrlSource } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
-import { activePaneId } from "./attached.ts";
+import { activeLocation } from "./attached.ts";
 import { tmuxSocketFromEnv, type RemoteAttachMode } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
@@ -35,6 +35,8 @@ export interface RunManageOpts {
   showHeader?: boolean;
   attachCtx?: AttachCtx;
   remoteMode?: RemoteAttachMode;
+  // Rex only: the block underneath the dash (tui cannot import cli).
+  rexActivePane?: () => Promise<string | null>;
 }
 
 // An empty-argv Handoff means "exit, spawn nothing" (popup attach/resume after
@@ -49,8 +51,9 @@ export async function runManage(o: RunManageOpts): Promise<number> {
     new PollingSessionFeed({ hubUrl: o.resolveHubUrl ?? o.hubUrl, query: o.groupQueries[g].query, intervalMs: o.groupQueries[g].intervalMs });
   let pending: Handoff | null = null;
 
-  const activePane = await activePaneId();
-  const activeSocket = tmuxSocketFromEnv(process.env.TMUX);
+  const loc = await activeLocation(process.env, undefined, o.rexActivePane);
+  const activePane = loc?.pane ?? null;
+  const activeSocket = loc ? loc.socket : tmuxSocketFromEnv(process.env.TMUX);
 
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",

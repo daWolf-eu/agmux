@@ -85,7 +85,8 @@ export async function resolvePane(
 ): Promise<SessionRow | null> {
   const sessions = await openSessions(hubUrl, fetchImpl);
   if (!sessions) return null;
-  const opt = await readPaneOption(pane, socket).catch(() => null);
+  // A Rex block id is not a tmux target: skip the pane-option read.
+  const opt = pane.startsWith("block:") ? null : await readPaneOption(pane, socket).catch(() => null);
   if (opt && SESSION_ID_RE.test(opt)) {
     const id = opt.toLowerCase();
     return sessions.find((s) => s.session_id.toLowerCase() === id) ?? null;

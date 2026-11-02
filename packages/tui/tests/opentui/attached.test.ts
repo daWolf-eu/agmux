@@ -21,3 +21,19 @@ test("socket-aware: same pane on different servers disambiguated by socket", () 
   expect(matchAttachedPane(rows, "%3", "/tmp/demo1")).toBe("demo1");
   expect(matchAttachedPane(rows, "%3", null)).toBe("default");
 });
+
+test("activeLocation in Rex returns the underlying block and REX_SERVER", async () => {
+  const { activeLocation } = await import("../../src/opentui/attached.ts");
+  const loc = await activeLocation({ REX_BLOCK: "block:f", REX_SERVER: "unix:///x" }, async () => { throw new Error("no tmux"); }, async () => "block:b1");
+  expect(loc).toEqual({ pane: "block:b1", socket: "unix:///x" });
+});
+
+test("activeLocation in Rex with no underlying block returns null", async () => {
+  const { activeLocation } = await import("../../src/opentui/attached.ts");
+  expect(await activeLocation({ REX_BLOCK: "block:f", TMUX: "/t,1,0" }, async () => "%1\n", async () => null)).toBeNull();
+});
+
+test("activeLocation in tmux returns the pane and socket", async () => {
+  const { activeLocation } = await import("../../src/opentui/attached.ts");
+  expect(await activeLocation({ TMUX: "/tmp/sock,12,0" }, async () => "%7\n")).toEqual({ pane: "%7", socket: "/tmp/sock" });
+});

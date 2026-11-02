@@ -201,3 +201,21 @@ test("seenHost: local host for remote rows, row host otherwise", () => {
     expect(seenHost({ remote: false, host: "box" })).toBe("box");
   } finally { delete process.env.AGMUX_HOST; }
 });
+
+test("seen --pane block:… skips the tmux option read and matches tmux_pane", async () => {
+  const ingested: any[][] = [];
+  const fetchImpl = (async (u: any, init?: any) => {
+    if (String(u).includes("/sessions?status=open")) {
+      return new Response(JSON.stringify({ sessions: [{ session_id: "rx", mux: "rex", tmux_pane: "block:b1", status: "done" }] }));
+    }
+    ingested.push(JSON.parse(init.body));
+    return new Response(null, { status: 202 });
+  }) as unknown as typeof fetch;
+  let optionReads = 0;
+  const readPaneOption = async () => { optionReads++; return null; };
+  const code = await seenCmd({ pane: "block:b1", source: "focus", hubUrl: "http://h", host: "box" },
+    { fetchImpl, now: () => "t", newId: () => "e", readPaneOption });
+  expect(code).toBe(0);
+  expect(optionReads).toBe(0);
+  expect(ingested[0]![0].session_id).toBe("rx");
+});
