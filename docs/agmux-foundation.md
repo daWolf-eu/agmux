@@ -75,7 +75,8 @@ Key session attributes:
 - `profile` (nullable) — the named launch preset (e.g. `claude-work`, `claude-private`); many profiles map to one `agent_kind`
 - `native_session_id` (nullable)
 - `command`, resolved `env`/config dir, `cwd`, `pid`
-- `tmux_session`, `tmux_window`, `tmux_pane` (nullable when not in tmux)
+- `tmux_session`, `tmux_window`, `tmux_pane` (nullable when not in a multiplexer)
+- `mux` (nullable) — which multiplexer those coordinates belong to: `rex`, or null/`tmux` for tmux, so older rows and replayed events stay tmux rows. A Rex row keeps its session, window and block ids and its server endpoint in the same columns (`tmux_socket` holds the endpoint); `mux_label` (nullable) is the Rex session label, for display. Every read that reaches a command must branch on `mux`: a `block:` id means nothing to tmux
 - `host`, `start`, `end`, `status`
 - `parent_session_id` (nullable) — delegation/orchestration lineage
 - human-readable metadata (nullable, `session.metadata` → `session_meta`): `name` (the agent's own session title, never generated) and git `branch` / `repo` / `remote` / `root`, observed on the agent's host
@@ -88,7 +89,7 @@ Events are typed and versioned. Evolution is **additive**. Unknown/future event 
 
 Recording flows wrapper/hooks → hub. Management flows the other way: list / inspect / kill / rejoin / switch go hub → host-agent, which acts locally on the target host.
 
-- **tmux is a first-class substrate, not an implementation detail.** The hub can *create* tmux panes/windows/sessions and inject input, not merely read coordinates.
+- **tmux and Rex are first-class substrates, not implementation details.** agmux can *create* panes/windows/sessions in either and inject input, not merely read coordinates.
 - **Agent-to-agent delegation.** A workflow can spawn a new tmux pane running `agmux run -p <profile>` (a different agent), inject a prompt, and the new session auto-announces with its injected id and a `parent_session_id` link back to the delegator. The delegation graph is queryable from day one.
 - **Remote attach/rejoin.** Since attaching needs a TTY on the target host, agmux hands the user the `ssh … tmux attach` invocation (or orchestrates it) rather than proxying a terminal stream through the hub.
 
@@ -192,7 +193,7 @@ The first end-to-end milestone is `protocol + store + hub + wrapper`: **launch a
 2. Canonical id injected via `AGMUX_SESSION_ID`; nothing invents identity.
 3. Event log is truth; projections are derived and rebuildable; one unified DB.
 4. (B) is never designed out, even though (A) ships first.
-5. tmux is a first-class orchestration substrate.
+5. tmux and Rex are first-class orchestration substrates.
 6. Each consumer package is optional; the foundation is small.
 7. Event schema evolves additively; unknown events stored raw.
 8. `agent_kind` and `profile` are distinct and both first-class.

@@ -27,6 +27,14 @@ Those three are read-only and safe to run at any time.
 dash is interactive, not just a viewer - from it you can attach to, kill, or
 resume a session, so use it deliberately.
 
+## tmux and Rex
+
+agmux runs agents in tmux or in Rex, and records where. $TMUX set means tmux,
+otherwise $REX_BLOCK set means Rex, otherwise neither. tmux wins because a tmux
+pane inside a Rex tab inherits stale REX_* values. Rex sessions show as
+rex:<label> in ls and dash; the row's tmux_* fields then hold Rex ids, with
+mux set to "rex".
+
 ## Running an agent without a terminal
 
     agmux run -p <profile> --headless --prompt "summarize the diff"

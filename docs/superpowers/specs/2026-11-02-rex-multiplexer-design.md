@@ -1,7 +1,7 @@
 # Rex multiplexer support: design
 
 **Date:** 2026-11-02
-**Status:** awaiting approval
+**Status:** approved
 **Scope:** one phase. There are no follow-up phases.
 
 ## 1. Intent

@@ -83,3 +83,46 @@ tmux placement (`src/tmux-place.ts`), both found by the remote e2e: calls that p
 ## Tests
 
 `tests/agmux-tmux.test.ts`, `tests/remote-tmux-scripts.test.ts`, `tests/e2e/remote-attach.test.ts`, `tests/e2e/remote-control.test.ts` need a real `tmux` (CI installs it). `remote-control.test.ts` runs remote run/resume against `tests/e2e/stub-claude.sh` (fires the claude plugin's hooks through `$AGMUX_BIN emit`, `--resume <id>` keeps the id, `-p` = headless exit 3, logs its argv and prompts to `$HOME`); it marks an exited agent lost by posting `session.lost` to the sandbox hub (stands in for the 30 s pid sweep).
+
+## Rex
+
+Rex as a multiplexer. Design: `docs/superpowers/specs/2026-11-02-rex-multiplexer-design.md`. Measured behaviour and smoke results: `docs/spikes/2026-11-02-rex/REPORT.md`. Read both before changing this code.
+
+Where things live: `detectMux` (`@agmux/protocol`) is the only reader of the variables that decide where we are; `rowMux` decides for a row (null means tmux). `@agmux/wrapper` `rex.ts` holds the binary lookup, `rexTarget`, `defaultRexExec` and coordinates. Here: `src/rex-place.ts` (placements, presence, focus), `src/rex-io.ts` (tail, title, inject primitives), `src/mux-ops.ts` (placements for the caller's multiplexer), `src/open-row.ts` (`planOpen`, the one open decision).
+
+Rules for calling `rex`:
+
+- Everything goes through a `RexExec`, so it stays injectable. Argv elements only, never a joined shell string.
+- `rexTarget(server)` on every call: `--autostart=false` so a probe never starts a server, `-S` with the row's endpoint (or `$REX_SERVER` for the caller's location) because an inherited one may be stale, and a short `--timeout` so a hung server can't stall the dash.
+- `-S` takes the percent-encoded `unix://…%20…` value verbatim.
+- Full ids only: labels and suffixes can be ambiguous. Exception: `AGMUX_TMUX_SESSION` is honoured as a label by `rexNewWindow`, resolved to an id first.
+- Binary lookup: `PATH`, `$REX_BIN_DIR/rex`, then the macOS app. Missing means unavailable, code 127, which `rexPresence` reports as unreachable.
+- Every read of a `tmux_*` field that reaches a command branches on `rowMux`. `resume-nearest` refuses a Rex row: the sandbox side is tmux only.
+
+Presence has three results. Exit 3 from `rex block inspect` is gone, also when the whole session was killed. Anything else, including exit 4, a timeout and a missing binary, is unreachable. Only gone resumes: a hung server may still be running the agent, and a resume would put two agents under one `session_id`.
+
+Findings (Task 1 and the smoke run):
+
+- `block call format` returns the HEAD of the scrollback. A tail read is `format` for `total` and an id, then `blob_read` at `total - N`, looping to `eof` because reads come back short. An offset can land inside a multi-byte character. Never fetch the whole scrollback on a polling path.
+- About 150 ms for a 64 KiB tail of a 7.7 MiB block. A read over 250 ms backs that block off to 1 s (`RexPoll`).
+- Scrollback is capped by lines (about 96k), not bytes.
+- `format` result ids live about 5 minutes.
+- `rex run --label` doesn't echo the label; `--split` takes a value (`--split=right`), and a bare `--split` swallows the next flag.
+- Rex has no per-pane env flag: env goes through `env K=V`, ahead of `holdOnFailure`. The default login shell gives the full `PATH`; `--shell=none` doesn't, so don't use it for agents. A block whose program exits closes at once, which is why the hold matters. Argv with `;`, spaces and JSON survives unchanged.
+- Key names for `block send-key`: `ctrl+a`, `ctrl+k`, `enter`, `ctrl+c`. Text goes through `block.event` type `paste` on stdin, so size isn't limited by argv. It's bracketed for programs that enable it. A single line over 1024 bytes into a cooked-mode tty is lost by the tty; agents read raw, so this only bites plain `cat`-style programs.
+- In a float, `$REX_BLOCK` is the float itself, which closes with the dash. Rex doesn't expose which tiled block was focused under a float (`focused_block_id` is the float), so `rexCurrentPane` uses `AGMUX_REX_ORIGIN_BLOCK` when an `init.lua` binding passes `ctx.block_id`, else the first tiled block: a deliberate degradation.
+- Focus set from inside a float sticks after it closes; with no focus set, Rex goes to the newest tiled block, not the previous one.
+- `session.focus_block` alone doesn't move the app between sessions, so `rexFocus` follows it with `-C CLIENT do session.select`. CLIENT is the caller block's `owner` only if that's a connected app (it can be a CLI client that has gone), else the sole connected app. `client ls` also lists CLI clients and clients with no kind.
+- `block inspect` and `focus` need `-s` when the block isn't in `$REX_SESSION`.
+
+Limits:
+
+- L1: no "seen while watching". Rex doesn't expose OS focus or which session an app shows. `focused_block_id` must not stand in for it: it's set even when the app shows another session.
+- L2: no in-app toast. OS notifications still fire. `dispatchNotification` doesn't branch on `mux`: a Rex row can still produce a tmux toast in a running tmux client, showing its `rex:<label>`; no Rex id reaches tmux.
+- L3: `session.select` changes what the app shows and may not raise it over other macOS apps.
+- L4: a Rex server autostarted from inside tmux could give its blocks a stale `$TMUX`, and `detectMux` would report tmux. If smoke testing shows this leaks, `detectMux` needs a rule that prefers `REX_BLOCK`. Not yet tested: see the report.
+- `[attach.remote] window_name` applies only to new-session in Rex. A remote client in a new tab carries a dedup label instead.
+- `agmux seen --pane` doesn't recognise remote client blocks.
+
+`agmux ls` keeps its `TMUX` header although the dash column is `MUX`: `ls` output is pinned byte-identical by `packages/tui/tests/format.test.ts`.
+

@@ -33,7 +33,7 @@ The foundation persists an append-only event log and serves a local query API ov
 ## Prerequisites
 
 - [Bun](https://bun.com) ≥ 1.3 — the only runtime; there is no Node.js fallback.
-- [tmux](https://github.com/tmux/tmux) ≥ 3.2 — for session placement, `attach`, and the dashboard popup.
+- [tmux](https://github.com/tmux/tmux) ≥ 3.2 — for session placement, `attach`, and the dashboard popup. Not needed for agents that run inside [Rex](#running-inside-rex).
 - The agent CLIs you want to track on your `PATH` (e.g. `claude`, `codex`, `pi`).
   Claude Code must be recent enough to load the adapter's plugin: 2.1.156 was observed registering no agmux hooks, 2.1.306 works.
 - macOS (verified). Linux is best-effort and unverified.
@@ -100,7 +100,7 @@ agmux watch -i 2 --agent claude   # accepts ls filter flags + -i/--interval seco
 agmux dash                         # interactive TUI: sortable session table + preview pane; q quits
 agmux dash -i 2 --agent claude     # accepts ls filter flags + -i/--interval
 agmux dash --preview detail        # default preview tab (mirror|detail)
-agmux attach <prefix>        # live → tmux switch; ended/lost → relaunch w/ same session_id
+agmux attach <prefix>        # live → switch to it (tmux or Rex); ended/lost → relaunch w/ same session_id
 agmux kill   <prefix>        # signal it (default SIGTERM)
 agmux inspect <prefix>       # full row + recent events as JSON
 ```
@@ -172,7 +172,36 @@ new_window = ["open", "-na", "Ghostty.app", "--args", "-e", "{cmd}"]
 new_tab = []
 ```
 
-Run it inside tmux so `⏎` switches you to the agent's window while dash stays alive.
+Run it inside tmux or Rex so `⏎` switches you to the agent's window while dash stays alive.
+
+### Running inside Rex
+
+[Rex](https://www.superlogical.com/rex/docs) works as a drop-in multiplexer: inside a Rex block, the agmux CLI and dash behave as they do inside tmux, and no tmux is involved. `agmux run` runs inline or with `--new-pane`, `--new-window` and `--new-session` (with `-d` and `--prompt`), and agents you start yourself register with their Rex coordinates through the usual hooks. Rex rows show as `rex:<label>`.
+
+Where you are is decided by one rule: `$TMUX` set means tmux, else `$REX_BLOCK` set means Rex, else neither. tmux wins because a tmux pane inside a Rex tab inherits stale `REX_*` values.
+
+Opening a session (⏎ or `agmux attach`):
+
+| Session | From inside Rex | From a plain terminal or tmux |
+| --- | --- | --- |
+| Live in Rex | focus its block, switching the app to its session | the same, then report `opened in Rex` |
+| Live in tmux | a tab attached to that tmux server; one tab per tmux session, reused on the next ⏎ | tmux as usual |
+| Closed, or its pane is gone | resume in a new tab of the current Rex session | resume as usual; the row moves to tmux |
+| Rex server unreachable | refuse to resume | refuse to resume |
+
+A session is never resumed while its Rex server can't be reached, because the agent may still be running there and a resume would put two agents under one id.
+
+`rex` is looked up on `PATH`, then in `$REX_BIN_DIR`, then in the macOS app (`~/Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex`). agmux never starts a Rex server, and a missing binary counts as unreachable.
+
+The dash float. Rex doesn't say which tiled block was focused under a float, so `--popup` anchors placements on the first tiled block of the window. To anchor on the block you were in, pass it from your `init.lua` binding as `AGMUX_REX_ORIGIN_BLOCK`, set to `ctx.block_id`; `new-pane` and the attached highlight are then exact.
+
+Known limits in Rex:
+
+- No "seen while watching": Rex doesn't expose OS focus or what an app is showing, so a session that finishes in front of you stays `done` until you open or dismiss it. It never hides a session.
+- No in-app toast. OS notifications still fire; `suppress_when_visible` applies only to the tmux toast.
+- Switching sessions changes what the app shows, but may not raise it over other macOS apps.
+- `[attach.remote] window_name` only names a new session: a remote client in a new tab is labelled by agmux for dedup instead.
+- A Rex server autostarted from inside tmux could give its blocks a stale `$TMUX`, and agmux would then report tmux. Rex normally starts from the app.
 
 ### Session glyphs
 
