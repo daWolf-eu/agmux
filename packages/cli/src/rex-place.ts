@@ -256,22 +256,28 @@ export async function rexFocus(
 }
 
 // `target` is "<session id>:<window id>", as the callers build it. A placement
-// has already opened the tab, so an app that can't be switched isn't a failure.
+// has already opened the tab, so a failed focus is a warning: the placement
+// worked and a caller may still have a prompt to inject. rexFocus throws, for a
+// direct open.
 export async function rexSwitchClient(
   target: string,
   socket: string | null = null,
   caller: RexCallerBlock | null = null,
   exec: RexExec = defaultRexExec,
 ): Promise<void> {
-  const m = /^(session:[^:]+):(window:.+)$/.exec(target);
-  if (!m) throw new Error(`rex focus: unparseable target ${JSON.stringify(target)}`);
-  const session = m[1]!;
-  const window = m[2]!;
-  const ins = await exec([...rexTarget(socket), "session", "inspect", session, "--json"]);
-  const windows = ins.code === 0 ? parse(ins.stdout)?.windows : null;
-  const pane = Array.isArray(windows) ? windows.find((w: any) => w?.window_id === window)?.focused_block_id : null;
-  if (typeof pane !== "string") throw new Error(`rex focus: no block in ${window}`);
-  await rexFocus({ session, window, pane, socket }, caller, exec);
+  try {
+    const m = /^(session:[^:]+):(window:.+)$/.exec(target);
+    if (!m) throw new Error(`unparseable target ${JSON.stringify(target)}`);
+    const session = m[1]!;
+    const window = m[2]!;
+    const ins = await exec([...rexTarget(socket), "session", "inspect", session, "--json"]);
+    const windows = ins.code === 0 ? parse(ins.stdout)?.windows : null;
+    const pane = Array.isArray(windows) ? windows.find((w: any) => w?.window_id === window)?.focused_block_id : null;
+    if (typeof pane !== "string") throw new Error(`no block in ${window}`);
+    await rexFocus({ session, window, pane, socket }, caller, exec);
+  } catch (e) {
+    console.error(`agmux: could not switch the Rex app to the new tab: ${e instanceof Error ? e.message : String(e)}`);
+  }
 }
 
 // A new tab (window) in `session` whose block carries `label`, so it can be found again.
