@@ -11,7 +11,10 @@ export async function readCurrentTmuxCoords(): Promise<TmuxCoords | null> {
   const fmt = "#{session_name}\t#{window_id}\t#{pane_id}";
   // Without -t tmux answers with the active pane, not ours, for a background start.
   const own = process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : [];
-  const out = (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${own} ${fmt}`.text()).trim();
+  const read = async (target: string[]) =>
+    (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${target} ${fmt}`.text()).trim();
+  // A stale TMUX_PANE: tmux exits 0 with blanks, so ask for the current pane.
+  const out = (await read(own)) || (own.length ? await read([]) : "");
   const [session, window, pane] = out.split("\t");
   if (!session || !window || !pane) return null;
   return { session, window, pane, socket };
