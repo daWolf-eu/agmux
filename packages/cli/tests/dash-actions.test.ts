@@ -364,7 +364,7 @@ const focusable = {
   ...presence(0),
   [`api call -s ${RS} session.focus_block ${JSON.stringify({ session_id: RS, block_id: RB })}`]: { stdout: "{}" },
   "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: APP, info: { kind: "app" } }] }) },
-  [`-C ${APP} do session.select session_id=${RS} window_id=${RW}`]: {},
+  [`-C ${APP} do session.select -s ${RS} session_id=${RS} window_id=${RW}`]: {},
 };
 const noTmux = () => recorder({
   runTmux: async () => { throw new Error("tmux must not run"); },

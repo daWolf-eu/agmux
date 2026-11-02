@@ -32,7 +32,7 @@ const clientsOut = (...cs: unknown[]) => ({ stdout: JSON.stringify({ clients: cs
 const focusKey = (session = S, block = B) =>
   `api call -s ${session} session.focus_block ${JSON.stringify({ session_id: session, block_id: block })}`;
 const selectKey = (id: string, session = S, window = W) =>
-  `-C ${id} do session.select session_id=${session} window_id=${window}`;
+  `-C ${id} do session.select -s ${session} session_id=${session} window_id=${window}`;
 const ownerOf = (block: string, owner: string) =>
   ({ [`block inspect ${block} --json`]: { stdout: JSON.stringify({ block: { block_id: block, owner } }) } });
 const coords = { session: S, window: W, pane: B, socket: SERVER };
@@ -130,7 +130,7 @@ test("rexFocus runs focus_block then session.select with the owner of REX_BLOCK"
   });
   expect(await rexFocus(coords, { block: "block:me", server: SERVER }, exec)).toBe("selected");
   expect(exec.calls.at(-1)).toEqual([
-    "--autostart=false", "-S", SERVER, "--timeout", "10s", "-C", APP, "do", "session.select", `session_id=${S}`, `window_id=${W}`,
+    "--autostart=false", "-S", SERVER, "--timeout", "10s", "-C", APP, "do", "session.select", "-s", S, `session_id=${S}`, `window_id=${W}`,
   ]);
   expect(exec.calls[0]).toContain("session.focus_block");
   expect(verbs(exec.calls)).toEqual(["api", "client", "block", "do"]);
@@ -161,7 +161,7 @@ test("rexFocus with a null window selects the session alone", async () => {
   const exec = fakeRex({
     [focusKey()]: { stdout: "{}" },
     "client ls --json": clientsOut(client(APP)),
-    [`-C ${APP} do session.select session_id=${S}`]: {},
+    [`-C ${APP} do session.select -s ${S} session_id=${S}`]: {},
   });
   expect(await rexFocus({ ...coords, window: null }, null, exec)).toBe("selected");
 });
@@ -277,7 +277,7 @@ test("second open focuses the existing block and selects window and pane over -S
   const exec = fakeRex({
     [lsKey]: lsOut(tmuxTabLabel(TSOCK, row.tmux_session!)),
     [focusKey(S, "block:t")]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)), ...ownerOf("block:me", APP),
-    [`-C ${APP} do session.select session_id=${S}`]: {},
+    [`-C ${APP} do session.select -s ${S} session_id=${S}`]: {},
   });
   const h = await openTmuxTab(row, opts(), exec, async (a) => { tmuxCalls.push(a); });
   expect(h).toBeNull();
@@ -294,7 +294,7 @@ test("two rows in one tmux session reuse one tab", async () => {
   const exec = fakeRex({
     [lsKey]: lsOut(tmuxTabLabel(TSOCK, a.tmux_session!)),
     [focusKey(S, "block:t")]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)), ...ownerOf("block:me", APP),
-    [`-C ${APP} do session.select session_id=${S}`]: {},
+    [`-C ${APP} do session.select -s ${S} session_id=${S}`]: {},
   });
   await openTmuxTab(a, opts(), exec, async () => {});
   await openTmuxTab(b, opts(), exec, async () => {});

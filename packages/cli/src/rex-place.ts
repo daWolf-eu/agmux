@@ -244,7 +244,8 @@ export async function rexFocus(
   const client = await chooseApp(apps, caller, row.socket, exec);
   if (!client) return "focused-only";
   const s = await exec([
-    ...g, "-C", client, "do", "session.select", `session_id=${row.session}`,
+    // -s: a tmux pane inherits a stale REX_SESSION, which `do` would scope to.
+    ...g, "-C", client, "do", "session.select", "-s", row.session, `session_id=${row.session}`,
     ...(row.window ? [`window_id=${row.window}`] : []),
   ]);
   if (s.code !== 0) throw new Error(`rex session.select failed (exit ${s.code})`);
