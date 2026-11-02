@@ -30,7 +30,16 @@ test("activeLocation in Rex returns the underlying block and REX_SERVER", async 
 
 test("activeLocation in Rex with no underlying block returns null", async () => {
   const { activeLocation } = await import("../../src/opentui/attached.ts");
-  expect(await activeLocation({ REX_BLOCK: "block:f", TMUX: "/t,1,0" }, async () => "%1\n", async () => null)).toBeNull();
+  expect(await activeLocation({ REX_BLOCK: "block:f" }, async () => "%1\n", async () => null)).toBeNull();
+});
+
+test("activeLocation with TMUX and stale REX_* is tmux and never asks Rex", async () => {
+  const { activeLocation } = await import("../../src/opentui/attached.ts");
+  let asked = false;
+  const loc = await activeLocation({ TMUX: "/tmp/sock,1,0", REX_BLOCK: "block:f", REX_SERVER: "unix:///x" },
+    async () => "%9\n", async () => { asked = true; return "block:b1"; });
+  expect(loc).toEqual({ pane: "%9", socket: "/tmp/sock" });
+  expect(asked).toBe(false);
 });
 
 test("activeLocation in tmux returns the pane and socket", async () => {

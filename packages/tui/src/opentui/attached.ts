@@ -1,4 +1,4 @@
-import { tmuxSocketFromEnv, type SessionRow } from "@agmux/protocol";
+import { detectMux, tmuxSocketFromEnv, type SessionRow } from "@agmux/protocol";
 
 // Pure matcher: which session id (if any) owns the given active pane.
 // Pane ids (%N) are server-global but NOT unique across tmux servers, so when a
@@ -41,7 +41,7 @@ export async function activeLocation(
   runTmux: (args: string[]) => Promise<string> = defaultTmuxText,
   rexActivePane?: () => Promise<string | null>,
 ): Promise<{ pane: string; socket: string | null } | null> {
-  if (env.REX_BLOCK) {
+  if (detectMux(env) === "rex") {
     try {
       const pane = rexActivePane ? await rexActivePane() : null;
       return pane ? { pane, socket: env.REX_SERVER || null } : null;

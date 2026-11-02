@@ -6,7 +6,7 @@ import { createRoot } from "@opentui/react";
 import { PollingSessionFeed, type HubUrlSource } from "../feed.ts";
 import { DashApp } from "./DashApp.tsx";
 import { activeLocation } from "./attached.ts";
-import { tmuxSocketFromEnv, type RemoteAttachMode } from "@agmux/protocol";
+import { type RemoteAttachMode } from "@agmux/protocol";
 import type { Actions, Handoff, PreviewMode, PreviewSource } from "../types.ts";
 import type { ActivityGroup } from "../shared/group.ts";
 import type { LocalityFilter } from "../shared/locality.ts";
@@ -53,7 +53,7 @@ export async function runManage(o: RunManageOpts): Promise<number> {
 
   const loc = await activeLocation(process.env, undefined, o.rexActivePane);
   const activePane = loc?.pane ?? null;
-  const activeSocket = loc ? loc.socket : tmuxSocketFromEnv(process.env.TMUX);
+  const activeSocket = loc?.socket ?? null;
 
   const renderer = await createCliRenderer({
     screenMode: "alternate-screen",
