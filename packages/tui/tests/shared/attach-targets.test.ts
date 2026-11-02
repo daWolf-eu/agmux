@@ -4,7 +4,7 @@ import {
 } from "../../src/shared/attach-targets.ts";
 import { mkRow } from "../helpers/mk-row.ts";
 
-const TMUX: AttachCtx = { inTmux: true, popup: false, terminalWindow: false, terminalTab: false };
+const TMUX: AttachCtx = { inMux: true, popup: false, terminalWindow: false, terminalTab: false };
 const POPUP: AttachCtx = { ...TMUX, popup: true };
 const reasons = (ts: ReturnType<typeof attachTargets>) => Object.fromEntries(ts.map((t) => [t.placement, t.reason]));
 
@@ -32,7 +32,7 @@ test("outside tmux only inline and configured terminals are enabled", () => {
   const ctx = { ...NO_ATTACH_CTX, terminalWindow: true };
   const on = attachTargets("live", ctx).filter((t) => t.enabled).map((t) => t.placement);
   expect(on).toEqual(["inline", "new-terminal"]);
-  expect(reasons(attachTargets("closed", ctx))["new-pane"]).toBe("not in tmux");
+  expect(reasons(attachTargets("closed", ctx))["new-pane"]).toBe("not in a multiplexer");
 });
 
 test("closed in a popup: inline disabled, peek ends with popup", () => {
@@ -71,7 +71,7 @@ test("a closed default of inline in a popup falls back to new-window", () => {
 test("resolvePlacement passes enabled requests, rejects disabled ones, defaults when absent", () => {
   expect(resolvePlacement("closed", TMUX, "new-pane")).toBe("new-pane");
   expect(() => resolvePlacement("live", TMUX, "new-pane")).toThrow("new pane: already open");
-  expect(() => resolvePlacement("closed", NO_ATTACH_CTX, "new-pane")).toThrow("new pane: not in tmux");
+  expect(() => resolvePlacement("closed", NO_ATTACH_CTX, "new-pane")).toThrow("new pane: not in a multiplexer");
   expect(resolvePlacement("closed", TMUX, undefined)).toBe("new-window");
 });
 
@@ -101,11 +101,17 @@ test("remote targets: tmux placements open, peek planned", () => {
   expect(reasons(attachTargets("remote", POPUP)).inline).toBe("in popup");
   const out = reasons(attachTargets("remote", NO_ATTACH_CTX));
   expect([out.inline, out["new-pane"], out["new-window"], out["new-session"]])
-    .toEqual(["", "not in tmux", "not in tmux", "not in tmux"]);
+    .toEqual(["", "not in a multiplexer", "not in a multiplexer", "not in a multiplexer"]);
 });
 
 test("remote default placement: new-window in tmux, inline outside, configurable", () => {
   expect(defaultPlacement("remote", TMUX, {})).toBe("new-window");
   expect(defaultPlacement("remote", NO_ATTACH_CTX, {})).toBe("inline");
   expect(defaultPlacement("remote", TMUX, { remote: "new-pane" })).toBe("new-pane");
+});
+
+test("attachKind: a live rex row is live with a pane, whether or not it has a window", () => {
+  expect(attachKind(mkRow({ status: "running", mux: "rex", tmux_session: "S", tmux_window: null, tmux_pane: "B" }))).toBe("live");
+  expect(attachKind(mkRow({ status: "running", mux: "rex", tmux_session: "S", tmux_window: "W", tmux_pane: "B" }))).toBe("live");
+  expect(attachKind(mkRow({ status: "running", mux: "rex", tmux_session: "S", tmux_pane: null }))).toBe("none");
 });

@@ -5,10 +5,10 @@ import {
   type Registry, type CanonicalEvent, type ManifestPoint, type SessionName,
 } from "@agmux/adapters";
 import type { AgentKind, CapabilitySourceType, IngestEnvelope, SessionMetadataPayload } from "@agmux/protocol";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_LAUNCH_ENV, tmuxSocketFromEnv, isTmuxServerId, parseLaunchSpec } from "@agmux/protocol";
+import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_LAUNCH_ENV, detectMux, tmuxSocketFromEnv, isTmuxServerId, parseLaunchSpec } from "@agmux/protocol";
 import { resolvePaneCoords, type TmuxExec } from "./tmux-place.ts";
 import { probeGit, type GitExec } from "./git-meta.ts";
-import { portFileHubUrl } from "@agmux/wrapper";
+import { portFileHubUrl, readCurrentRexCoords, type RexExec } from "@agmux/wrapper";
 
 export interface ParsedEmit {
   from: string;
@@ -45,6 +45,7 @@ export interface EmitDeps {
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
   resolveTmux?: TmuxExec;
+  rexExec?: RexExec;
   git?: GitExec;
   cwd?: () => string;
 }
@@ -83,13 +84,17 @@ export function resolveLiveHubUrl(
   return portFileHubUrl(stateDir) ?? env[AGMUX_HUB_URL_ENV] ?? null;
 }
 
-// Fill tmux_session/window on session.registered payloads (best effort: fires once
-// per registration, never throws, leaves coords null on miss).
-export async function enrichTmuxCoords(
+// Fill the placement coords on session.registered payloads (best effort: fires once
+// per registration, never throws, leaves coords null on miss). Rex rows reuse the
+// tmux_* fields: session, window, pane (block), socket (server); tmux_server stays
+// unset. `mux` is only ever written for Rex, so tmux payloads are unchanged.
+export async function enrichMuxCoords(
   events: Array<{ kind: string; payload: any }>,
   env: Record<string, string | undefined>,
   resolve: (paneId: string) => Promise<{ session: string; window: string; server?: string | null } | null>,
+  rexExec?: RexExec,
 ): Promise<void> {
+  if (detectMux(env) === "rex") return enrichRexCoords(events, env, rexExec);
   const pane = env.TMUX_PANE;
   if (!pane) return;
   const reg = events.filter((e) => e.kind === "session.registered" && e.payload && e.payload.tmux_session == null);
@@ -104,6 +109,25 @@ export async function enrichTmuxCoords(
   if (server && isTmuxServerId(server)) for (const e of reg) { e.payload.tmux_server = server; }
   if (!coords) return;
   for (const e of reg) { e.payload.tmux_session = coords.session; e.payload.tmux_window = coords.window; }
+}
+
+async function enrichRexCoords(
+  events: Array<{ kind: string; payload: any }>,
+  env: Record<string, string | undefined>,
+  rexExec?: RexExec,
+): Promise<void> {
+  const reg = events.filter((e) => e.kind === "session.registered" && e.payload && e.payload.tmux_session == null);
+  if (reg.length === 0) return;
+  const c = await readCurrentRexCoords(env, rexExec).catch(() => null);
+  if (!c) return;
+  for (const e of reg) {
+    e.payload.mux = "rex";
+    e.payload.mux_label = c.label;
+    e.payload.tmux_session = c.session;
+    e.payload.tmux_window = c.window;
+    e.payload.tmux_pane = c.pane;
+    e.payload.tmux_socket = c.socket;
+  }
 }
 
 // Record how agmux launched the agent (AGMUX_LAUNCH) on session.registered, so a
@@ -202,7 +226,7 @@ export async function runEmit(argv: string[], deps: EmitDeps): Promise<void> {
     const stamped = stampIngestEvents(events, {
       agentKind: a.from as AgentKind, nativeId, claimId, host: deps.host, now: deps.now ?? hookFiredAt, newId: deps.newId,
     });
-    await enrichTmuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)));
+    await enrichMuxCoords(stamped as any, deps.env, (pane) => resolvePaneCoords(pane, deps.resolveTmux, tmuxSocketFromEnv(deps.env.TMUX)), deps.rexExec);
     enrichLaunch(stamped as any, deps.env);
     await postOrQueue(stamped, {
       hubUrls: hubUrlCandidates(deps.env, deps.stateDir), stateDir: deps.stateDir,

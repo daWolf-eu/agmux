@@ -72,3 +72,7 @@ test("headlessProfile: --cwd overrides a loaded profile's cwd; without it the pr
   expect(headlessProfile(withCwd, load)).toEqual({ profile: { ...profile("codex"), cwd: "/o" }, profileName: "work" });
   expect(headlessProfile(without, load).profile.cwd).toBe("/from/work");
 });
+
+test("scrubTmuxEnv removes REX_BLOCK, REX_SESSION, REX_SERVER", () => {
+  expect(scrubTmuxEnv({ REX_BLOCK: "b", REX_SESSION: "s", REX_SERVER: "v", PATH: "/bin" })).toEqual({ PATH: "/bin" });
+});

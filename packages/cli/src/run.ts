@@ -7,6 +7,7 @@ import {
   AGMUX_CONFIG_SUBPATH,
   AGMUX_PROFILE_ENV,
   AGMUX_LAUNCH_ENV,
+  detectMux,
   type AgentKind,
   type LaunchSpec,
   type PrintedCoords,
@@ -244,6 +245,11 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
   return 0;
 }
 
+// A direct launch outside any multiplexer starts a fresh agmux session; inside tmux or Rex it runs inline.
+export function needsNewSession(opts: { mode?: LaunchMode }, env: Record<string, string | undefined>): boolean {
+  return (opts.mode ?? "wrapped") === "direct" && detectMux(env) === null;
+}
+
 export async function runCmd(
   opts: RunOpts,
   agmuxBin: string = process.env.AGMUX_BIN ?? "agmux",
@@ -251,9 +257,9 @@ export async function runCmd(
 ): Promise<number> {
   if (opts.placement === "print-coords") return runPrintCoords(opts, agmuxBin, printDeps);
   if (opts.placement === "inherit") {
-    // Direct + not in tmux → fall back to a fresh agmux session so the agent is
+    // Direct + not in a multiplexer → fall back to a fresh agmux session so the agent is
     // still tmux-tracked; otherwise run inline in the current pane.
-    if ((opts.mode ?? "wrapped") === "direct" && !(await readCurrentPane())) {
+    if (needsNewSession(opts, process.env)) {
       return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin);
     }
     return runInherit(opts, agmuxBin);

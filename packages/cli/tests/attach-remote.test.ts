@@ -8,8 +8,8 @@ import { attachSettingsFrom } from "../src/attach-place.ts";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 const SETTINGS = attachSettingsFrom({ terminal: { newTab: ["term", "--tab", "-e", "{cmd}"] }, remote: {} }, "/bin/agmux");
-const IN_TMUX: AttachCtx = { inTmux: true, popup: false, terminalWindow: false, terminalTab: true };
-const NO_TMUX: AttachCtx = { ...IN_TMUX, inTmux: false };
+const IN_TMUX: AttachCtx = { inMux: true, popup: false, terminalWindow: false, terminalTab: true };
+const NO_TMUX: AttachCtx = { ...IN_TMUX, inMux: false };
 
 function remoteRow(over: Partial<SessionRow> = {}): SessionRow {
   return {

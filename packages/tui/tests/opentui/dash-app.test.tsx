@@ -578,7 +578,7 @@ test("running rows animate the braille spinner", async () => {
   renderer.destroy();
 });
 
-const TMUX_CTX = { inTmux: true, popup: false, terminalWindow: false, terminalTab: false };
+const TMUX_CTX = { inMux: true, popup: false, terminalWindow: false, terminalTab: false };
 
 test("A opens the attach popup listing the seven targets, unavailable ones dimmed with a reason", async () => {
   const rows = [mkRow({ session_id: "agx-att-1", status: "running", tmux_session: "m", tmux_window: "@1" })];

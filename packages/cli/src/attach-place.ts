@@ -1,7 +1,7 @@
 // Pure argv builders for `agmux attach --placement` and the dash attach popup
 // (docs/superpowers/specs/2026-10-09-dash-attach-popup-design.md). The tmux
 // placement itself runs in dash-actions.ts.
-import type { AttachPlacement, RemoteAttachMode } from "@agmux/protocol";
+import { detectMux, type AttachPlacement, type RemoteAttachMode } from "@agmux/protocol";
 import { loadAttachConfig, type AttachConfig } from "@agmux/wrapper";
 import { remoteMark, type AttachCtx, type AttachDefaults } from "@agmux/tui";
 
@@ -44,7 +44,7 @@ export function settingsOrDefaults(load: (() => AttachSettings) | undefined): At
 }
 
 export function attachCtxFor(s: AttachSettings, env: Record<string, string | undefined>, popup: boolean): AttachCtx {
-  return { inTmux: !!env.TMUX, popup, terminalWindow: !!s.terminal.newWindow, terminalTab: !!s.terminal.newTab };
+  return { inMux: detectMux(env) !== null, popup, terminalWindow: !!s.terminal.newWindow, terminalTab: !!s.terminal.newTab };
 }
 
 // "new session" for a resumed agent: a plain one-window session named after it.
@@ -66,6 +66,6 @@ export function expandTemplate(tpl: string[], cmd: string[]): string[] {
 // A new terminal must not look like it runs inside the dash's tmux client, or
 // `agmux attach` there would switch the dash's client instead of attaching.
 export function withoutTmuxEnv(env: Record<string, string | undefined>): Record<string, string | undefined> {
-  const { TMUX: _tmux, TMUX_PANE: _pane, ...rest } = env;
+  const { TMUX: _tmux, TMUX_PANE: _pane, REX_BLOCK: _b, REX_SESSION: _s, REX_SERVER: _v, ...rest } = env;
   return rest;
 }

@@ -13,8 +13,8 @@ test("settings take config values and fill defaults", () => {
 
 test("attachCtxFor reads TMUX and the configured terminals", () => {
   const s = attachSettingsFrom({ terminal: { newTab: ["t", "{cmd}"] }, remote: {} }, "agmux");
-  expect(attachCtxFor(s, { TMUX: "/tmp/x,1,0" }, true)).toEqual({ inTmux: true, popup: true, terminalWindow: false, terminalTab: true });
-  expect(attachCtxFor(s, {}, false).inTmux).toBe(false);
+  expect(attachCtxFor(s, { TMUX: "/tmp/x,1,0" }, true)).toEqual({ inMux: true, popup: true, terminalWindow: false, terminalTab: true });
+  expect(attachCtxFor(s, {}, false).inMux).toBe(false);
 });
 
 test("a resumed agent's new session is named after its id", () => {
@@ -41,4 +41,16 @@ test("settings fill the [attach.remote] defaults", () => {
   });
   expect(attachSettingsFrom({ terminal: {}, remote: { mode: "full", detachKey: "C-q" } }, "agmux").remote)
     .toEqual({ placement: "new-window", mode: "full", windowName: "⇄ {title}", detachKey: "C-q" });
+});
+
+test("attachCtxFor sets inMux for tmux and for rex", () => {
+  const s = attachSettingsFrom({ terminal: {}, remote: {} }, "agmux");
+  expect(attachCtxFor(s, { TMUX: "/tmp/x,1,0" }, false).inMux).toBe(true);
+  expect(attachCtxFor(s, { REX_BLOCK: "B1" }, false).inMux).toBe(true);
+  expect(attachCtxFor(s, {}, false).inMux).toBe(false);
+});
+
+test("withoutTmuxEnv removes REX_BLOCK, REX_SESSION, REX_SERVER", async () => {
+  const { withoutTmuxEnv } = await import("../src/attach-place.ts");
+  expect(withoutTmuxEnv({ TMUX: "x", TMUX_PANE: "%1", REX_BLOCK: "b", REX_SESSION: "s", REX_SERVER: "v", PATH: "/bin" })).toEqual({ PATH: "/bin" });
 });

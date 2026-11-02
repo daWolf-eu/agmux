@@ -98,13 +98,13 @@ export async function attachRemote(
   const { ctx, settings } = env;
   const where = resolvePlacement("remote", ctx, req?.placement, { remote: settings.remote.placement });
   // Decision 6: a view needs a local tmux to detach back into; outside it, full.
-  const mode = req?.mode ?? (ctx.inTmux ? settings.remote.mode : "full");
+  const mode = req?.mode ?? (ctx.inMux ? settings.remote.mode : "full");
   const id = row.session_id;
   if (!isShellSafeId(id)) throw new Error("attach: invalid session id");
   // Placed elsewhere: in a popup the empty handoff closes the popup onto it.
   const opened = (): Handoff | null => (ctx.popup ? { argv: [] } : null);
 
-  if (ctx.inTmux) {
+  if (ctx.inMux) {
     const found = await findRemotePane(id, mode, deps.listPanes);
     if (found) {
       await deps.runTmux(["switch-client", "-t", `${found.session}:${found.window}`]);

@@ -42,3 +42,22 @@ test("readCurrentRexCoords returns null when REX_BLOCK or REX_SESSION is unset",
   expect(await readCurrentRexCoords({ REX_SESSION: "S1" }, fakeRex({}))).toBeNull();
   expect(await readCurrentRexCoords({ REX_BLOCK: "B1" }, fakeRex({}))).toBeNull();
 });
+
+test("readCurrentCoords in Rex returns mux rex and never calls tmux", async () => {
+  const { readCurrentCoords } = await import("../src/index.ts");
+  const rex = fakeRex({
+    "whoami --json": { stdout: JSON.stringify({ session_id: "S1", window_id: "W1", block_id: "B1" }) },
+    "ls --json": { stdout: JSON.stringify({ sessions: [{ session_id: "S1", label: "work" }] }) },
+  });
+  const c = await readCurrentCoords({ REX_BLOCK: "B1", REX_SESSION: "S1", REX_SERVER: "srv" }, rex);
+  expect(c).toEqual({ session: "S1", window: "W1", pane: "B1", socket: "srv", mux: "rex", label: "work" });
+});
+
+test("readCurrentCoords in Rex with a failing whoami returns env ids, never null into the tmux path", async () => {
+  const { readCurrentCoords } = await import("../src/index.ts");
+  const c = await readCurrentCoords({ REX_BLOCK: "B1", REX_SESSION: "S1" }, fakeRex({}));
+  expect(c).toMatchObject({ session: "S1", window: null, pane: "B1", mux: "rex" });
+  // Only REX_SERVER set: still Rex, still not null.
+  const d = await readCurrentCoords({ REX_SERVER: "srv" }, fakeRex({}));
+  expect(d).toMatchObject({ mux: "rex", pane: null, socket: "srv" });
+});

@@ -1,5 +1,6 @@
 import { test, expect, describe } from "bun:test";
-import { parseEmitArgs, runEmit, enrichTmuxCoords, enrichLaunch, hookFiredAt } from "../src/emit.ts";
+import { parseEmitArgs, runEmit, enrichMuxCoords, enrichLaunch, hookFiredAt } from "../src/emit.ts";
+import { fakeRex } from "./helpers/fake-rex.ts";
 import { createRegistry, createDefaultRegistry } from "@agmux/adapters";
 import { fakeAdapter } from "@agmux/adapters/testing";
 import * as fs from "node:fs";
@@ -149,43 +150,43 @@ test("ambient codex self-registers from the stdin session_id (no AGMUX_SESSION_I
 
 test("fills tmux_session/window on session.registered when pane resolves", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
+  await enrichMuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
   expect(events[0].payload).toMatchObject({ tmux_session: "agmux", tmux_window: "@4" });
 });
 
 test("leaves coords null when resolver returns null", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => null);
+  await enrichMuxCoords(events, { TMUX_PANE: "%7" }, async () => null);
   expect(events[0].payload).toMatchObject({ tmux_session: null, tmux_window: null });
 });
 
 test("records tmux_socket from TMUX env even when resolution misses", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/sock,1234,0" }, async () => null);
+  await enrichMuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/sock,1234,0" }, async () => null);
   expect(events[0].payload.tmux_socket).toBe("/tmp/sock");
 });
 
 test("tmux_socket is null on the ambient server (no TMUX socket field)", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
+  await enrichMuxCoords(events, { TMUX_PANE: "%7" }, async () => ({ session: "agmux", window: "@4" }));
   expect(events[0].payload.tmux_socket).toBeNull();
 });
 
 test("stamps tmux_server from the resolver", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => ({ session: "a", window: "@4", server: "4242-1730000000" }));
+  await enrichMuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => ({ session: "a", window: "@4", server: "4242-1730000000" }));
   expect(events[0].payload.tmux_server).toBe("4242-1730000000");
 });
 
 test("tmux_server falls back to the pid from $TMUX", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => null);
+  await enrichMuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/tmux-1/default,4242,0" }, async () => null);
   expect(events[0].payload.tmux_server).toBe("4242");
 });
 
 test("tmux_server drops an invalid id", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_pane: "%7" } }] as any;
-  await enrichTmuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/s,x y,0" }, async () => null);
+  await enrichMuxCoords(events, { TMUX_PANE: "%7", TMUX: "/tmp/s,x y,0" }, async () => null);
   expect(events[0].payload.tmux_server).toBeUndefined();
 });
 
@@ -214,7 +215,7 @@ test("enrichLaunch ignores invalid JSON and non-registration events", () => {
 
 test("no-ops when not in tmux (no TMUX_PANE)", async () => {
   const events = [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: null } }] as any;
-  await enrichTmuxCoords(events, {}, async () => ({ session: "x", window: "@1" }));
+  await enrichMuxCoords(events, {}, async () => ({ session: "x", window: "@1" }));
   expect(events[0].payload).toMatchObject({ tmux_session: null, tmux_window: null });
 });
 
@@ -308,4 +309,34 @@ describe("session.metadata", () => {
     expect(kept.posted).toEqual([]);
     expect(kept.probed).toEqual([]);
   });
+});
+
+const REX_WHOAMI = { "whoami --json": { stdout: JSON.stringify({ session_id: "S1", window_id: "W1", block_id: "B1" }) },
+  "ls --json": { stdout: JSON.stringify({ sessions: [{ session_id: "S1", label: "work" }] }) } };
+const REX_ENV = { REX_BLOCK: "B1", REX_SESSION: "S1", REX_SERVER: "srv" };
+const regEvent = () => [{ kind: "session.registered", payload: { tmux_session: null, tmux_window: null, tmux_pane: null, tmux_socket: null } }] as any;
+
+test("enrichMuxCoords fills rex ids, socket and label on session.registered", async () => {
+  const events = regEvent();
+  await enrichMuxCoords(events, REX_ENV, async () => null, fakeRex(REX_WHOAMI));
+  expect(events[0].payload).toMatchObject({ mux: "rex", mux_label: "work", tmux_session: "S1", tmux_window: "W1", tmux_pane: "B1", tmux_socket: "srv" });
+  expect(events[0].payload.tmux_server).toBeUndefined();
+});
+
+test("enrichMuxCoords with TMUX and REX_BLOCK set takes the tmux path", async () => {
+  const events = regEvent();
+  events[0].payload.tmux_pane = "%7";
+  const rex = fakeRex(REX_WHOAMI);
+  await enrichMuxCoords(events, { ...REX_ENV, TMUX: "/tmp/s,1234,0", TMUX_PANE: "%7" }, async () => ({ session: "a", window: "@4" }), rex);
+  expect(events[0].payload).toMatchObject({ tmux_session: "a", tmux_window: "@4", tmux_socket: "/tmp/s" });
+  expect(events[0].payload.mux).toBeUndefined();
+  expect(rex.calls).toEqual([]);
+});
+
+test("enrichMuxCoords leaves coords null and does not throw when rex fails", async () => {
+  const events = regEvent();
+  const boom = (async () => { throw new Error("x"); }) as any;
+  await enrichMuxCoords(events, REX_ENV, async () => null, boom);
+  expect(events[0].payload.tmux_pane).toBeNull();
+  expect(events[0].payload.mux).toBeUndefined();
 });

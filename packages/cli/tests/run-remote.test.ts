@@ -222,7 +222,7 @@ describe("runRemote", () => {
     const s = setup({ env: {} });
     expect(await s.run(["--new-pane"])).toBe(2);
     expect(s.calls).not.toContain("exec");
-    expect(s.err[0]).toMatch(/new pane: not in tmux/);
+    expect(s.err[0]).toMatch(/new pane: not in a multiplexer/);
   });
 
   test("-d prints where it started, kicks the follower, never polls or attaches", async () => {

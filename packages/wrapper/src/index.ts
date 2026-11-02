@@ -7,6 +7,7 @@ import {
   TITLE_KEEPALIVE_MS,
   TitleSignal,
   resolveHost,
+  detectMux,
 } from "@agmux/protocol";
 import { buildChildEnv, reexecEnv } from "./child-env.ts";
 import { openPty, setWinsize } from "./pty.ts";
@@ -19,12 +20,35 @@ import { startHeartbeat } from "./heartbeat.ts";
 import {
   ensureAgmuxSession, readCurrentTmuxCoords, newAgmuxWindow, tmuxVersion,
 } from "./tmux.ts";
+import { readCurrentRexCoords, type RexExec } from "./rex.ts";
 export { loadProfile, parseConfig, expandTilde, loadLsConfig, parseLsSection, loadDashConfig, parseDashSection, loadAttachConfig, parseAttachSection, loadUiConfig, parseUiSection, type AttachConfig, type UiConfig, type ProfileConfig, type AgmuxConfig, type LsConfig, type DashConfig, type DashGroupConfig, type DashGroupKey, DASH_GROUP_KEYS } from "./profile.ts";
 export { HubClient, portFileHubUrl, type HubClientOpts } from "./hub-client.ts";
 export { mintSessionId, mintEventId } from "./ids.ts";
 export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
 export { OscTitleParser } from "./osc-title.ts";
 export { resolveRexBin, rexTarget, defaultRexExec, readCurrentRexCoords, type RexExec, type RexCoords } from "./rex.ts";
+
+export interface PlacementCoords {
+  session: string | null; window: string | null; pane: string | null; socket: string | null;
+  mux?: "rex"; label?: string | null;
+}
+
+// Where this process runs. Rex maps onto the tmux_* fields (window may be unknown);
+// it never returns null, so a Rex agent can never fall into the tmux-start path.
+export async function readCurrentCoords(
+  env: Record<string, string | undefined>,
+  rexExec?: RexExec,
+): Promise<PlacementCoords | null> {
+  if (detectMux(env) === "rex") {
+    const c = await readCurrentRexCoords(env, rexExec).catch(() => null);
+    if (!c) {
+      return { session: env.REX_SESSION || null, window: null, pane: env.REX_BLOCK || null,
+        socket: env.REX_SERVER || null, mux: "rex", label: null };
+    }
+    return { session: c.session, window: c.window, pane: c.pane, socket: c.socket, mux: "rex", label: c.label };
+  }
+  return readCurrentTmuxCoords();
+}
 
 export interface RunOpts {
   profile: ProfileConfig;
@@ -52,7 +76,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const tmuxSessionName = process.env[AGMUX_TMUX_SESSION_ENV] ?? AGMUX_TMUX_SESSION_DEFAULT;
 
   // Tmux placement.
-  let tmuxCoords = await readCurrentTmuxCoords();
+  let tmuxCoords = await readCurrentCoords(process.env);
   if (!tmuxCoords) {
     const v = await tmuxVersion();
     if (!v) {
@@ -106,6 +130,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
     await client.post(buildResumedEvent({
       sessionId, host, newPid: child.pid!,
       tmux: { session: tmuxCoords.session, window: tmuxCoords.window, pane: tmuxCoords.pane, socket: tmuxCoords.socket },
+      ...(tmuxCoords.mux ? { mux: tmuxCoords.mux, mux_label: tmuxCoords.label ?? null } : {}),
     }));
   } else {
     await client.post(buildStartedEvent({
@@ -114,6 +139,7 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
       command: profile.command, args: profile.args, env_overrides: profile.env,
       cwd, pid: child.pid!,
       tmux: tmuxCoords, project: null,
+      ...(tmuxCoords.mux ? { mux: tmuxCoords.mux, mux_label: tmuxCoords.label ?? null } : {}),
     }));
   }
 
