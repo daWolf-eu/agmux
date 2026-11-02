@@ -7,6 +7,7 @@ on rough edges are all welcome.
 
 - [Bun](https://bun.com) ≥ 1.3 (the only runtime — there is no Node.js fallback)
 - [tmux](https://github.com/tmux/tmux) ≥ 3.2 (for anything touching session placement)
+- [Rex](https://www.superlogical.com/rex/docs) is optional: CI has none, so Rex code is tested through the injectable `RexExec` seam. Changes to Rex behaviour also need a run against real Rex; see `docs/spikes/2026-11-02-rex/REPORT.md` for the smoke list and how to isolate it from your own sessions
 - macOS (verified) or Linux (best-effort)
 
 ## Setup
