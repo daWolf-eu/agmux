@@ -149,6 +149,23 @@ test("resumeNearestCmd: remote row is refused with exit 2, nothing placed or pri
   expect(f.err.join("\n")).toMatch(/remote/);
 });
 
+test("resumeNearestCmd: Rex row is refused with exit 2, its ids never reach tmux", async () => {
+  const out: string[] = [];
+  const probed: string[] = [];
+  const f = cmdDeps([row({
+    mux: "rex", status: "idle", tmux_session: "session:s1", tmux_window: "window:w1", tmux_pane: "block:b1",
+    tmux_socket: "unix:///tmp/rex.sock", tmux_server: null,
+  })], { server: null, windows: [], sessions: [] }, {
+    hasSession: async (name) => { probed.push(name); return false; },
+    paneExists: async (pane) => { probed.push(pane); return false; },
+  });
+  expect(await resumeNearestCmd(opts(out), f.deps)).toBe(2);
+  expect(probed).toEqual([]);
+  expect(f.calls).toEqual([]);
+  expect(out).toEqual([]);
+  expect(f.err.join("\n")).toMatch(/Rex/);
+});
+
 test("resumeNearestCmd: unknown id → exit 2", async () => {
   const out: string[] = [];
   const f = cmdDeps([row()], { server: null, windows: [], sessions: [] });
