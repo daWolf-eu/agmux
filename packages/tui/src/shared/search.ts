@@ -1,10 +1,12 @@
-import { muxLocationText, type SessionRow } from "@agmux/protocol";
+import { muxLocationText, rowMux, type SessionRow } from "@agmux/protocol";
 
 // Free-text match behind the dash's `/` key. Matches across identifying fields.
 export function matchesSearch(r: SessionRow, q: string): boolean {
   if (!q) return true;
   const n = q.toLowerCase();
-  return [r.session_id, r.agent_kind, r.profile ?? "", r.tmux_session ?? "", r.tmux_window ?? "", muxLocationText(r), r.status]
+  // A Rex row's location columns hold raw ids: only its label is searchable.
+  const location = rowMux(r) === "rex" ? [] : [r.tmux_session ?? "", r.tmux_window ?? ""];
+  return [r.session_id, r.agent_kind, r.profile ?? "", ...location, muxLocationText(r), r.status]
     .some((s) => s.toLowerCase().includes(n));
 }
 
