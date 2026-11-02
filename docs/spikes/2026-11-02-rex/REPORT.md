@@ -24,6 +24,8 @@ Measured on Rex server `0.0.1793299046-g2307b7`, app Rex Beta 0.1.0 (1696), macO
 - `rex run --wait --json`: prints the creation result, then exits with the child's exit status (3 for `exit 3`) and `Error: exit status 3` on stderr.
 - `rex block ls -s S --json`: `{"blocks":[{block_id,label,creator_name,flavor,host_id,placement,window_id,owner?}]}`.
 - `rex api call -s S block.event -` with stdin `{"session_id","block_id","event":{"type":"paste","payload":{"text":...}}}` returns `{}` and exit 0. Pasting 20,400 bytes of multi-line text (200 lines with quotes, backslashes, `$`, backticks, `;|&`, non-ASCII) into `sh -c 'cat > file'` produced a byte-identical file. Lines were under 1 KiB each; a single line over the tty's 1024-byte canonical limit was not tested (needs manual check if it matters).
+- `rex whoami --json`: `{principal:{kind,transport,display,uid,gid,pid}, account, endpoint, pid, instance_id, host_id, started_at, rex_version, exit_empty, session_count, tailscale:{state,allow_tailnet_members}, session_id, window_id, block_id}`. The last three are the caller's location and are present only when inside Rex.
+- `rex ls --json`: `{"sessions":[{"session_id","label"}]}`.
 - `session.new_layer` input: `{session_id, window_id?, bounds:[x,y,w,h], focus, layout:{block:{flavor, label, options:{command:[..], shell:"none"}}}}`; returns `{layer_id, block_ids, revision}`.
 
 ## R6, R7: floats
@@ -32,8 +34,10 @@ Measured on Rex server `0.0.1793299046-g2307b7`, app Rex Beta 0.1.0 (1696), macO
 - `owner`: the float block had NO `owner`. In my throwaway session no app was attached; the clients list showed the app (`Rex Beta`, connected, but owning none of my blocks) and the CLI. The first tiled block had `owner: client:...5314...`, a CLI client that no longer existed (the one that ran `rex new`), while later tiled blocks had none. In the user's own app-attached sessions every block, including a `scratch` block, has `owner` = the app's client id. Whether a float in an app-attached session has an owner: needs manual check.
 - Focus: from inside the float, `rex focus <tiled>` moves focus to the tiled block, and after the float exits focus stays there. If the float exits without that, focus does NOT return to the previously focused block. With tiled blocks B (focused), T2, T3 (newest), closing a float always left focus on T3, the most recently created tiled block, whether B or T2 had been focused before. A float created with `focus:false` leaves focus alone.
 
-## L4: TMUX. PASS
-No `TMUX` in Rex blocks (default shell, `sh -c`, float). `TERM=xterm-256color`, `TERM_PROGRAM=rex`. So `detectMux` by `TMUX` then `REX_BLOCK` is sound.
+## L4: TMUX leak. NOT TESTED, needs manual check
+L4 is a Rex server autostarted from inside tmux leaking `TMUX` into its blocks. That needs starting a server from tmux and was not done, to avoid touching the real server. What was observed: this server's blocks (default shell, `sh -c`, float) have no `TMUX*` variable, with `TERM=xterm-256color`, `TERM_PROGRAM=rex`. That says nothing about the autostart case. Added to Task 13's smoke step.
+
+- Focus of the tiled layer while a float is in front: not exposed. `session inspect` and `session.view` give `focused_block_id` per window only (the float), layers have just `layer_id, kind, bounds, layout, blocks`, blocks have no focus marker, `session.list_blocks` is the same list with `window_id`/`owner`, and `rex events` only emits `session_view_changed` with a revision. Verified with two tiled blocks plus a float. Plan Task 5 now states first-tiled-block as a deliberate degradation. Correction to the paragraph above: focus set from inside the float sticks after it exits; only an exit without that goes to the newest tiled block.
 
 ## R2: title polling. PASS
 20 sequential `rex block call title`: 26-30 ms each, 554 ms total, mean 28 ms. No lower bound on the poll interval from this; 500 ms is fine.

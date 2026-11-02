@@ -300,7 +300,7 @@ Expected: FAIL, module not found.
 
 - [ ] **Step 3: Implement**
 
-Rex's placement timeout is `"10s"`; probes use the default. In a popup, `REX_BLOCK` is the float and `session inspect` reports the float as the window's `focused_block_id` (Task 1, R6). Find the tiled block as the first block of the `kind: "tiled"` layer in the window whose `window_id` equals `.block.window_id` from `rex block inspect "$REX_BLOCK" --json`. `cwd` maps to `-c`. `rexHasSession` matches a full id or an exact label in `rex ls --json`. `rex focus` needs `-s <session>` outside the block's own session. `rex run --label L --json` does not echo the label: it returns `{window_id, block_ids:[id], revision}`, and the label is visible only in `rex block ls --json`. `rex run --wait --json` prints that result, then the child's exit status as the process exit code and `Error: exit status N` on stderr. A block whose program has exited is closed at once and disappears, so `rexPresence` on it is `gone`. `rexSwitchClient`'s target string keeps `ResumePlacementDeps`' signature so callers don't change. Parse it with `/^(session:[^:]+):(window:.+)$/` and run `rex focus -s <session> <window>` for now. Task 8 replaces this with `rexFocus`, which also switches the app.
+Rex's placement timeout is `"10s"`; probes use the default. In a popup, `REX_BLOCK` is the float and `session inspect` reports the float as the window's `focused_block_id` (Task 1, R6). Rex does not expose which block a tiled layer has focused while a float is in front: `session inspect`, `session.view`, `session.list_blocks` and the event stream carry only the window-level `focused_block_id` (the float) and no per-layer focus or marker (Task 1 fix round). So the popup anchor is the first block of the `kind: "tiled"` layer in the window whose `window_id` equals `.block.window_id` from `rex block inspect "$REX_BLOCK" --json`, and with split panes that can be the wrong pane. This is a deliberate degradation: `new-pane` and the highlight may land on the first tiled block, not the one the user was in. The exact fix is outside agmux (the popup binding in `init.lua` passing the focused block id), and is out of scope here. With one tiled block it is exact. `cwd` maps to `-c`. `rexHasSession` matches a full id or an exact label in `rex ls --json`. `rex focus` needs `-s <session>` outside the block's own session. `rex run --label L --json` does not echo the label: it returns `{window_id, block_ids:[id], revision}`, and the label is visible only in `rex block ls --json`. `rex run --wait --json` prints that result, then the child's exit status as the process exit code and `Error: exit status N` on stderr. A block whose program has exited is closed at once and disappears, so `rexPresence` on it is `gone`. `rexSwitchClient`'s target string keeps `ResumePlacementDeps`' signature so callers don't change. Parse it with `/^(session:[^:]+):(window:.+)$/` and run `rex focus -s <session> <window>` for now. Task 8 replaces this with `rexFocus`, which also switches the app.
 
 `run.ts`'s `runWithPlacement` takes its operations from `placementOps(process.env)`. `pickWindowTargetSession` keeps its order, so `AGMUX_TMUX_SESSION` becomes a label in Rex. `new-pane` outside any multiplexer keeps today's message and exit 2.
 
@@ -399,7 +399,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-Move tmux's three actions into a `tmuxPrimitives(socket, exec, capture)` private function, so `injectBootstrap` calls only primitives and the 16 KB and bracketed-paste behaviour stays as it is. For Rex, the default `pollIntervalMs` is `500` unless Task 1 measured otherwise, and it rises to at least `1000` when `RexPoll` reports the block as slow.
+Move tmux's three actions into a `tmuxPrimitives(socket, exec, capture)` private function, so `injectBootstrap` calls only primitives and the 16 KB and bracketed-paste behaviour stays as it is. For Rex, the default `pollIntervalMs` is `500` (Task 1 measured a tail read at p95 50 ms, so 500 leaves a 10x margin), and it rises to at least `1000` when `RexPoll` reports the block as slow.
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -428,7 +428,7 @@ git commit -m "feat(cli): inject bootstrap prompts into Rex blocks"
   - `planOpen(a: { caller: MuxKind | null; row: MuxKind; live: boolean; presence: Presence }): OpenPlan`
   - `rexPresence(row, exec?): Promise<Presence>`: code 0 present, 3 gone, anything else unreachable
   - `probeRow(row, tmuxExists): Promise<Presence>`
-  - `pickClient(callerBlock: { block: string; server: string } | null, rowServer: string | null, exec?): Promise<string | null>`
+  - `pickClient(callerBlock: { block: string; server: string } | null, rowServer: string | null, exec?): Promise<string | null>`, taking the owner of `callerBlock.block`, or in a popup of the tiled block, since a float has no owner when no app is attached
   - `rexFocus(row: { session: string; window: string | null; pane: string; socket: string | null }, caller, exec?): Promise<"selected" | "focused-only" | "no-app">`
   - `Handoff.notice?: string`: when set, the dash shows it and stays open
 
@@ -453,7 +453,7 @@ test.each([
   expect(planOpen({ caller, row, live, presence })).toBe(plan);
 });
 test("rexPresence: exit 3 gone, exit 4 unreachable, 127 unreachable, 124 unreachable");
-test("rexFocus runs focus_block then session.select with the owner of REX_BLOCK");
+test("rexFocus runs focus_block then session.select with the owner of REX_BLOCK, or in a popup the owner of the tiled block");
 test("rexFocus for a row on another server uses the sole app there");
 test("rexFocus with two apps and no owner focuses only and returns focused-only");
 test("rexFocus with no app returns no-app and does not throw");
@@ -477,7 +477,7 @@ Expected: FAIL, module not found.
 
 `attachCmd`, `dash-actions.attach` and `dash-actions.resume` use `planOpen` and `placementOps`. tmux-native keeps today's code. Replace both `session.tmux_session` fallbacks (`attach.ts:641`, `dash-actions.ts:126`) so they apply only when `rowMux(session) === "tmux"`; otherwise use `AGMUX_TMUX_SESSION_DEFAULT` outside Rex. `rexSwitchClient` now calls `rexFocus`.
 
-Task 1 findings that change this task. A float's block has no `owner` in a session no app is attached to (needs a manual check with an app attached, see the report), so in a popup take the owner from the tiled block, and verify it against the `clients` list in `session inspect`: a stale owner id is possible (a throwaway session's first block was owned by a CLI client that had already gone). When a popup float closes, Rex does NOT return focus to the block that was focused before; it focuses the most recently created tiled block. `rexFocus` must therefore run `focus_block` on the target explicitly after the float closes, and never rely on restoring focus.
+Task 1 findings that change this task. A float's block has no `owner` in a session no app is attached to (needs a manual check with an app attached, see the report), so in a popup take the owner from the tiled block, and verify it against the `clients` list in `session inspect`: a stale owner id is possible (a throwaway session's first block was owned by a CLI client that had already gone). When a popup float closes, Rex does NOT return focus to the block that was focused before; it focuses the most recently created tiled block. Focus set from inside the float sticks: Task 1 ran `rex focus <tiled block>` inside the float and focus stayed on that block after the float exited. So `rexFocus` runs `focus_block` on the target before the popup closes, while the dash is still running; it cannot run anything after the float closes because the dash is gone by then. Never rely on Rex restoring focus on its own.
 
 Messages: `unreachable` throws `Rex server unreachable; not resuming <id8>`; `no-app` throws `Rex app not running`; `focused-only` returns the notice `opened in Rex; several Rex apps connected, could not switch`. Outside Rex, success returns `{ argv: [], notice: "opened in Rex" }`. Update `attachPlacedCmd` and `attachCmd` to print `notice`. In `DashApp.tsx`, `if (h?.notice) setNotice(h.notice); else if (h) { … }`, except in popup mode where the float closes.
 
@@ -617,7 +617,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Implement**
 
-In `collectPaneSignals`, rename `inTmux` to `withPane` and filter tmux work to `rowMux(r) === "tmux"`. Rex native rows use `rexTitle` then the same `TitleSignal` path, polled at no less than Task 1's R2 result allows. `resolvePane` skips `readPaneOption` when `pane.startsWith("block:")`. `isPaneVisible` needs no change: a block id never appears in tmux's list.
+In `collectPaneSignals`, rename `inTmux` to `withPane` and filter tmux work to `rowMux(r) === "tmux"`. Rex native rows use `rexTitle` then the same `TitleSignal` path, polled at the same interval as tmux rows. Task 1 measured 28 ms per `title` call (26 to 30 ms over 20 calls), so no extra floor is needed. `resolvePane` skips `readPaneOption` when `pane.startsWith("block:")`. `isPaneVisible` needs no change: a block id never appears in tmux's list.
 
 - [ ] **Step 4: Run to verify they pass**
 
@@ -701,7 +701,7 @@ Expected: all pass.
 
 - [ ] **Step 4: Run the smoke list inside real Rex**
 
-Work through spec §7's 11 smoke items and record each result in `docs/spikes/2026-11-02-rex/REPORT.md`. Item 10 needs a sandbox: if none is available, mark it not run and say so at handoff. Any failure gets a test and a fix before moving on.
+Work through spec §7's 11 smoke items and record each result in `docs/spikes/2026-11-02-rex/REPORT.md`. Item 10 needs a sandbox: if none is available, mark it not run and say so at handoff. Add L4 as a twelfth item: autostart a Rex server from inside tmux (`TMUX` set) and check that `env | grep TMUX` in its blocks is empty; if it leaks, `detectMux` needs the `REX_BLOCK`-first rule and the docs must say so. Task 1 could not test this without restarting the real server. Any failure gets a test and a fix before moving on.
 
 - [ ] **Step 5: Commit**
 
