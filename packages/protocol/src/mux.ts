@@ -11,7 +11,7 @@ export const REX_ENV_KEYS = ["REX_BLOCK", "REX_SESSION", "REX_SERVER"] as const;
 // TMUX wins over REX_*: a tmux running inside a Rex block is tmux.
 export function detectMux(env: Record<string, string | undefined>): MuxKind | null {
   if (env.TMUX) return "tmux";
-  if (REX_ENV_KEYS.some((k) => !!env[k])) return "rex";
+  if (env.REX_BLOCK) return "rex";
   return null;
 }
 
