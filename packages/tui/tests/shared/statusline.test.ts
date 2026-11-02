@@ -323,3 +323,13 @@ test("a stale remote chip prefixes the name with ? instead of ⇄ (spec §4.4)",
   expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: true })], f))).toBe("▌? fix ");
   expect(plain(formatStatusLine([mkRow({ name: "fix", remote: true, sync_stale: false })], f))).toBe("▌⇄ fix ");
 });
+
+test("statusline: a rex label with '#' is doubled and control chars are stripped", () => {
+  const rows = [mkRow({ session_id: "a", mux: "rex", mux_label: "a#b\x1bc", tmux_session: "session:01-abcd1234", tmux_window: "window:x" })];
+  expect(plain(formatStatusLine(rows, { ...OPTS, format: "{tmux_session}" }))).toBe("▌rex:a##b c ");
+});
+
+test("statusline: tmux_window and tmux_pane are empty for rex rows", () => {
+  const rows = [mkRow({ session_id: "a", mux: "rex", mux_label: "x", tmux_session: "session:01-abcd1234", tmux_window: "window:x", tmux_pane: "block:y" })];
+  expect(plain(formatStatusLine(rows, { ...OPTS, format: "[{tmux_window}][{tmux_pane}]" }))).toBe("▌[][] ");
+});

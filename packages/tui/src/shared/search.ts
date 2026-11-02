@@ -1,10 +1,10 @@
-import type { SessionRow } from "@agmux/protocol";
+import { muxLocationText, type SessionRow } from "@agmux/protocol";
 
 // Free-text match behind the dash's `/` key. Matches across identifying fields.
 export function matchesSearch(r: SessionRow, q: string): boolean {
   if (!q) return true;
   const n = q.toLowerCase();
-  return [r.session_id, r.agent_kind, r.profile ?? "", r.tmux_session ?? "", r.tmux_window ?? "", r.status]
+  return [r.session_id, r.agent_kind, r.profile ?? "", r.tmux_session ?? "", r.tmux_window ?? "", muxLocationText(r), r.status]
     .some((s) => s.toLowerCase().includes(n));
 }
 

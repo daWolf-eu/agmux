@@ -1,4 +1,4 @@
-import { stripControls, type SessionRow } from "@agmux/protocol";
+import { muxLocationText, stripControls, type SessionRow } from "@agmux/protocol";
 import { relTime } from "./reltime.ts";
 import { activityCell } from "../format.ts";
 import { remoteNamePrefix, type LocalityFilter } from "./locality.ts";
@@ -55,7 +55,7 @@ function nameText(r: SessionRow): string {
 }
 
 function tmuxText(r: SessionRow): string {
-  return r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "";
+  return muxLocationText(r);
 }
 
 const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
@@ -76,7 +76,7 @@ const RAW_COLUMNS: Record<ColumnKey, ColDef> = {
   id: { key: "id", header: "ID", align: "left", style: "sub", text: (r) => r.session_id.slice(0, ID_MAX) },
   agent: { key: "agent", header: "AGENT", align: "left", style: "sub", text: (r) => r.agent_kind },
   profile: { key: "profile", header: "PROFILE", align: "left", style: "sub", max: 16, min: 6, text: (r) => r.profile ?? "" },
-  tmux: { key: "tmux", header: "TMUX", align: "left", style: "sub", max: 32, min: 6, text: tmuxText },
+  tmux: { key: "tmux", header: "MUX", align: "left", style: "sub", max: 32, min: 6, text: tmuxText },
   turns: {
     key: "turns", header: "TURNS", align: "right", style: "sub",
     text: (r) => (r.turn_count == null ? "" : String(r.turn_count)),

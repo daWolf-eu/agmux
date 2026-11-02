@@ -1,4 +1,4 @@
-import { stripControls, type SessionRow } from "@agmux/protocol";
+import { muxLocationText, rowMux, stripControls, type SessionRow } from "@agmux/protocol";
 
 export interface YankField {
   label: string;
@@ -10,6 +10,7 @@ export interface YankField {
 // otherwise "session:window" plus " pane" when a pane is recorded. Shared with
 // PreviewPane's DetailBody so "what you see is what you yank".
 export function tmuxTarget(row: SessionRow): string {
+  if (rowMux(row) === "rex") return muxLocationText(row);
   if (!row.tmux_session || !row.tmux_window) return "";
   return `${row.tmux_session}:${row.tmux_window}${row.tmux_pane ? ` ${row.tmux_pane}` : ""}`;
 }
@@ -25,7 +26,7 @@ export function yankFields(row: SessionRow): YankField[] {
     ["CWD", row.cwd],
     ["Command", [row.command, ...row.args].join(" ")],
     ["Project", row.project ?? ""],
-    ["TMUX", tmuxTarget(row)],
+    [rowMux(row) === "rex" ? "MUX" : "TMUX", tmuxTarget(row)],
     ["PID", row.pid == null ? "" : String(row.pid)],
     ["Host", row.host],
     ["Profile", row.profile ?? ""],

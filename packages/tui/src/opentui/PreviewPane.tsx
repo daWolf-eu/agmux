@@ -1,5 +1,5 @@
 /** @jsxImportSource @opentui/react */
-import { stripControls, type SessionRow } from "@agmux/protocol";
+import { rowMux, stripControls, type SessionRow } from "@agmux/protocol";
 import type { PreviewMode, UsageSummary } from "../types.ts";
 import { pad } from "../shared/columns.ts";
 import { syncAge } from "../shared/reltime.ts";
@@ -41,7 +41,7 @@ export function detailFields(r: SessionRow, u: UsageSummary | null): [string, st
     ["Agent", r.agent_kind],
     ["Profile", r.profile ?? "-"],
     ["Origin", r.origin],
-    ["TMUX", tmuxTarget(r) || remoteTmuxTarget(r) || "—"],
+    [rowMux(r) === "rex" ? "MUX" : "TMUX", tmuxTarget(r) || remoteTmuxTarget(r) || "—"],
     ["PID", r.pid == null ? "-" : String(r.pid)],
     ["Host", hostDetail(r)],
     ["Project", r.project ?? "-"],

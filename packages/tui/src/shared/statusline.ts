@@ -1,4 +1,4 @@
-import { isShellSafeId, shellSafeIdChars, stripControls, type SessionRow } from "@agmux/protocol";
+import { isShellSafeId, shellSafeIdChars, muxLocationText, rowMux, stripControls, type SessionRow } from "@agmux/protocol";
 import { statusGlyph, statusTone, toneGlyph, STATUS_COLORS, type StatusTone } from "./glyph.ts";
 import { MOCHA } from "./palette.ts";
 import { abbreviateBranch, clip, COLUMNS, plainName, type ColumnStyle } from "./columns.ts";
@@ -152,9 +152,12 @@ function rawFieldValue(r: SessionRow, key: string, caps: Caps): string {
     case "name": return remoteNamePrefix(r) + clip(stripControls(plainName(r)), caps.name);
     case "repo": return r.git_repo ?? "";
     case "branch": return r.git_branch ? abbreviateBranch(r.git_branch, BRANCH_MAX) : "";
-    case "tmux_session": return r.tmux_session ? abbreviate(r.tmux_session, caps.session) : "";
-    case "tmux_window": return r.tmux_window ?? "";
-    case "tmux_pane": return r.tmux_pane ?? "";
+    case "tmux_session":
+      if (rowMux(r) === "rex") return muxLocationText(r);
+      return r.tmux_session ? abbreviate(r.tmux_session, caps.session) : "";
+    // Rex window/pane ids are opaque block ids: nothing to show.
+    case "tmux_window": return rowMux(r) === "rex" ? "" : r.tmux_window ?? "";
+    case "tmux_pane": return rowMux(r) === "rex" ? "" : r.tmux_pane ?? "";
     case "project": return r.project ?? "";
     case "agent_kind": return r.agent_kind;
     case "status": return r.status;
