@@ -1,5 +1,5 @@
 import {
-  ATTACH_PLACEMENTS, LIVE_STATUSES, TERMINAL_STATUSES, type AttachPlacement, type SessionRow,
+  ATTACH_PLACEMENTS, LIVE_STATUSES, rowMux, TERMINAL_STATUSES, type AttachPlacement, type SessionRow,
 } from "@agmux/protocol";
 
 // What a session offers to open: a live tmux pane, a closed session (resume),
@@ -12,20 +12,23 @@ export function attachKind(row: SessionRow): AttachKind {
   // remote_tmux) has nothing to open; a closed one is resumed in its sandbox (cli).
   if (row.remote) return LIVE_STATUSES.includes(row.status) && row.remote_tmux ? "remote" : "none";
   if (TERMINAL_STATUSES.includes(row.status)) return "closed";
-  if (LIVE_STATUSES.includes(row.status) && row.tmux_session && row.tmux_window) return "live";
+  if (LIVE_STATUSES.includes(row.status)) {
+    if (rowMux(row) === "rex") return row.tmux_pane ? "live" : "none";
+    if (row.tmux_session && row.tmux_window) return "live";
+  }
   return "none";
 }
 
 // The caller's situation. Computed once by the cli (attachCtxFor) and shared by
 // the popup (to dim targets) and the actions (to validate) so both agree.
 export interface AttachCtx {
-  inTmux: boolean;         // running inside a tmux client
+  inMux: boolean;         // running inside a multiplexer (tmux or Rex)
   popup: boolean;          // the dash runs in `display-popup -E` (`agmux dash --popup`)
   terminalWindow: boolean; // [terminal] new_window configured
   terminalTab: boolean;    // [terminal] new_tab configured
 }
 
-export const NO_ATTACH_CTX: AttachCtx = { inTmux: false, popup: false, terminalWindow: false, terminalTab: false };
+export const NO_ATTACH_CTX: AttachCtx = { inMux: false, popup: false, terminalWindow: false, terminalTab: false };
 
 export interface AttachTarget {
   placement: AttachPlacement;
@@ -48,7 +51,7 @@ function remoteReasonFor(p: AttachPlacement, ctx: AttachCtx): string {
     case "inline": return ctx.popup ? "in popup" : "";
     case "new-pane":
     case "new-window":
-    case "new-session": return ctx.inTmux ? "" : "not in tmux";
+    case "new-session": return ctx.inMux ? "" : "not in a multiplexer";
     case "peek": return "planned";
     case "new-tab": return ctx.terminalTab ? "" : "not configured";
     case "new-terminal": return ctx.terminalWindow ? "" : "not configured";
@@ -67,7 +70,7 @@ function reasonFor(p: AttachPlacement, kind: AttachKind, ctx: AttachCtx): string
     case "new-window":
     case "new-session":
       if (kind === "live") return "already open";
-      return ctx.inTmux ? "" : "not in tmux";
+      return ctx.inMux ? "" : "not in a multiplexer";
     // Phase 1: peek is not built yet; for a resume it can never work.
     case "peek": return kind === "closed" ? "ends with popup" : "planned";
     case "new-tab": return ctx.terminalTab ? "" : "not configured";
@@ -87,9 +90,9 @@ export function attachTargets(kind: AttachKind, ctx: AttachCtx): AttachTarget[] 
 // window (closed session in a popup). Without config this is the pre-popup behaviour.
 export function defaultPlacement(kind: AttachKind, ctx: AttachCtx, defaults: AttachDefaults = {}): AttachPlacement {
   const want: AttachPlacement = kind === "closed"
-    ? defaults.closed ?? (ctx.inTmux ? "new-window" : "inline")
+    ? defaults.closed ?? (ctx.inMux ? "new-window" : "inline")
     : kind === "remote"
-      ? defaults.remote ?? (ctx.inTmux ? "new-window" : "inline")
+      ? defaults.remote ?? (ctx.inMux ? "new-window" : "inline")
       : defaults.live ?? "inline";
   const targets = attachTargets(kind, ctx);
   const enabled = (p: AttachPlacement) => targets.find((t) => t.placement === p)!.enabled;

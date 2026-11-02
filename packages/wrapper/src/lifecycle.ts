@@ -18,6 +18,9 @@ export interface BuildStartedArgs {
   cwd: string;
   pid: number;
   tmux: { session: string | null; window: string | null; pane: string | null; socket: string | null };
+  // Rex only: tmux payloads stay byte-identical, so a tmux caller leaves these out.
+  mux?: "rex";
+  mux_label?: string | null;
   project: string | null;
 }
 
@@ -41,6 +44,7 @@ export function buildStartedEvent(a: BuildStartedArgs): SessionStartedEvent {
       tmux_window: a.tmux.window,
       tmux_pane: a.tmux.pane,
       tmux_socket: a.tmux.socket,
+      ...(a.mux ? { mux: a.mux, mux_label: a.mux_label ?? null } : {}),
       project: a.project,
     },
   };
@@ -80,6 +84,8 @@ export function buildEndedEvent(a: {
 export function buildResumedEvent(a: {
   sessionId: string; host: string; newPid: number;
   tmux: { session: string | null; window: string | null; pane: string | null; socket: string | null };
+  mux?: "rex";
+  mux_label?: string | null;
 }): SessionResumedEvent {
   return {
     event_id: mintEventId(),
@@ -94,6 +100,7 @@ export function buildResumedEvent(a: {
       new_tmux_window: a.tmux.window,
       new_tmux_pane: a.tmux.pane,
       new_tmux_socket: a.tmux.socket,
+      ...(a.mux ? { new_mux: a.mux, new_mux_label: a.mux_label ?? null } : {}),
       reason: "cli_attach_after_death",
     },
   };

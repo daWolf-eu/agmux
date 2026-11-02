@@ -60,13 +60,13 @@ test("a closed session is resumed with the requested placement", async () => {
 
 test("an unavailable placement prints its reason and exits 2", async () => {
   const errs: string[] = [];
-  const throwing: Actions = { ...fakeActions([]), async attach() { throw new Error("new pane: not in tmux"); } };
+  const throwing: Actions = { ...fakeActions([]), async attach() { throw new Error("new pane: not in a multiplexer"); } };
   const code = await withHub(row(), () => attachPlacedCmd(
     { idOrPrefix: "019f", hubUrl: "http://hub", wrapBin: "w", placement: "new-pane", settings: DEFAULT_ATTACH_SETTINGS },
     { makeActionsImpl: () => throwing, spawn: async () => 0, err: (s) => errs.push(s) },
   ));
   expect(code).toBe(2);
-  expect(errs).toEqual(["attach: new pane: not in tmux"]);
+  expect(errs).toEqual(["attach: new pane: not in a multiplexer"]);
 });
 
 test("a live session without tmux coords is an error", async () => {

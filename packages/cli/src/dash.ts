@@ -69,7 +69,7 @@ export async function dashCmd(
     actions: deps.makeActionsImpl(opts.hubUrl, opts.wrapBin, opts.popup, attach),
     attachCtx,
     // Outside tmux the view mode (a tmux session of its own) has no home: full.
-    remoteMode: attachCtx.inTmux ? attach.remote.mode : "full",
+    remoteMode: attachCtx.inMux ? attach.remote.mode : "full",
     columns: opts.columns,
     showHeader: opts.header,
   });

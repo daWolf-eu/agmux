@@ -49,3 +49,17 @@ test("buildResumedEvent captures new pid + new tmux coords", () => {
   expect(ev.payload.new_pid).toBe(99);
   expect(ev.payload.new_tmux_window).toBe("@2");
 });
+
+test("buildStartedEvent and buildResumedEvent carry mux and label only when given", () => {
+  const tmux = { session: "S", window: "W", pane: "B", socket: "srv" };
+  const base = { sessionId: "x", host: "h", agent_kind: "claude" as const, profile: null, command: "c", args: [], env_overrides: {}, cwd: "/", pid: 1, tmux, project: null };
+  const plain = buildStartedEvent(base).payload as any;
+  expect("mux" in plain).toBe(false);
+  expect("mux_label" in plain).toBe(false);
+  const rex = buildStartedEvent({ ...base, mux: "rex", mux_label: "work" }).payload as any;
+  expect(rex).toMatchObject({ mux: "rex", mux_label: "work" });
+  const r0 = buildResumedEvent({ sessionId: "x", host: "h", newPid: 2, tmux }).payload as any;
+  expect("new_mux" in r0).toBe(false);
+  const r1 = buildResumedEvent({ sessionId: "x", host: "h", newPid: 2, tmux, mux: "rex", mux_label: "work" }).payload as any;
+  expect(r1).toMatchObject({ new_mux: "rex", new_mux_label: "work" });
+});

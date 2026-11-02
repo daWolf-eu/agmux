@@ -1,14 +1,14 @@
 import * as path from "node:path";
 import type { Registry, HeadlessPlan } from "@agmux/adapters";
-import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_PROFILE_ENV, resolveHost } from "@agmux/protocol";
+import { AGMUX_SESSION_ID_ENV, AGMUX_HUB_URL_ENV, AGMUX_PROFILE_ENV, REX_ENV_KEYS, resolveHost } from "@agmux/protocol";
 import {
   HubClient, mintSessionId, buildStartedEvent, buildEndedEvent, type ProfileConfig,
 } from "@agmux/wrapper";
 import type { ParsedRun } from "./parse-run.ts";
 
 // A headless run inherits the caller's environment, which — when the caller sits
-// inside tmux — carries $TMUX and $TMUX_PANE pointing at THEIR pane. The agent's
-// own hooks call `agmux emit`, whose enrichTmuxCoords would then stamp the
+// inside tmux (or Rex: $REX_BLOCK/$REX_SESSION/$REX_SERVER) — carries $TMUX and $TMUX_PANE pointing at THEIR pane. The agent's
+// own hooks call `agmux emit`, whose enrichMuxCoords would then stamp the
 // caller's live pane onto a session that has no pane at all, and dash would offer
 // to attach to an unrelated window. Strip them: a headless session is honestly
 // pane-less, and the started event below records null coords to match.
@@ -16,7 +16,7 @@ export function scrubTmuxEnv(base: Record<string, string | undefined>): Record<s
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) {
     if (v === undefined) continue;
-    if (k === "TMUX" || k === "TMUX_PANE") continue;
+    if (k === "TMUX" || k === "TMUX_PANE" || (REX_ENV_KEYS as readonly string[]).includes(k)) continue;
     out[k] = v;
   }
   return out;

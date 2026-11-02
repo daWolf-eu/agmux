@@ -117,3 +117,11 @@ test("buildDirectSpawn: a profile launch passes the profile env to the agent", (
   expect(s.env.CLAUDE_CONFIG_DIR).toBe("/sandbox/.claude-chax");
   expect(s.env.AGMUX_PROFILE).toBe("work");
 });
+
+test("direct launch in Rex runs inherit, not new-session", async () => {
+  const { needsNewSession } = await import("../src/run.ts");
+  expect(needsNewSession({ mode: "direct" }, { REX_BLOCK: "B1" })).toBe(false);
+  expect(needsNewSession({ mode: "direct" }, { TMUX: "/s,1,0" })).toBe(false);
+  expect(needsNewSession({ mode: "direct" }, {})).toBe(true);
+  expect(needsNewSession({ mode: "wrapped" }, {})).toBe(false);
+});
