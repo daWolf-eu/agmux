@@ -5,7 +5,7 @@
 // prints one PrintedCoords JSON line on stdout. Everything else goes to stderr.
 import {
   AGMUX_PROFILE_ENV, AGMUX_TMUX_SESSION_ENV, AGMUX_TMUX_SESSION_DEFAULT, TMUX_SERVER_ID_FMT,
-  isTmuxServerId, parseLaunchSpec, parsePrintedCoords, tmuxSocketArgs,
+  isTmuxServerId, parseLaunchSpec, parsePrintedCoords, rowMux, tmuxSocketArgs,
   type LaunchSpec, type PrintedCoords, type SessionRow,
 } from "@agmux/protocol";
 import { createDefaultRegistry, type Registry } from "@agmux/adapters";
@@ -171,6 +171,12 @@ export async function resumeNearestCmd(o: ResumeNearestOpts, deps: ResumeNearest
   const id8 = session.session_id.slice(0, 8);
   if (session.remote) {
     deps.err(`${PREFIX}: ${id8} is a remote session (host ${session.host}); resume it on its own host`);
+    return 2;
+  }
+  // The sandbox side is tmux only, and a Rex row's ids mean nothing to tmux. It
+  // may also still be running in Rex, so a resume could double the agent.
+  if (rowMux(session) === "rex") {
+    deps.err(`${PREFIX}: ${id8} lives in Rex; open it from there`);
     return 2;
   }
 
