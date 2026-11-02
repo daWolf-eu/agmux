@@ -129,3 +129,22 @@ test("the wrapper barrel imports even when the shim cannot be built", () => {
     fs.chmodSync(d, 0o700); fs.rmSync(d, { recursive: true, force: true });
   }
 });
+
+// The child blocks writing output while the wrapper would block writing its input:
+// about 2 KB of paste into a redrawing agent froze both for good.
+test("input larger than the tty queue reaches a child that is redrawing, in order", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agmux-pty-pump-"));
+  const file = path.join(dir, "got");
+  const total = 8192;
+  const proc = Bun.spawn(["bun", path.join(import.meta.dir, "fixtures/pty-pump.ts"), "parent", file], {
+    stdout: "ignore", stderr: "ignore", env: { ...process.env, PUMP_BYTES: String(total) },
+  });
+  const timer = setTimeout(() => proc.kill("SIGKILL"), 8000);
+  const code = await proc.exited;
+  clearTimeout(timer);
+  const got = fs.existsSync(file) ? fs.readFileSync(file) : Buffer.alloc(0);
+  fs.rmSync(dir, { recursive: true, force: true });
+  expect(code).toBe(0);
+  expect(got.length).toBe(total);
+  expect(got.every((b, i) => b === 97 + (i % 26))).toBe(true);
+}, 12000);
