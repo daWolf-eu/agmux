@@ -26,7 +26,7 @@ const PRINTED: RemoteTmux = { session: "agmux", window: "@0", pane: "%0", socket
 
 function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
-    tmux_server: null,
+    tmux_server: null, mux: null, mux_label: null,
     session_id: ID, agent_kind: "claude", profile: null, native_session_id: "n1",
     command: "claude", args: [], env_overrides: {}, cwd: "/sandbox/work", pid: null,
     tmux_session: null, tmux_window: null, tmux_pane: null, tmux_socket: null,

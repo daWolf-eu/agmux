@@ -3,6 +3,7 @@ export * from "./launch.ts";
 export * from "./session.ts";
 export * from "./events.ts";
 export * from "./tmux.ts";
+export * from "./mux.ts";
 export * from "./title.ts";
 export * from "./validators.ts";
 export * from "./telemetry.ts";

@@ -13,7 +13,7 @@ function row(over: Partial<SessionRow> = {}): SessionRow {
   return {
     session_id: ID, agent_kind: "claude", profile: null, native_session_id: N,
     command: "claude", args: [], env_overrides: {}, cwd: "/sandbox/work", pid: null,
-    tmux_session: "agmux", tmux_window: "@3", tmux_pane: "%5", tmux_socket: null, tmux_server: "100-200",
+    tmux_session: "agmux", tmux_window: "@3", tmux_pane: "%5", tmux_socket: null, tmux_server: "100-200", mux: null, mux_label: null,
     host: "h", project: null, parent_session_id: null,
     start_ts: "t", last_heartbeat_ts: null, end_ts: "t", exit_code: 0, signal: null,
     status: "ended", origin: "native", ...over,

@@ -1,3 +1,4 @@
+import type { MuxKind } from "./mux.ts";
 import type { RemoteTmux } from "./attach.ts";
 // Read-ness is part of the status vocabulary, not a separate axis:
 //   done  = the turn finished and you have not looked at it since
@@ -38,6 +39,10 @@ export interface SessionRow {
   tmux_socket: string | null;
   // tmux server identity "<pid>-<start_time>" (null = unknown / remote row)
   tmux_server: string | null;
+  // Multiplexer hosting the session; null = tmux. mux_label is the human
+  // location text for non-tmux multiplexers (Rex), null otherwise.
+  mux: MuxKind | null;
+  mux_label: string | null;
   host: string;
   project: string | null;
   parent_session_id: string | null;
