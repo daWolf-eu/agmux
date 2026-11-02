@@ -120,7 +120,7 @@ Limits:
 - L1: no "seen while watching". Rex doesn't expose OS focus or which session an app shows. `focused_block_id` must not stand in for it: it's set even when the app shows another session.
 - L2: no in-app toast. OS notifications still fire. `dispatchNotification` doesn't branch on `mux`: a Rex row can still produce a tmux toast in a running tmux client, showing its `rex:<label>`; no Rex id reaches tmux.
 - L3: `session.select` changes what the app shows and may not raise it over other macOS apps.
-- L4: a Rex server autostarted from inside tmux could give its blocks a stale `$TMUX`, and `detectMux` would report tmux. If smoke testing shows this leaks, `detectMux` needs a rule that prefers `REX_BLOCK`. Not yet tested: see the report.
+- L4: a Rex server autostarted from inside tmux could give its blocks a stale `$TMUX`, and `detectMux` would report tmux. No fallback is decided if this leaks: preferring `REX_BLOCK` would misdetect every tmux-in-Rex pane, which carries stale `REX_*` with `TMUX` set, so a leak needs its own discriminator. Not yet tested: see the report.
 - `[attach.remote] window_name` applies only to new-session in Rex. A remote client in a new tab carries a dedup label instead.
 - `agmux seen --pane` doesn't recognise remote client blocks.
 
