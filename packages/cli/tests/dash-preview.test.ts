@@ -50,3 +50,35 @@ test("usage maps the hub usage row, null when absent", async () => {
     expect(await src.usage(mkRow())).toEqual({ input_tokens: 10, output_tokens: 5, cost_usd: 0.5, last_model: "m", turn_count: 3 });
   } finally { globalThis.fetch = orig; }
 });
+
+test("rex mirror back-off: slow read is cached for 1 s, then re-read; fast reads keep polling", async () => {
+  let t = 0;
+  let took = 300;
+  let n = 0;
+  const exec = (async () => {
+    n++; t += took;
+    return { code: 0, stdout: JSON.stringify({ content: `read${n}`, total: 5 }) };
+  }) as any;
+  const src = makePreviewSource("http://h", async () => "", exec, () => t);
+  const r = mkRow({ mux: "rex", tmux_session: "session:s", tmux_pane: "block:b", tmux_socket: "unix:///x" });
+  expect(await src.mirror(r)).toBe("read1");
+  t += 500;
+  expect(await src.mirror(r)).toBe("read1");
+  expect(n).toBe(1);
+  t += 600; // 1100 ms since the read finished
+  took = 20;
+  expect(await src.mirror(r)).toBe("read2");
+  expect(n).toBe(2);
+  expect(await src.mirror(r)).toBe("read3"); // fast read: polls again at once
+  expect(n).toBe(3);
+});
+
+test("rex mirror cache is keyed by socket and pane", async () => {
+  let n = 0;
+  const exec = (async () => ({ code: 0, stdout: JSON.stringify({ content: `read${++n}`, total: 5 }) })) as any;
+  const src = makePreviewSource("http://h", async () => "", exec, () => 0);
+  const a = mkRow({ mux: "rex", tmux_pane: "block:b", tmux_socket: "unix:///a" });
+  const b = mkRow({ mux: "rex", tmux_pane: "block:b", tmux_socket: "unix:///b" });
+  expect(await src.mirror(a)).toBe("read1");
+  expect(await src.mirror(b)).toBe("read2");
+});

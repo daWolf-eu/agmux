@@ -102,3 +102,13 @@ test("mirror on a tmux row is unchanged", async () => {
   expect(await src.mirror(mkRow({ mux: null, tmux_pane: "%1", tmux_socket: null }))).toBe("ran capture-pane -p -t %1");
   expect(exec.calls.length).toBe(0);
 });
+
+test("rexTail multi-chunk: stray U+FFFD at the start of each chunk are dropped and counted as 1 byte", async () => {
+  // offset 10 falls inside a 3-byte char: 2 stray bytes -> two U+FFFD (6 encoded bytes, 2 real).
+  const exec = fakeRex({
+    [fmt(8)]: { stdout: JSON.stringify({ content: "head", id: 7, total: 18 }) },
+    [rd(7, 10, 8)]: { stdout: JSON.stringify({ id: 7, data: "\uFFFD\uFFFDab", total: 18, eof: false }) },
+    [rd(7, 14, 8)]: { stdout: JSON.stringify({ id: 7, data: "cdef", total: 18, eof: true }) },
+  });
+  expect(await rexTail(row, 8, exec)).toBe("abcdef");
+});
