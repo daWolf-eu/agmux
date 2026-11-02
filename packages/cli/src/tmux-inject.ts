@@ -157,7 +157,7 @@ export interface VerifiedSubmitOpts {
   pane: string;
   glyph: string;
   needle: string;
-  exec: TmuxExec;
+  submit: (pane: string) => Promise<void>;
   capture: () => Promise<string>;   // pane already bound by the orchestrator
   sleep: Sleep;
   pollIntervalMs: number;
@@ -172,6 +172,27 @@ async function sendEnter(exec: TmuxExec, pane: string): Promise<void> {
   await run(exec, ["send-keys", "-t", pane, "Enter"]);
 }
 
+// The four things inject needs from a multiplexer. tmux's live here; Rex's in rex-io.ts.
+export interface InjectPrimitives {
+  capture(pane: string): Promise<string>;
+  clearLine(pane: string): Promise<void>;
+  paste(pane: string, bytes: Uint8Array): Promise<void>;
+  submit(pane: string): Promise<void>;
+}
+
+function tmuxPrimitives(exec: TmuxExec, captureFn: TmuxCapture): InjectPrimitives {
+  return {
+    capture: (pane) => captureFn(pane),
+    // Pre-clear any pre-populated text: C-a (Home) then C-k (kill-to-end).
+    clearLine: async (pane) => {
+      await run(exec, ["send-keys", "-t", pane, "C-a"]);
+      await run(exec, ["send-keys", "-t", pane, "C-k"]);
+    },
+    paste: (pane, bytes) => pasteViaBuffer(pane, bytes, exec),
+    submit: (pane) => sendEnter(exec, pane),
+  };
+}
+
 export async function verifiedSubmit(o: VerifiedSubmitOpts): Promise<"submitted" | "submitted-unverified"> {
   const cap = o.capture;
 
@@ -184,7 +205,7 @@ export async function verifiedSubmit(o: VerifiedSubmitOpts): Promise<"submitted"
   }
 
   await o.sleep(o.settleMs);
-  await sendEnter(o.exec, o.pane);
+  await o.submit(o.pane);
 
   // Draft never observed → submit blind; nothing reliable to verify against.
   if (!draftSeen) return "submitted-unverified";
@@ -195,7 +216,7 @@ export async function verifiedSubmit(o: VerifiedSubmitOpts): Promise<"submitted"
   for (let n = 0; n < verifyAttempts; n++) {
     await o.sleep(o.pollIntervalMs);
     if (!draftLanded(await cap(), o.glyph, o.needle)) return "submitted";
-    if ((n + 1) % retryEvery === 0) await sendEnter(o.exec, o.pane);
+    if ((n + 1) % retryEvery === 0) await o.submit(o.pane);
   }
   return "submitted-unverified";
 }
@@ -231,6 +252,8 @@ export interface InjectOpts {
   exec?: TmuxExec;
   capture?: TmuxCapture;
   sleep?: Sleep;
+  // Non-tmux multiplexers (Rex) supply their own; exec/capture/socket are then unused.
+  primitives?: InjectPrimitives;
 }
 
 const READY_TIMEOUT_MS = 30_000;
@@ -248,20 +271,18 @@ export async function injectBootstrap(opts: InjectOpts): Promise<InjectResult> {
   const pollIntervalMs = opts.pollIntervalMs ?? POLL_INTERVAL_MS;
   const timeoutMs = opts.timeoutMs ?? READY_TIMEOUT_MS;
   const glyph = (opts.agentKind ? READINESS_GLYPHS[opts.agentKind] : null) ?? "";
-  const capture = () => captureFn(opts.pane);
+  const prim = opts.primitives ?? tmuxPrimitives(exec, captureFn);
+  const capture = () => prim.capture(opts.pane);
 
   try {
     const ready = await waitForReady({ glyph, capture, sleep, pollIntervalMs, timeoutMs });
 
-    // Pre-clear any pre-populated text: C-a (Home) then C-k (kill-to-end).
-    await run(exec, ["send-keys", "-t", opts.pane, "C-a"]);
-    await run(exec, ["send-keys", "-t", opts.pane, "C-k"]);
-
-    await pasteViaBuffer(opts.pane, sanitizePayload(opts.text), exec);
+    await prim.clearLine(opts.pane);
+    await prim.paste(opts.pane, sanitizePayload(opts.text));
 
     const submit = await verifiedSubmit({
       pane: opts.pane, glyph, needle: computeNeedle(opts.text),
-      exec, capture, sleep,
+      submit: prim.submit, capture, sleep,
       pollIntervalMs,
       commitTimeoutMs: PASTE_COMMIT_TIMEOUT_MS,
       verifyTimeoutMs: SUBMIT_VERIFY_TIMEOUT_MS,

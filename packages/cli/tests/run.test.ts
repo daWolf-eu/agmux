@@ -125,3 +125,46 @@ test("direct launch in Rex runs inherit, not new-session", async () => {
   expect(needsNewSession({ mode: "direct" }, {})).toBe(true);
   expect(needsNewSession({ mode: "wrapped" }, {})).toBe(false);
 });
+
+test("runInjectStep with mux rex hands the injector rex primitives bound to the session", async () => {
+  const { fakeRex } = await import("./helpers/fake-rex.ts");
+  const rex = fakeRex({ "block send-key -s session:s1 -b block:b1 enter": {} });
+  let prims: any;
+  const r = await runInjectStep(
+    { pane: "block:b1", prompt: "hi", agentKind: "claude", socket: "unix:///x", mux: "rex", session: "session:s1" },
+    async (o) => { prims = o.primitives; return { outcome: "submitted" as const }; },
+    rex,
+  );
+  expect(r).toMatch(/prompt injected/);
+  await prims.submit("block:b1");
+  expect(rex.calls.length).toBe(1);
+  expect(rex.calls[0]).toContain("send-key");
+});
+
+test("runInjectStep for tmux passes no primitives", async () => {
+  let prims: any = "unset";
+  await runInjectStep({ pane: "%1", prompt: "hi", mux: "tmux" }, async (o) => { prims = o.primitives; return { outcome: "submitted" as const }; });
+  expect(prims).toBeUndefined();
+});
+
+test("agmux run --prompt in Rex injects through rexPrimitives and never touches tmux", async () => {
+  const { runCmd } = await import("../src/run.ts");
+  const { fakeRex } = await import("./helpers/fake-rex.ts");
+  const rex = fakeRex({ "block send-key -s session:s1 -b block:b9 enter": {} });
+  const ops: any = {
+    kind: "rex",
+    currentPane: async () => ({ session: "session:s1", window: "w", pane: "block:b1", socket: "unix:///x" }),
+    splitPane: async () => ({ session: "session:s1", window: "w", pane: "block:b9", socket: "unix:///x" }),
+  };
+  let seen: any;
+  const code = await runCmd(
+    { kind: "inline", mode: "direct", agent_kind: "claude", command: "claude", args: [], hubUrl: "http://127.0.0.1:9", wrapBin: "w", placement: "new-pane", detach: true, wrapped: false, prompt: "do X", agentKind: "claude" } as any,
+    "agmux", undefined, ops,
+    { rexExec: rex, inject: async (o) => { seen = o; await o.primitives!.submit(o.pane); return { outcome: "submitted" as const }; } },
+  );
+  expect(code).toBe(0);
+  expect(seen.pane).toBe("block:b9");
+  expect(seen.primitives).toBeDefined();
+  expect(rex.calls.length).toBe(1);
+  expect(rex.calls[0]).toContain("send-key");
+});

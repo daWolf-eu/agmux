@@ -9,11 +9,13 @@ import {
   AGMUX_LAUNCH_ENV,
   detectMux,
   type AgentKind,
+  type MuxKind,
   type LaunchSpec,
   type PrintedCoords,
 } from "@agmux/protocol";
 import { injectBootstrap, reportInject, type InjectOpts, type InjectResult } from "./tmux-inject.ts";
-import { loadProfile } from "@agmux/wrapper";
+import { loadProfile, type RexExec } from "@agmux/wrapper";
+import { rexInjectOpts } from "./rex-io.ts";
 import type { Placement } from "./parse-run.ts";
 import type { LaunchMode } from "./launch-mode.ts";
 import {
@@ -141,12 +143,15 @@ export type Injector = (opts: InjectOpts) => Promise<InjectResult>;
 // print, or null when there is nothing to inject. NEVER throws — a failed inject
 // must not change the spawn's exit code (the session is already recorded).
 export async function runInjectStep(
-  args: { pane: string; prompt?: string; agentKind?: AgentKind; socket?: string | null },
+  args: { pane: string; prompt?: string; agentKind?: AgentKind; socket?: string | null; mux?: MuxKind; session?: string },
   inject: Injector = injectBootstrap,
+  rexExec?: RexExec,
 ): Promise<string | null> {
   if (!args.prompt) return null;
   try {
-    const result = await inject({ pane: args.pane, text: args.prompt, agentKind: args.agentKind, socket: args.socket });
+    const base: InjectOpts = { pane: args.pane, text: args.prompt, agentKind: args.agentKind, socket: args.socket };
+    // In Rex the pane is a block id: it must only ever reach Rex primitives, never tmux.
+    const result = await inject(args.mux === "rex" ? rexInjectOpts(base, args.session ?? "", rexExec) : base);
     return reportInject(result);
   } catch (e) {
     return reportInject({ outcome: "failed", detail: e instanceof Error ? e.message : String(e) });
@@ -190,10 +195,14 @@ async function runPrintCoords(opts: RunOpts, agmuxBin: string, deps: PrintCoords
   return 0;
 }
 
+// Test seams for the placement path.
+export interface RunHooks { rexExec?: RexExec; inject?: Injector }
+
 async function runWithPlacement(
   opts: RunOpts,
   agmuxBin: string,
   ops: PlacementOps = placementOps(process.env),
+  hooks: RunHooks = {},
 ): Promise<number> {
   const spawn = spawnFor(opts, agmuxBin);
   const here = await ops.currentPane();
@@ -249,8 +258,11 @@ async function runWithPlacement(
 
   if (ops.kind === "rex") {
     console.log(`agmux: spawned in Rex block ${coords.pane}`);
-    // The bootstrap inject is tmux send-keys; there is no Rex path yet.
-    if (opts.prompt) console.error("agmux: --prompt is not injected in Rex yet; paste it into the new block");
+    const report = await runInjectStep(
+      { pane: coords.pane, prompt: opts.prompt, agentKind: opts.agentKind, socket: coords.socket, mux: "rex", session: coords.session },
+      hooks.inject, hooks.rexExec,
+    );
+    if (report) console.log(report);
     return 0;
   }
   console.log(`agmux: spawned in ${coords.session}:${coords.window}.${coords.pane}`);
@@ -269,15 +281,16 @@ export async function runCmd(
   agmuxBin: string = process.env.AGMUX_BIN ?? "agmux",
   printDeps: PrintCoordsDeps = defaultPrintCoordsDeps,
   ops?: PlacementOps,
+  hooks?: RunHooks,
 ): Promise<number> {
   if (opts.placement === "print-coords") return runPrintCoords(opts, agmuxBin, printDeps);
   if (opts.placement === "inherit") {
     // Direct + not in a multiplexer → fall back to a fresh agmux session so the agent is
     // still tmux-tracked; otherwise run inline in the current pane.
     if (needsNewSession(opts, process.env)) {
-      return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin, ops);
+      return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin, ops, hooks);
     }
     return runInherit(opts, agmuxBin);
   }
-  return runWithPlacement(opts, agmuxBin, ops);
+  return runWithPlacement(opts, agmuxBin, ops, hooks);
 }

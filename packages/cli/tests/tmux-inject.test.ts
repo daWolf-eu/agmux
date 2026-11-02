@@ -145,6 +145,8 @@ test("waitForReady (null-glyph kind) returns 'ready' once capture is stable for 
 });
 
 const okExec = (sink: string[][]): TmuxExec => async (args) => { sink.push(args); return { code: 0, stdout: "" }; };
+// the submit seam, backed by the same tmux Enter the real path sends
+const submitVia = (sink: string[][]) => async (pane: string) => { sink.push(["send-keys", "-t", pane, "Enter"]); };
 
 test("verifiedSubmit: draft seen then cleared after Enter → 'submitted'", async () => {
   const sent: string[][] = [];
@@ -152,7 +154,7 @@ test("verifiedSubmit: draft seen then cleared after Enter → 'submitted'", asyn
   const cap = scripted(["│ ❯ hello there │", "│ ❯ hello there │", "│ ❯  │"]);
   const r = await verifiedSubmit({
     pane: "%3", glyph: "❯", needle: "hello there",
-    exec: okExec(sent), capture: async () => cap(), sleep: noSleep,
+    submit: submitVia(sent), capture: async () => cap(), sleep: noSleep,
     pollIntervalMs: 1, commitTimeoutMs: 50, verifyTimeoutMs: 50, retryIntervalMs: 5, settleMs: 0,
   });
   expect(r).toBe("submitted");
@@ -163,7 +165,7 @@ test("verifiedSubmit: draft never clears → re-sends Enter, returns 'submitted-
   const sent: string[][] = [];
   const r = await verifiedSubmit({
     pane: "%3", glyph: "❯", needle: "stuck",
-    exec: okExec(sent), capture: async () => "│ ❯ stuck │", sleep: noSleep,
+    submit: submitVia(sent), capture: async () => "│ ❯ stuck │", sleep: noSleep,
     pollIntervalMs: 1, commitTimeoutMs: 10, verifyTimeoutMs: 30, retryIntervalMs: 1, settleMs: 0,
   });
   expect(r).toBe("submitted-unverified");
@@ -175,7 +177,7 @@ test("verifiedSubmit: draft never seen → blind submit, no verify, 'submitted-u
   const sent: string[][] = [];
   const r = await verifiedSubmit({
     pane: "%3", glyph: "❯", needle: "absent",
-    exec: okExec(sent), capture: async () => "│ ❯  │", sleep: noSleep,
+    submit: submitVia(sent), capture: async () => "│ ❯  │", sleep: noSleep,
     pollIntervalMs: 1, commitTimeoutMs: 10, verifyTimeoutMs: 30, retryIntervalMs: 1, settleMs: 0,
   });
   expect(r).toBe("submitted-unverified");
@@ -242,4 +244,25 @@ test("reportInject maps each outcome to a user-facing line", () => {
   expect(reportInject({ outcome: "submitted-unverified" })).toMatch(/submit unconfirmed/);
   expect(reportInject({ outcome: "timeout-ready" })).toMatch(/timed out/);
   expect(reportInject({ outcome: "failed" })).toMatch(/failed/);
+});
+
+test("injectBootstrap with rex primitives never calls tmux", async () => {
+  const tmuxCalls: string[][] = [];
+  const exec: TmuxExec = async (args) => { tmuxCalls.push(args); return { code: 0, stdout: "" }; };
+  const log: string[] = [];
+  const cap = scripted(["│ ❯  │", "│ ❯ do X │", "│ ❯  │"]);
+  const res = await injectBootstrap({
+    pane: "block:b1", text: "do X", agentKind: "claude", exec, sleep: noSleep,
+    primitives: {
+      capture: async () => cap(),
+      clearLine: async (p) => { log.push(`clear ${p}`); },
+      paste: async (p, b) => { log.push(`paste ${p} ${new TextDecoder().decode(b).length}`); },
+      submit: async (p) => { log.push(`submit ${p}`); },
+    },
+  });
+  expect(res.outcome).toBe("submitted");
+  expect(tmuxCalls).toEqual([]);
+  expect(log[0]).toBe("clear block:b1");
+  expect(log[1]).toMatch(/^paste block:b1/);
+  expect(log).toContain("submit block:b1");
 });
