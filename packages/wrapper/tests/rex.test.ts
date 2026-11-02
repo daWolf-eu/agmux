@@ -18,11 +18,14 @@ test("resolveRexBin returns null when none exist", () => {
   expect(resolveRexBin({ PATH: "/x", HOME: "/h" }, () => false)).toBeNull();
 });
 test("defaultRexExec with no binary returns code 127 and does not throw", async () => {
-  const saved = { ...process.env };
+  const keys = ["PATH", "HOME", "REX_BIN_DIR"] as const;
+  const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   process.env.PATH = "/nonexistent"; delete process.env.REX_BIN_DIR; process.env.HOME = "/nonexistent-home";
   try {
     expect(await defaultRexExec(["ls"])).toEqual({ code: 127, stdout: "" });
-  } finally { process.env = saved as any; }
+  } finally {
+    for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+  }
 });
 const env = { REX_SESSION: "S1", REX_BLOCK: "B1", REX_SERVER: "unix:///s.sock" };
 test("readCurrentRexCoords combines whoami with the session label", async () => {
