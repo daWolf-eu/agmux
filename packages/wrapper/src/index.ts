@@ -24,6 +24,7 @@ export { HubClient, portFileHubUrl, type HubClientOpts } from "./hub-client.ts";
 export { mintSessionId, mintEventId } from "./ids.ts";
 export { buildStartedEvent, buildEndedEvent, buildHeartbeatEvent, buildResumedEvent, buildTitleChangedEvent } from "./lifecycle.ts";
 export { OscTitleParser } from "./osc-title.ts";
+export { resolveRexBin, rexTarget, defaultRexExec, readCurrentRexCoords, type RexExec, type RexCoords } from "./rex.ts";
 
 export interface RunOpts {
   profile: ProfileConfig;
