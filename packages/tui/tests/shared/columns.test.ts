@@ -141,3 +141,10 @@ test("columnsFor: the remote view adds host after name; other views and explicit
   expect(columnsFor(["glyph", "host", "name"], "remote")).toEqual(["glyph", "host", "name"]);
   expect(columnsFor(["glyph", "repo"], "remote")).toEqual(["glyph", "repo", "host"]);
 });
+
+test("column header reads MUX and the config key stays tmux; rex rows show the label", () => {
+  expect(COLUMNS.tmux.header).toBe("MUX");
+  expect(COLUMNS.tmux.key).toBe("tmux");
+  const rex = mkRow({ mux: "rex", mux_label: "bold-creek", tmux_session: "session:01a1-abcd1234", tmux_window: null });
+  expect(rowCells(rex, ["tmux"], NOW).tmux).toBe("rex:bold-creek");
+});

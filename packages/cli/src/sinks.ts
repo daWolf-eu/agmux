@@ -1,3 +1,4 @@
+import { muxLocationText, rowMux } from "@agmux/protocol";
 import type { NotifyEvent } from "@agmux/tui";
 import type { NotifyConfig } from "./attention-config.ts";
 import { resolveNotifier, buildNotifyArgv, type NotifySpec } from "./notifier.ts";
@@ -41,7 +42,8 @@ function describe(ev: NotifyEvent): string {
   // Pane, not window: several agents routinely share one window, and a body
   // reading "work:@31 needs permission" twice looks like one duplicate
   // notification rather than two sessions that both want you.
-  const where = r.tmux_session ? `${r.tmux_session}:${r.tmux_pane ?? ""}`.replace(/:$/, "") : r.agent_kind;
+  const where = rowMux(r) === "rex" ? (muxLocationText(r) || r.agent_kind)
+    : r.tmux_session ? `${r.tmux_session}:${r.tmux_pane ?? ""}`.replace(/:$/, "") : r.agent_kind;
   const what =
     ev.trigger === "permission" ? "needs permission" :
     ev.trigger === "prompt" ? "is waiting for input" :

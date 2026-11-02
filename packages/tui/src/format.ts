@@ -1,4 +1,4 @@
-import { stripControls, type SessionRow } from "@agmux/protocol";
+import { muxLocationText, stripControls, type SessionRow } from "@agmux/protocol";
 import { hostLabel } from "./shared/locality.ts";
 
 const ACTIVITY_MAX = 40;
@@ -42,7 +42,7 @@ export function formatTable(rows: SessionRow[], reverse: boolean): string[] {
     clip(r.git_branch, BRANCH_MAX),
     r.pid?.toString() ?? "-",
     r.remote_tmux ? `${r.remote_tmux.session}:${r.remote_tmux.window}`
-      : r.tmux_session && r.tmux_window ? `${r.tmux_session}:${r.tmux_window}` : "-",
+      : muxLocationText(r) || "-",
     short(r.start_ts),
     short(r.last_heartbeat_ts ?? r.start_ts),
   ].map(stripControls));   // remote text is untrusted: no escapes or newlines in a cell

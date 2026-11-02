@@ -60,3 +60,10 @@ test("yank values carry no control characters (a pasted newline would run a comm
   for (const x of f) expect(x.value).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
   expect(f.find((x) => x.label === "CWD")!.value).toBe("/tmp ]52;c;ZXZpbA==  rm -rf ~");
 });
+
+test("yank shows rex:<label> under MUX", () => {
+  const row = mkRow({ mux: "rex", mux_label: "bold-creek", tmux_session: "session:01a1-abcd1234", tmux_pane: "block:z" });
+  const f = yankFields(row).find((x) => x.label === "MUX")!;
+  expect(f.value).toBe("rex:bold-creek");
+  expect(tmuxTarget(row)).toBe("rex:bold-creek");
+});

@@ -18,3 +18,9 @@ test("searchRows keeps only matches", () => {
   const rows = [mkRow({ session_id: "keep", agent_kind: "claude" }), mkRow({ session_id: "drop", agent_kind: "codex" })];
   expect(searchRows(rows, "claude").map((r) => r.session_id)).toEqual(["keep"]);
 });
+
+test("search matches a rex label", () => {
+  const r = mkRow({ mux: "rex", mux_label: "bold-creek", tmux_session: "session:01a1-abcd1234" });
+  expect(matchesSearch(r, "bold-creek")).toBe(true);
+  expect(matchesSearch(r, "rex:bold")).toBe(true);
+});
