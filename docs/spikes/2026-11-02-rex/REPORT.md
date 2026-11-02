@@ -75,7 +75,7 @@ Real Rex server `0.0.1793299046-g2307b7`, app Rex Beta 0.1.0 (1696), tmux 3.6a, 
 | 9 | Float: resume `new-pane`, agent survives | PASS | The agent lands in the tiled layer and survives the float closing. With `AGMUX_REX_ORIGIN_BLOCK` set to a block that isn't first, `split -b` used that block. |
 | 10 | Remote session from the float, detach | NEEDS MANUAL CHECK, not run | Needs a sandbox; none here. To do on the homelab: open a remote session from the float, detach, confirm the tab closes and a second ⏎ dedups. |
 | 11 | tmux behaviour unchanged | PASS, with one deliberate change | Placements, attach and resume on the private server, plain `agmux run` making the `agmux` session, and the full test suite, whose tmux tests needed no edits. Bug 2 below is the one tmux behaviour change. The attach of a live tmux row from tmux exited 0, but the client was already on that pane, so it shows little. |
-| 12 | L4: autostart from inside tmux | NEEDS MANUAL CHECK, deferred by decision | Deferred to a manual check by decision: this test must not start a second Rex server. To do: with no Rex server running, start one from a tmux pane, and check `env \| grep TMUX` in its blocks is empty. If it leaks, `detectMux` needs the `REX_BLOCK`-first rule. |
+| 12 | L4: autostart from inside tmux | NEEDS MANUAL CHECK, deferred by decision | Deferred to a manual check by decision: this test must not start a second Rex server. To do: with no Rex server running, start one from a tmux pane, and check `env \| grep TMUX` in its blocks is empty. If it leaks, no fallback is decided: preferring `REX_BLOCK` would misdetect every tmux-in-Rex pane, which carries stale `REX_*` with `TMUX` set, so a leak needs its own discriminator. |
 
 ## Other checks against real Rex
 
