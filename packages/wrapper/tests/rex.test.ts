@@ -60,7 +60,6 @@ test("readCurrentCoords in Rex with a failing whoami returns env ids, never null
   const { readCurrentCoords } = await import("../src/index.ts");
   const c = await readCurrentCoords({ REX_BLOCK: "B1", REX_SESSION: "S1" }, fakeRex({}));
   expect(c).toMatchObject({ session: "S1", window: null, pane: "B1", mux: "rex" });
-  // Only REX_SERVER set: still Rex, still not null.
-  const d = await readCurrentCoords({ REX_SERVER: "srv" }, fakeRex({}));
-  expect(d).toMatchObject({ mux: "rex", pane: null, socket: "srv" });
+  // Only REX_SERVER set is not Rex: no block of ours, so no Rex row.
+  expect(await readCurrentCoords({ REX_SERVER: "srv" }, fakeRex({}))).toBeNull();
 });
