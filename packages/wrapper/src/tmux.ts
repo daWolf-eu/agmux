@@ -9,7 +9,9 @@ export async function readCurrentTmuxCoords(): Promise<TmuxCoords | null> {
   const socket = tmuxSocketFromEnv(process.env.TMUX);
   // Use a JS string with real tab chars so tmux receives them as separators, not literal \t.
   const fmt = "#{session_name}\t#{window_id}\t#{pane_id}";
-  const out = (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${fmt}`.text()).trim();
+  // Without -t tmux answers with the active pane, not ours, for a background start.
+  const own = process.env.TMUX_PANE ? ["-t", process.env.TMUX_PANE] : [];
+  const out = (await $`tmux ${tmuxSocketArgs(socket)} display-message -p ${own} ${fmt}`.text()).trim();
   const [session, window, pane] = out.split("\t");
   if (!session || !window || !pane) return null;
   return { session, window, pane, socket };
