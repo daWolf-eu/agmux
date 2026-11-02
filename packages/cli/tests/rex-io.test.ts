@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import type { SessionRow } from "@agmux/protocol";
-import { rexTail, rexTitle, RexPoll } from "../src/rex-io.ts";
+import { rexTail, rexTitle, RexPoll, rexPrimitives } from "../src/rex-io.ts";
 import { makePreviewSource } from "../src/dash-preview.ts";
 import { fakeRex } from "./helpers/fake-rex.ts";
 
@@ -111,4 +111,42 @@ test("rexTail multi-chunk: stray U+FFFD at the start of each chunk are dropped a
     [rd(7, 14, 8)]: { stdout: JSON.stringify({ id: 7, data: "cdef", total: 18, eof: true }) },
   });
   expect(await rexTail(row, 8, exec)).toBe("abcdef");
+});
+
+const prim = { session: "session:s1", socket: "unix:///x" };
+
+test("rexPrimitives.clearLine sends ctrl+a then ctrl+k", async () => {
+  const exec = fakeRex({ "block send-key -s session:s1 -b block:b1 ctrl+a ctrl+k": { stdout: "" } });
+  await rexPrimitives(prim, exec).clearLine("block:b1");
+  expect(exec.calls.length).toBe(1);
+  expect(exec.calls[0]!.slice(0, 3)).toEqual(G.slice(0, 3));
+  expect(exec.calls[0]).toContain("--timeout");
+});
+
+test("rexPrimitives.submit sends enter", async () => {
+  const exec = fakeRex({ "block send-key -s session:s1 -b block:b1 enter": {} });
+  await rexPrimitives(prim, exec).submit("block:b1");
+  expect(exec.calls.length).toBe(1);
+});
+
+test("rexPrimitives.paste sends block.event paste through stdin, not argv", async () => {
+  const text = "line1\nline2\n" + "x".repeat(20_000);
+  const exec = fakeRex({ "api call -s session:s1 block.event -": { stdout: "{}" } });
+  await rexPrimitives(prim, exec).paste("block:b1", new TextEncoder().encode(text));
+  expect(exec.calls.length).toBe(1);
+  expect(exec.calls[0]!.slice(0, 3)).toEqual(G.slice(0, 3));
+  expect(exec.calls[0]).toContain("--timeout");
+  expect(exec.calls[0]!.some((a) => a.includes("line1"))).toBe(false);
+  const j = JSON.parse(new TextDecoder().decode(exec.stdins[0]!));
+  expect(j).toEqual({ session_id: "session:s1", block_id: "block:b1", event: { type: "paste", payload: { text } } });
+});
+
+test("rexPrimitives rejects when rex fails", async () => {
+  const exec = fakeRex({});
+  await expect(rexPrimitives(prim, exec).submit("block:b1")).rejects.toThrow();
+});
+
+test("rexPrimitives.capture reads the block tail", async () => {
+  const exec = fakeRex({ [`block call format ${JSON.stringify({ format: "text", max_bytes: 16384 })} ${S}`]: { stdout: JSON.stringify({ content: "hi", total: 2 }) } });
+  expect(await rexPrimitives(prim, exec).capture("block:b1")).toBe("hi");
 });

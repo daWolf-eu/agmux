@@ -1,4 +1,5 @@
 import { defaultRexExec, rexTarget, type RexExec } from "@agmux/wrapper";
+import { defaultSleep, type InjectOpts, type InjectPrimitives } from "./tmux-inject.ts";
 
 export interface RexRowRef { tmux_session: string | null; tmux_pane: string | null; tmux_socket: string | null }
 
@@ -72,4 +73,52 @@ export class RexPoll {
     if (tookMs > SLOW_MS) this.slow.add(blockId);
     else this.slow.delete(blockId);
   }
+}
+
+const CAPTURE_BYTES = 16384;
+const REX_POLL_MS = 500;
+
+/**
+ * Inject primitives for a Rex block. Keys go through `block send-key`; the prompt goes through
+ * `block.event` paste on stdin (never argv, so size and quoting don't matter).
+ */
+export function rexPrimitives(row: { session: string; socket: string | null }, exec: RexExec = defaultRexExec): InjectPrimitives {
+  const g = rexTarget(row.socket);
+  const must = async (argv: string[], stdin?: Uint8Array): Promise<void> => {
+    const r = await exec(argv, stdin);
+    if (r.code !== 0) throw new Error(`rex ${argv.filter((a) => !a.startsWith("-") && a !== "unix").slice(0, 3).join(" ")} failed (exit ${r.code})`);
+  };
+  const keys = (pane: string, ...k: string[]) => must([...g, "block", "send-key", "-s", row.session, "-b", pane, ...k]);
+  return {
+    capture: (pane) => rexTail({ tmux_session: row.session, tmux_pane: pane, tmux_socket: row.socket }, CAPTURE_BYTES, exec),
+    clearLine: (pane) => keys(pane, "ctrl+a", "ctrl+k"),
+    // sanitizePayload encodes newlines as CR for tmux's bracketed paste; Rex's paste takes plain "\n".
+    paste: (pane, bytes) => {
+      const text = new TextDecoder().decode(bytes).replace(/\r/g, "\n");
+      const body = JSON.stringify({ session_id: row.session, block_id: pane, event: { type: "paste", payload: { text } } });
+      return must([...g, "api", "call", "-s", row.session, "block.event", "-"], new TextEncoder().encode(body));
+    },
+    submit: (pane) => keys(pane, "enter"),
+  };
+}
+
+/** Inject options for a Rex block: Rex primitives, polling every 500 ms and backing off to 1 s once a read is slow. */
+export function rexInjectOpts(opts: InjectOpts, session: string, exec: RexExec = defaultRexExec): InjectOpts {
+  const base = rexPrimitives({ session, socket: opts.socket ?? null }, exec);
+  const poll = new RexPoll();
+  const primitives: InjectPrimitives = {
+    ...base,
+    capture: async (pane) => {
+      const t0 = Date.now();
+      const out = await base.capture(pane);
+      poll.record(pane, Date.now() - t0);
+      return out;
+    },
+  };
+  const sleep = opts.sleep ?? defaultSleep;
+  return {
+    ...opts, primitives,
+    pollIntervalMs: opts.pollIntervalMs ?? REX_POLL_MS,
+    sleep: (ms) => sleep(poll.delayMs(opts.pane, ms)),
+  };
 }
