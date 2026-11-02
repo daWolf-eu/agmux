@@ -251,6 +251,20 @@ describe("attachRemote in Rex", () => {
     expect(await attachRemote(remoteRow(), undefined, rexEnv({ popup: true }), r.deps)).toEqual({ argv: [] });
   });
 
+  test("an existing labelled block is focused for inline and new-tab too; nothing starts", async () => {
+    for (const placement of ["inline", "new-tab"] as const) {
+      const r = rexRec({
+        "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:old", label: LABEL("view") }] }) },
+        [`api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:old" })}`]: { stdout: "{}" },
+        "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
+        [`-C client:app do session.select session_id=${S}`]: {},
+      });
+      expect(await attachRemote(remoteRow(), { placement }, rexEnv(), r.deps)).toBeNull();
+      expect(r.spawned).toEqual([]);
+      expect(r.exec.calls.some((c) => c.join(" ").includes("session.focus_block"))).toBe(true);
+    }
+  });
+
   test("view and full of one session get different labels", async () => {
     const blocks = { "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:v", label: LABEL("view") }] }) } };
     const r = rexRec({ ...blocks, [run("full")]: tab });
