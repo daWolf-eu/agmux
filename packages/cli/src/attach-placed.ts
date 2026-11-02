@@ -16,6 +16,7 @@ export interface AttachPlacedDeps {
   makeActionsImpl?: typeof makeActions;
   spawn?: (h: Handoff) => Promise<number>;
   err?: (s: string) => void;
+  out?: (s: string) => void;
 }
 
 async function spawnForeground(h: Handoff): Promise<number> {
@@ -53,5 +54,6 @@ export async function attachPlacedCmd(opts: AttachPlacedOpts, deps: AttachPlaced
     err(`attach: ${e instanceof Error ? e.message : String(e)}`);
     return 2;
   }
+  if (h?.notice) (deps.out ?? console.log)(h.notice);
   return h && h.argv.length > 0 ? (deps.spawn ?? spawnForeground)(h) : 0;
 }

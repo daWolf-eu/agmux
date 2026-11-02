@@ -207,7 +207,8 @@ export function DashApp(props: DashAppProps) {
     void run
       .then((h) => {
         if (remoteResume) setNotice((n) => (n === waitNotice ? null : n));
-        if (h) { props.onHandoff(h); props.onQuit(); }
+        if (h?.notice && !attachCtx.popup) setNotice(stripControls(h.notice));
+        else if (h) { props.onHandoff(h); props.onQuit(); }
       })
       // Errors may carry sandbox text and a second line: one sanitized notice line.
       .catch((e) => setNotice(stripControls(`${closed ? "resume" : "attach"} failed: ${e?.message ?? String(e)}`).replace(/\s+/g, " ")))

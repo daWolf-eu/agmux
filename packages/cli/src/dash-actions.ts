@@ -1,5 +1,6 @@
 import { $ } from "bun";
-import type { SessionRow } from "@agmux/protocol";
+import { detectMux, rowMux, type SessionRow } from "@agmux/protocol";
+import { defaultRexExec, type RexExec } from "@agmux/wrapper";
 import { attachKind, resolvePlacement, type Actions, type AttachRequest, type Handoff } from "@agmux/tui";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
@@ -7,6 +8,7 @@ import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileLaunch } from "./profile-env.ts";
 import { hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
 import { placementOps } from "./mux-ops.ts";
+import { openRexRow, openTmuxTab, planOpen, probeRow, resumeTarget, rexUnreachableMessage } from "./open-row.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen, seenHost } from "./seen.ts";
@@ -42,7 +44,9 @@ export interface ActionDeps {
   currentPane?: () => Promise<PaneCoords | null>;
   // Launch a [terminal] template without waiting for it.
   spawnDetached?: (argv: string[], env: Record<string, string | undefined>) => void;
-  // Resume placement (new window / new session); default: real tmux.
+  // Rex commands: the row probe, focus and the default Rex placements.
+  rexExec?: RexExec;
+  // Resume placement (new window / new session); default: the caller's multiplexer.
   placement?: ResumePlacementDeps;
   splitPane?: typeof splitPane;
   // `tmux list-panes -a` in REMOTE_PANES_FMT (remote attach dedup).
@@ -65,9 +69,11 @@ export function makeActions(
   deps: ActionDeps = defaultActionDeps,
   settings: AttachSettings = DEFAULT_ATTACH_SETTINGS,
 ): Actions {
-  const inTmux = !!process.env.TMUX;
+  const caller = detectMux(process.env);
+  const inTmux = caller === "tmux";
   const sessionExists = deps.sessionExists ?? hasSession;
-  const ops = placementOps(process.env, popup);
+  const rexExec = deps.rexExec ?? defaultRexExec;
+  const ops = placementOps(process.env, popup, rexExec);
   const currentPane = deps.currentPane ?? (() => ops.currentPane().catch(() => null));
   const spawnDetached = deps.spawnDetached ?? spawnDetachedDefault;
   const placement = deps.placement ?? ops;
@@ -125,7 +131,7 @@ export function makeActions(
       return opened();
     }
     // new-window: a new window of the caller's session (the pre-popup default).
-    const target = here?.session ?? session.tmux_session ?? "agmux";
+    const target = resumeTarget(session, caller, here, process.env);
     const h = await resumeIntoSession(spec, target, label, placement, socket);
     return popup ? h : null;
   }
@@ -138,16 +144,21 @@ export function makeActions(
       }
       // No tmux target to focus → nothing to attach to (unchanged no-op).
       if (attachKind(row) !== "live") return null;
-      // Status is only a lagging approximation of tmux reality: a LIVE row whose
-      // tmux session is gone (e.g. pinned live by pid reuse, spec §8) would make
-      // a doomed attach that errors out — resume it instead of failing.
-      if (!(await sessionExists(row.tmux_session!, row.tmux_socket))) return resume(row, req);
+      // Status is only a lagging approximation of reality: a LIVE row whose pane
+      // is gone (e.g. pinned live by pid reuse, spec §8) would make a doomed
+      // attach that errors out — resume it instead of failing.
+      const presence = await probeRow(row, sessionExists, rexExec);
+      const plan = planOpen({ caller, row: rowMux(row), live: true, presence });
+      if (plan === "unreachable") throw new Error(rexUnreachableMessage(row.session_id));
+      if (plan === "resume") return resume(row, req);
       const where = resolvePlacement("live", ctx, req?.placement, settings.defaults);
+      // Only inline (switch to it) or a terminal reach a live agent: it can't move.
+      if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
+      if (plan === "focus-rex") return openRexRow(row, { caller, popup, currentPane }, rexExec);
+      if (plan === "tmux-tab") return openTmuxTab(row);
       const coords: AttachCoords = {
         tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };
-      // Only inline (switch to it) or a terminal reach a live agent: it can't move.
-      if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
       // inline (today's behaviour)
       if (popup) return attachInPopup(coords, deps.runTmux);
       const cmds = buildAttachCommands(coords, inTmux);
