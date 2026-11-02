@@ -24,3 +24,11 @@ test("search matches a rex label", () => {
   expect(matchesSearch(r, "bold-creek")).toBe(true);
   expect(matchesSearch(r, "rex:bold")).toBe(true);
 });
+
+test("search ignores a rex row's raw ids", () => {
+  const r = mkRow({ session_id: "agx-1", mux: "rex", mux_label: "bold-creek", tmux_session: "session:01a1-abcd1234", tmux_window: "window:02b2-ffff0000" });
+  expect(matchesSearch(r, "session:")).toBe(false);
+  expect(matchesSearch(r, "window:")).toBe(false);
+  expect(matchesSearch(r, "02b2")).toBe(false);
+  expect(matchesSearch(r, "bold-creek")).toBe(true);
+});
