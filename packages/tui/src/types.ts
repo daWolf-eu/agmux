@@ -24,7 +24,7 @@ export interface Handoff {
 
 // Side-effecting preview data sources; concrete impls live in cli.
 export interface PreviewSource {
-  mirror(row: SessionRow): Promise<string>;       // tmux capture-pane text ("" if unavailable)
+  mirror(row: SessionRow): Promise<string>;       // pane text: tmux capture-pane, or a bounded Rex tail ("" if unavailable)
   usage(row: SessionRow): Promise<UsageSummary | null>;
 }
 
