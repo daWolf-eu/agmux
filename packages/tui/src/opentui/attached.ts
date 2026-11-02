@@ -1,4 +1,4 @@
-import type { SessionRow } from "@agmux/protocol";
+import { tmuxSocketFromEnv, type SessionRow } from "@agmux/protocol";
 
 // Pure matcher: which session id (if any) owns the given active pane.
 // Pane ids (%N) are server-global but NOT unique across tmux servers, so when a
@@ -19,10 +19,11 @@ export function matchAttachedPane(
 
 // Side-effecting probe: the active pane of the parent client, or null when not in
 // tmux / on any failure. tmux `#{pane_id}` of the active pane in the attached client.
-export async function activePaneId(
-  runTmux: (args: string[]) => Promise<string> = defaultTmuxText,
+async function activePaneId(
+  runTmux: (args: string[]) => Promise<string>,
+  env: Record<string, string | undefined>,
 ): Promise<string | null> {
-  if (!process.env.TMUX) return null;
+  if (!env.TMUX) return null;
   try {
     const out = await runTmux(["display-message", "-p", "#{pane_id}"]);
     const id = out.trim();
@@ -30,6 +31,26 @@ export async function activePaneId(
   } catch {
     return null;
   }
+}
+
+// Where the dash runs: the pane/block underneath it plus the server socket.
+// In Rex the lookup comes from the caller (tui can't import cli); null when
+// there is no underlying block.
+export async function activeLocation(
+  env: Record<string, string | undefined> = process.env,
+  runTmux: (args: string[]) => Promise<string> = defaultTmuxText,
+  rexActivePane?: () => Promise<string | null>,
+): Promise<{ pane: string; socket: string | null } | null> {
+  if (env.REX_BLOCK) {
+    try {
+      const pane = rexActivePane ? await rexActivePane() : null;
+      return pane ? { pane, socket: env.REX_SERVER || null } : null;
+    } catch {
+      return null;
+    }
+  }
+  const pane = await activePaneId(runTmux, env);
+  return pane ? { pane, socket: tmuxSocketFromEnv(env.TMUX) } : null;
 }
 
 const defaultTmuxText = async (args: string[]): Promise<string> => {

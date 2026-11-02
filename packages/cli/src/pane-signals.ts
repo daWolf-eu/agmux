@@ -1,5 +1,5 @@
 import type { IngestEnvelope, SessionRow } from "@agmux/protocol";
-import { LIVE_STATUSES, TITLE_KEEPALIVE_MS, TitleSignal, tmuxSocketArgs } from "@agmux/protocol";
+import { LIVE_STATUSES, TITLE_KEEPALIVE_MS, TitleSignal, rowMux, tmuxSocketArgs } from "@agmux/protocol";
 
 // Attention signals notifyd derives from tmux, for what hooks cannot see:
 //   - the agent's pane title for NATIVE sessions (the PTY wrapper reports its
@@ -66,6 +66,8 @@ export interface PaneSignalDeps {
   host: string;
   now: () => number;
   newId: () => string;
+  // Title of a native Rex row's block, or null when unreadable (no `rex`, block gone).
+  rexTitle?: (row: SessionRow) => Promise<string | null>;
 }
 
 function envelope(r: SessionRow, kind: string, payload: unknown, deps: PaneSignalDeps): IngestEnvelope {
@@ -84,7 +86,23 @@ export async function collectPaneSignals(
   for (const id of [...state.titles.keys()]) if (!present.has(id)) state.titles.delete(id);
   for (const id of [...state.seenSent.keys()]) if (!present.has(id)) state.seenSent.delete(id);
 
-  const inTmux = rows.filter((r) => r.tmux_pane && LIVE_STATUSES.includes(r.status));
+  const withPane = rows.filter((r) => r.tmux_pane && LIVE_STATUSES.includes(r.status));
+  const inTmux = withPane.filter((r) => rowMux(r) === "tmux");
+
+  // Rex rows: titles only. Never derive "seen" for them (L1): focused_block_id
+  // says which block a client has focused, not that anyone is watching it.
+  const rexTitle = deps.rexTitle;
+  if (rexTitle) {
+    for (const r of withPane.filter((x) => rowMux(x) === "rex" && x.origin === "native")) {
+      let raw: string | null = null;
+      try { raw = await rexTitle(r); } catch { raw = null; }
+      if (raw === null) continue;
+      let sig = state.titles.get(r.session_id);
+      if (!sig) { sig = new TitleSignal(r.agent_kind, TITLE_KEEPALIVE_MS); state.titles.set(r.session_id, sig); }
+      const payload = sig.observe(raw, deps.now());
+      if (payload) out.push(envelope(r, "title.changed", payload, deps));
+    }
+  }
 
   // Titles: native sessions only — a wrapper session's title already arrives
   // from the PTY stream, without polling.

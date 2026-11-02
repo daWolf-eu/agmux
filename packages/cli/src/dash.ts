@@ -5,6 +5,7 @@ import {
 import { buildLsQuery } from "./ls.ts";
 import { makePreviewSource } from "./dash-preview.ts";
 import { makeActions } from "./dash-actions.ts";
+import { rexCurrentPane } from "./rex-place.ts";
 import type { DashOpts } from "./parse-dash.ts";
 import { attachCtxFor, DEFAULT_ATTACH_SETTINGS, type AttachSettings } from "./attach-place.ts";
 
@@ -70,6 +71,7 @@ export async function dashCmd(
     attachCtx,
     // Outside tmux the view mode (a tmux session of its own) has no home: full.
     remoteMode: attachCtx.inMux ? attach.remote.mode : "full",
+    rexActivePane: async () => (await rexCurrentPane(process.env, opts.popup))?.pane ?? null,
     columns: opts.columns,
     showHeader: opts.header,
   });

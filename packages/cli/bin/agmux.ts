@@ -41,6 +41,7 @@ import { HELP_TEXT } from "../src/usage.ts";
 import { createDefaultRegistry } from "@agmux/adapters";
 import { planLaunch } from "../src/launch-mode.ts";
 import { loadProfile, loadLsConfig, loadDashConfig, type LsConfig, type DashConfig } from "@agmux/wrapper";
+import { rexTitle } from "../src/rex-io.ts";
 import { parseLsArgs } from "../src/parse-ls.ts";
 
 const stateDir = path.join(os.homedir(), AGMUX_STATE_DIR_DEFAULT);
@@ -219,6 +220,7 @@ async function main(): Promise<number> {
             host: resolveHost(),
             newId: () => crypto.randomUUID(),
             post: postIngest,
+            rexTitle: (r) => rexTitle(r),
           },
         },
       );

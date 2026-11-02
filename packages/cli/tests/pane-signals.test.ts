@@ -67,3 +67,37 @@ test("rows on a named socket query that tmux server", async () => {
   await collectPaneSignals(createPaneSignalState(), [row({ tmux_socket: "/tmp/sock" })], deps(t.capture));
   expect(t.calls[0]!.slice(0, 2)).toEqual(["-S", "/tmp/sock"]);
 });
+
+const rexRow = (over: Partial<SessionRow> = {}) =>
+  row({ mux: "rex", tmux_session: "session:s1", tmux_pane: "block:b1", tmux_socket: "unix:///x", ...over });
+
+test("native rex rows get title.changed from rexTitle", async () => {
+  const st = createPaneSignalState();
+  const t = tmux({}, []);
+  const asked: string[] = [];
+  const d = { ...deps(t.capture), rexTitle: async (r: SessionRow) => { asked.push(r.tmux_pane!); return "⠂ task"; } };
+  const out = await collectPaneSignals(st, [rexRow()], d);
+  expect(out.map((e) => [e.kind, e.payload])).toEqual([["title.changed", { title: "task", activity: "working" }]]);
+  expect(asked).toEqual(["block:b1"]);
+});
+
+test("rex rows never go to tmux list-panes or list-clients", async () => {
+  const t = tmux({}, ["attached,focused,UTF-8\tblock:b1"]);
+  const d = { ...deps(t.capture), rexTitle: async () => "x" };
+  await collectPaneSignals(createPaneSignalState(), [rexRow(), rexRow({ session_id: "s2", status: "done", origin: "wrapper", attention_ts: "a" })], d);
+  expect(t.calls).toEqual([]);
+});
+
+test("a done rex row is not marked seen by focus", async () => {
+  const t = tmux({}, ["attached,focused,UTF-8\tblock:b1"]);
+  const r = rexRow({ status: "done", origin: "wrapper", attention_ts: "a1" });
+  expect(await collectPaneSignals(createPaneSignalState(), [r], { ...deps(t.capture), rexTitle: async () => "x" })).toEqual([]);
+});
+
+test("a null rexTitle skips the row without throwing", async () => {
+  const t = tmux({}, []);
+  const d = { ...deps(t.capture), rexTitle: async () => null };
+  expect(await collectPaneSignals(createPaneSignalState(), [rexRow()], d)).toEqual([]);
+  const thrower = { ...deps(t.capture), rexTitle: async (): Promise<string | null> => { throw new Error("x"); } };
+  expect(await collectPaneSignals(createPaneSignalState(), [rexRow()], thrower)).toEqual([]);
+});
