@@ -319,13 +319,23 @@ test("attach of a live Rex row in Rex focuses it silently", async () => {
   expect(exec.calls.flat()).toContain("session.select");
 });
 
-test("attach of a live tmux row in Rex picks the tmux tab", async () => {
-  const r = await runAttach(sessionRow({ tmux_session: "work", tmux_window: "@1" }), { REX_BLOCK: "block:me" }, {
-    rexExec: fakeRex({}), sessionExists: async () => true, ops: opsSpy(null, "rex").ops,
+test("attach of a live tmux row in Rex opens a tmux tab in the caller's session", async () => {
+  const exec = fakeRex({
+    "block ls -s session:me --json": { stdout: JSON.stringify({ blocks: [] }) },
   });
-  expect(r.code).toBe(2);
-  expect(r.errs).toEqual(["tmux tab not implemented"]);
+  const calls: string[][] = [];
+  const rexExec = (async (a: string[]) => {
+    calls.push(a);
+    return a.includes("run") ? { code: 0, stdout: JSON.stringify({ window_id: "window:t", block_ids: ["block:t"] }) } : exec(a);
+  }) as typeof exec;
+  const { ops } = opsSpy({ session: "session:me", window: "window:me", pane: "block:me", socket: RSERVER }, "rex");
+  const r = await runAttach(sessionRow({ tmux_session: "work", tmux_window: "@1" }), { REX_BLOCK: "block:me" }, {
+    rexExec, sessionExists: async () => true, ops,
+  });
+  expect(r.code).toBe(0);
+  expect(r.errs).toEqual([]);
   expect(r.spawnArgv).toEqual([]);
+  expect(calls.some((c) => c.includes("run") && c.includes("session:me"))).toBe(true);
 });
 
 test("resume of a closed Rex row from tmux targets the caller's tmux session, never the row's UUID", async () => {

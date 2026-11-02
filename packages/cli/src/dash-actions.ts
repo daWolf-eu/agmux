@@ -155,7 +155,7 @@ export function makeActions(
       // Only inline (switch to it) or a terminal reach a live agent: it can't move.
       if (where === "new-tab" || where === "new-terminal") return openTerminal(where, row);
       if (plan === "focus-rex") return openRexRow(row, { caller, popup, currentPane }, rexExec);
-      if (plan === "tmux-tab") return openTmuxTab(row);
+      if (plan === "tmux-tab") return openTmuxTab(row, { caller, popup, currentPane }, rexExec);
       const coords: AttachCoords = {
         tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket,
       };

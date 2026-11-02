@@ -1,9 +1,12 @@
 // What opening a row does, across Rex and tmux (spec §5.2, §5.3): one decision,
 // shared by `agmux attach` and the dash.
+import { $ } from "bun";
 import { AGMUX_TMUX_SESSION_DEFAULT, rowMux, type MuxKind, type SessionRow } from "@agmux/protocol";
 import { defaultRexExec, type RexExec } from "@agmux/wrapper";
 import type { Handoff } from "@agmux/tui";
-import { rexFocus, rexPresence, type Presence } from "./rex-place.ts";
+import { findLabelledBlock, rexFocus, rexNewLabelledTab, rexPresence, type Presence } from "./rex-place.ts";
+import { buildAttachCommands } from "./attach.ts";
+import { holdOnFailure } from "./tmux-place.ts";
 import type { PaneCoords } from "./tmux-place.ts";
 
 export { pickClient, rexFocus, rexPresence, type Presence } from "./rex-place.ts";
@@ -55,9 +58,44 @@ export async function openRexRow(row: SessionRow, o: OpenRexOpts, exec: RexExec 
   return o.popup ? { argv: [] } : null;
 }
 
-// A live tmux row opened from Rex. Task 9 builds the tab.
-export async function openTmuxTab(_row: SessionRow): Promise<Handoff | null> {
-  throw new Error("tmux tab not implemented");
+// One tab per tmux session (not per row): the label is a fixed-shape hash so
+// odd session names never reach it.
+export function tmuxTabLabel(socket: string | null, session: string): string {
+  const h = BigInt(Bun.hash(`${socket ?? ""}\0${session}`)).toString(36).padStart(8, "0").slice(0, 8);
+  return `agmux:tmux:${h}`;
+}
+
+const runTmuxDefault = async (args: string[]): Promise<void> => { await $`tmux ${args}`.quiet(); };
+
+// A live tmux row opened from Rex: a tab in the caller's session that attaches to
+// it, or, when the tab exists, focus it and move the attached tmux client to the
+// row's window and pane. Rex calls go to the caller's server, tmux calls to the row's socket.
+export async function openTmuxTab(
+  row: SessionRow,
+  o: OpenRexOpts,
+  exec: RexExec = defaultRexExec,
+  runTmux: (args: string[]) => Promise<void> = runTmuxDefault,
+): Promise<Handoff | null> {
+  const here = await o.currentPane();
+  if (!here) throw new Error("not inside a Rex block; cannot open a tmux tab");
+  const coords = { tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket };
+  const attach = buildAttachCommands(coords, false)[0]!;
+  const label = tmuxTabLabel(row.tmux_socket, row.tmux_session!);
+
+  const existing = await findLabelledBlock(here.session, label, here.socket, exec);
+  if (existing) {
+    await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, { block: here.pane, server: here.socket }, exec);
+    // Everything after attach-session's `-t <session>` is the `;`-chained selects.
+    const sock = attach.slice(0, attach.indexOf("attach-session"));
+    const rest = attach.slice(attach.indexOf(";") + 1);
+    let cmd: string[] = [];
+    for (const a of [...rest, ";"]) {
+      if (a === ";") { if (cmd.length) await runTmux([...sock, ...cmd]); cmd = []; } else cmd.push(a);
+    }
+  } else {
+    await rexNewLabelledTab({ session: here.session, label, cmd: holdOnFailure(["tmux", ...attach]), env: {}, socket: here.socket }, exec);
+  }
+  return o.popup ? { argv: [] } : null;
 }
 
 // The session a resume opens in when the caller is in a multiplexer. A row's

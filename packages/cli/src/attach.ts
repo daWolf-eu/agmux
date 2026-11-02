@@ -114,7 +114,7 @@ export async function attachCmd(opts: AttachOpts): Promise<number> {
     try {
       const h = plan === "focus-rex"
         ? await openRexRow(session, { caller, popup: false, currentPane: ops.currentPane }, rexExec)
-        : await openTmuxTab(session);
+        : await openTmuxTab(session, { caller, popup: false, currentPane: ops.currentPane }, rexExec);
       if (h?.notice) console.log(h.notice);
       return 0;
     } catch (e) {

@@ -1,6 +1,8 @@
 import { test, expect } from "bun:test";
-import { planOpen, probeRow, openRexRow, openTmuxTab, rexUnreachableMessage, resumeTarget, type Presence } from "../src/open-row.ts";
+import { planOpen, probeRow, openRexRow, openTmuxTab, tmuxTabLabel, rexUnreachableMessage, resumeTarget, type Presence } from "../src/open-row.ts";
 import { rexPresence, pickClient, rexFocus } from "../src/rex-place.ts";
+import { buildAttachCommands } from "../src/attach.ts";
+import { holdOnFailure } from "../src/tmux-place.ts";
 import { fakeRex } from "./helpers/fake-rex.ts";
 import type { SessionRow } from "@agmux/protocol";
 
@@ -217,8 +219,100 @@ test("rexUnreachableMessage names the short id", () => {
   expect(rexUnreachableMessage(rexRow().session_id)).toBe("Rex server unreachable; not resuming 019f1898");
 });
 
-test("openTmuxTab is a stub until Task 9", async () => {
-  await expect(openTmuxTab(rexRow({ mux: null }))).rejects.toThrow("tmux tab not implemented");
+const TSOCK = "/tmp/tmux-sock";
+const tmuxRow = (over: Partial<SessionRow> = {}) =>
+  rexRow({ mux: "tmux", tmux_session: "my work:1 #x", tmux_window: "@3", tmux_pane: "%7", tmux_socket: TSOCK, ...over });
+const attachArgv = (row: SessionRow) => ["tmux", ...buildAttachCommands(
+  { tmux_session: row.tmux_session!, tmux_window: row.tmux_window!, tmux_pane: row.tmux_pane, tmux_socket: row.tmux_socket }, false)[0]!];
+const runKey = (row: SessionRow) =>
+  ["run", "-s", S, "--label", tmuxTabLabel(row.tmux_socket, row.tmux_session!), "--json", "--", ...holdOnFailure(attachArgv(row))].join(" ");
+const newTabOut = { stdout: JSON.stringify({ window_id: "window:t", block_ids: ["block:t"] }) };
+const lsOut = (label: string) => ({ stdout: JSON.stringify({ blocks: [{ block_id: "block:t", label }] }) });
+const lsKey = `block ls -s ${S} --json`;
+
+test("tmuxTabLabel is stable and has a fixed shape for odd names", () => {
+  const l = tmuxTabLabel(null, "my work:1 #x");
+  expect(l).toMatch(/^agmux:tmux:[0-9a-z]{1,8}$/);
+  expect(tmuxTabLabel(null, "my work:1 #x")).toBe(l);
+});
+
+test("two sessions on different sockets get different labels", () => {
+  expect(tmuxTabLabel("/a", "work")).not.toBe(tmuxTabLabel("/b", "work"));
+  expect(tmuxTabLabel(null, "a")).not.toBe(tmuxTabLabel(null, "b"));
+});
+
+test("first open creates a tab running holdOnFailure(tmux attach-session ...)", async () => {
+  const row = tmuxRow();
+  const exec = fakeRex({ [lsKey]: { stdout: JSON.stringify({ blocks: [] }) }, [runKey(row)]: newTabOut });
+  expect(await openTmuxTab(row, opts(), exec)).toBeNull();
+  const run = exec.calls.find((c) => c.includes("run"))!;
+  expect(run.slice(run.indexOf("--") + 1)).toEqual(holdOnFailure(attachArgv(row)));
+  expect(run).toContain(tmuxTabLabel(TSOCK, row.tmux_session!));
+  expect(run).not.toContain("--shell=none");
+  expect(run.slice(0, run.indexOf("run"))).toEqual(["--autostart=false", "-S", SERVER, "--timeout", "10s"]); // caller's server
+});
+
+test("session names with spaces, ':' and '#' stay single argv elements", async () => {
+  const row = tmuxRow();
+  const exec = fakeRex({ [lsKey]: { stdout: JSON.stringify({ blocks: [] }) }, [runKey(row)]: newTabOut });
+  await openTmuxTab(row, opts(), exec);
+  const run = exec.calls.find((c) => c.includes("run"))!;
+  expect(run).toContain("my work:1 #x");
+  expect(run).toContain("my work:1 #x:@3");
+});
+
+test("';' separators are their own argv elements", async () => {
+  const row = tmuxRow();
+  const exec = fakeRex({ [lsKey]: { stdout: JSON.stringify({ blocks: [] }) }, [runKey(row)]: newTabOut });
+  await openTmuxTab(row, opts(), exec);
+  const run = exec.calls.find((c) => c.includes("run"))!;
+  const tmux = run.slice(run.indexOf("agmux-hold") + 1); // the hold script itself contains ';'
+  expect(tmux.filter((a) => a === ";")).toHaveLength(2);
+  expect(tmux.some((a) => a !== ";" && a.includes(";"))).toBe(false);
+});
+
+test("second open focuses the existing block and selects window and pane over -S", async () => {
+  const row = tmuxRow();
+  const tmuxCalls: string[][] = [];
+  const exec = fakeRex({
+    [lsKey]: lsOut(tmuxTabLabel(TSOCK, row.tmux_session!)),
+    [focusKey(S, "block:t")]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)), ...ownerOf("block:me", APP),
+    [`-C ${APP} do session.select session_id=${S}`]: {},
+  });
+  const h = await openTmuxTab(row, opts(), exec, async (a) => { tmuxCalls.push(a); });
+  expect(h).toBeNull();
+  expect(exec.calls.some((c) => c.includes("run"))).toBe(false);
+  expect(tmuxCalls).toEqual([
+    ["-S", TSOCK, "select-window", "-t", "my work:1 #x:@3"],
+    ["-S", TSOCK, "select-pane", "-t", "%7"],
+  ]);
+});
+
+test("two rows in one tmux session reuse one tab", async () => {
+  const a = tmuxRow(), b = tmuxRow({ tmux_window: "@4", tmux_pane: "%9" });
+  expect(tmuxTabLabel(a.tmux_socket, a.tmux_session!)).toBe(tmuxTabLabel(b.tmux_socket, b.tmux_session!));
+  const exec = fakeRex({
+    [lsKey]: lsOut(tmuxTabLabel(TSOCK, a.tmux_session!)),
+    [focusKey(S, "block:t")]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)), ...ownerOf("block:me", APP),
+    [`-C ${APP} do session.select session_id=${S}`]: {},
+  });
+  await openTmuxTab(a, opts(), exec, async () => {});
+  await openTmuxTab(b, opts(), exec, async () => {});
+  expect(exec.calls.some((c) => c.includes("run"))).toBe(false);
+});
+
+test("a stale label whose block has gone opens a new tab", async () => {
+  const row = tmuxRow();
+  const exec = fakeRex({ [lsKey]: { stdout: JSON.stringify({ blocks: [{ block_id: "block:x", label: "other" }] }) }, [runKey(row)]: newTabOut });
+  await openTmuxTab(row, opts(), exec, async () => { throw new Error("no tmux select"); });
+  expect(exec.calls.some((c) => c.includes("run"))).toBe(true);
+});
+
+test("in a popup returns empty argv; in an inline dash returns null", async () => {
+  const row = tmuxRow();
+  const mk = () => fakeRex({ [lsKey]: { stdout: JSON.stringify({ blocks: [] }) }, [runKey(row)]: newTabOut });
+  expect(await openTmuxTab(row, opts({ popup: true }), mk())).toEqual({ argv: [] });
+  expect(await openTmuxTab(row, opts({ popup: false }), mk())).toBeNull();
 });
 
 test("resumeTarget: the caller's session wins", () => {
