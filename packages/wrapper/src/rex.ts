@@ -39,9 +39,12 @@ export const defaultRexExec: RexExec = async (args, stdin) => {
     });
     let killed = false;
     const timer = setTimeout(() => { killed = true; try { proc.kill(); } catch {} }, timeoutMs(args));
-    const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    clearTimeout(timer);
-    return { code: killed ? 124 : code, stdout };
+    try {
+      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+      return { code: killed ? 124 : code, stdout };
+    } finally {
+      clearTimeout(timer);
+    }
   } catch {
     return { code: 127, stdout: "" };
   }
