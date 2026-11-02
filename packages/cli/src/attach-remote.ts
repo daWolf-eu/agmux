@@ -180,6 +180,18 @@ async function attachRemoteRex(
   const label = remoteTabLabel(id, mode);
   const cmd = remotePaneCmd(settings.agmuxBin, id, mode, settings.remote.detachKey);
 
+  // Dedup first, for every placement, as the tmux path does. No block, no dedup.
+  const here = await deps.currentPane();
+  if (here) {
+    const caller = { block: here.pane, server: here.socket };
+    const existing = await findLabelledBlock(here.session, label, here.socket, exec);
+    if (existing) {
+      const r = await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, caller, exec);
+      if (r === "no-app") throw new Error("Rex app not running");
+      return opened();
+    }
+  }
+
   if (where === "inline") return { argv: cmd };
   if (where === "peek") throw new Error("peek: planned");
   if (where === "new-tab" || where === "new-terminal") {
@@ -190,16 +202,8 @@ async function attachRemoteRex(
     return opened();
   }
 
-  const here = await deps.currentPane();
   if (!here) throw new Error(`${where}: cannot read the current Rex block`);
   const caller = { block: here.pane, server: here.socket };
-
-  const existing = await findLabelledBlock(here.session, label, here.socket, exec);
-  if (existing) {
-    const r = await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, caller, exec);
-    if (r === "no-app") throw new Error("Rex app not running");
-    return opened();
-  }
 
   // A held, failed client keeps its label until its block closes.
   const held = holdOnFailure(cmd);

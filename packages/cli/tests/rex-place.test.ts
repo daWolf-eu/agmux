@@ -183,3 +183,13 @@ test("runWithPlacement in Rex prints the block id and never calls tmux", async (
   expect(calls).toEqual(["split block:me"]);
   expect(logs.join("\n")).toContain("block:new");
 });
+
+test("rexNewSession: a failed label rename still returns the running block's coords", async () => {
+  const exec = fakeRex({
+    "ls --json": { stdout: JSON.stringify({ sessions: [] }) },
+    [`new agmux-x --window win --json -- ${hold.join(" ")}`]: { stdout: JSON.stringify({ session_id: "session:n", initial_windows: [{ window_id: W, block_ids: [B] }] }) },
+    [`block rename ${B} lbl -s session:n`]: { code: 1 },
+  });
+  const c = await rexNewSession({ sessionName: "agmux-x", windowName: "win", cmd: ["agmux-wrap", "--x"], env: {}, label: "lbl" }, exec);
+  expect(c).toEqual({ session: "session:n", window: W, pane: B, socket: null });
+});

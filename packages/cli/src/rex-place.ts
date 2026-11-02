@@ -164,10 +164,8 @@ export async function rexNewSession(args: {
   if (typeof session !== "string" || typeof win?.window_id !== "string" || typeof pane !== "string") {
     throw new Error("rex new: no ids in output");
   }
-  if (args.label) {
-    const r = await exec([...rexTarget(socket), "block", "rename", pane, args.label, "-s", session]);
-    if (r.code !== 0) throw new Error(`rex block rename failed (exit ${r.code})`);
-  }
+  // The block is already running: a failed rename only loses the dedup label.
+  if (args.label) await exec([...rexTarget(socket), "block", "rename", pane, args.label, "-s", session]).catch(() => null);
   return { session, window: win.window_id, pane, socket };
 }
 
