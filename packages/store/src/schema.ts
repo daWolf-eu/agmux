@@ -169,3 +169,9 @@ ALTER TABLE sessions ADD COLUMN source_db TEXT;
 export const SCHEMA_V11 = `
 ALTER TABLE sessions ADD COLUMN tmux_server TEXT;
 `;
+
+// Which multiplexer hosts the session (NULL = tmux) and its location label.
+export const SCHEMA_V12 = `
+ALTER TABLE sessions ADD COLUMN mux TEXT;
+ALTER TABLE sessions ADD COLUMN mux_label TEXT;
+`;

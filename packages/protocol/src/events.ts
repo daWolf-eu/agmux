@@ -1,3 +1,4 @@
+import type { MuxKind } from "./mux.ts";
 import type { AgentKind } from "./session.ts";
 import type { UsageReport, CapabilityMap } from "./telemetry.ts";
 import type { TitleActivity } from "./title.ts";
@@ -77,6 +78,9 @@ export interface SessionStartedPayload {
   tmux_window: string | null;
   tmux_pane: string | null;
   tmux_socket: string | null;
+  // Rex only; absent for tmux so tmux payloads are unchanged.
+  mux?: MuxKind;
+  mux_label?: string | null;
   project: string | null;
 }
 
@@ -91,6 +95,8 @@ export interface SessionResumedPayload {
   new_tmux_window: string | null;
   new_tmux_pane: string | null;
   new_tmux_socket: string | null;
+  new_mux?: MuxKind | null;
+  new_mux_label?: string | null;
   reason: "cli_attach_after_death";
 }
 
@@ -131,6 +137,8 @@ export interface SessionRegisteredPayload {
   tmux_pane: string | null;
   tmux_socket: string | null;
   tmux_server?: string | null;
+  mux?: MuxKind;
+  mux_label?: string | null;
   // Launch recorded at registration (agmux-started agents); absent on older emitters.
   command?: string;
   args?: string[];

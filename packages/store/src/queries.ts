@@ -57,6 +57,8 @@ function decodeRow(raw: any): SessionRow {
     tmux_pane: remote ? null : raw.tmux_pane,
     tmux_socket: remote ? null : (raw.tmux_socket ?? null),
     tmux_server: remote ? null : (raw.tmux_server ?? null),
+    mux: remote ? null : (raw.mux ?? null),
+    mux_label: remote ? null : (raw.mux_label ?? null),
     host: raw.host,
     project: raw.project,
     parent_session_id: raw.parent_session_id,
