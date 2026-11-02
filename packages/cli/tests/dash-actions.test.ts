@@ -3,6 +3,7 @@ import { attachInPopup, resumeIntoSession, makeActions, type ResumePlacementDeps
 import { attachSettingsFrom } from "../src/attach-place.ts";
 import type { SessionRow } from "@agmux/protocol";
 import { fakeRex } from "./helpers/fake-rex.ts";
+import type { RexExec } from "@agmux/wrapper";
 
 function staleRow(over: Partial<SessionRow> = {}): SessionRow {
   return {
@@ -470,8 +471,18 @@ test("a stale-live tmux row in Rex resumes in Rex: tmux is only probed", async (
 
 test("a live tmux row in Rex picks the tmux tab, and no inline tmux", async () => {
   const r = recorder();
-  await expect(withEnv(REX_HERE, () =>
-    makeActions("http://hub", "w", false, r.deps, SETTINGS).attach(liveRow()))).rejects.toThrow("tmux tab not implemented");
+  const calls: string[][] = [];
+  const rexExec = (async (args: string[]) => {
+    calls.push(args);
+    return args.includes("run")
+      ? { code: 0, stdout: JSON.stringify({ window_id: "window:t", block_ids: ["block:t"] }) }
+      : { code: 0, stdout: JSON.stringify({ blocks: [] }) };
+  }) as RexExec;
+  const deps = { ...r.deps, rexExec, currentPane: async () => ({ session: HERE_S, window: "window:h", pane: "block:me", socket: RSERVER }) };
+  expect(await withEnv(REX_HERE, () => makeActions("http://hub", "w", false, deps, SETTINGS).attach(liveRow()))).toBeNull();
+  expect(await withEnv(REX_HERE, () => makeActions("http://hub", "w", true, deps, SETTINGS).attach(liveRow()))).toEqual({ argv: [] });
+  const run = calls.find((c) => c.includes("run"))!;
+  expect(run.slice(run.indexOf("run"), run.indexOf("run") + 3)).toEqual(["run", "-s", HERE_S]);
   expect(r.tmux).toEqual([]);
 });
 
