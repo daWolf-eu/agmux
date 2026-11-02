@@ -1,7 +1,8 @@
-import { test, expect } from "bun:test";
+import { test, expect, spyOn } from "bun:test";
 import { holdOnFailure } from "../src/tmux-place.ts";
 import {
   rexCurrentPane, rexSplitPane, rexNewWindow, rexNewSession, rexSwitchClient, rexNewLabelledTab, findLabelledBlock,
+  findLabelledBlockAnywhere,
 } from "../src/rex-place.ts";
 import { placementOps } from "../src/mux-ops.ts";
 import { runCmd } from "../src/run.ts";
@@ -190,6 +191,35 @@ test("rexNewSession: a failed label rename still returns the running block's coo
     [`new agmux-x --window win --json -- ${hold.join(" ")}`]: { stdout: JSON.stringify({ session_id: "session:n", initial_windows: [{ window_id: W, block_ids: [B] }] }) },
     [`block rename ${B} lbl -s session:n`]: { code: 1 },
   });
-  const c = await rexNewSession({ sessionName: "agmux-x", windowName: "win", cmd: ["agmux-wrap", "--x"], env: {}, label: "lbl" }, exec);
-  expect(c).toEqual({ session: "session:n", window: W, pane: B, socket: null });
+  const warn = spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const c = await rexNewSession({ sessionName: "agmux-x", windowName: "win", cmd: ["agmux-wrap", "--x"], env: {}, label: "lbl" }, exec);
+    expect(c).toEqual({ session: "session:n", window: W, pane: B, socket: null });
+    expect(warn.mock.calls.flat().join("\n")).toContain("rex block rename failed");
+  } finally { warn.mockRestore(); }
+});
+
+test("findLabelledBlockAnywhere looks in the caller's session first, then the others", async () => {
+  const label = { blocks: [{ block_id: "block:hit", label: "L" }] };
+  const none = { blocks: [{ block_id: "block:o", label: "shell" }] };
+  const sessions = { sessions: [{ session_id: "session:a" }, { session_id: S }, { session_id: "session:b" }, { session_id: "session:c" }] };
+  const own = fakeRex({ [`block ls -s ${S} --json`]: { stdout: JSON.stringify(label) } });
+  expect(await findLabelledBlockAnywhere(S, "L", "unix:///x", own)).toEqual({ session: S, pane: "block:hit" });
+  expect(own.calls.length).toBe(1);
+
+  const other = fakeRex({
+    [`block ls -s ${S} --json`]: { stdout: JSON.stringify(none) },
+    "ls --json": { stdout: JSON.stringify(sessions) },
+    "block ls -s session:a --json": { code: 3 }, // gone since `ls`: the search carries on
+    "block ls -s session:b --json": { stdout: JSON.stringify(label) },
+  });
+  expect(await findLabelledBlockAnywhere(S, "L", "unix:///x", other)).toEqual({ session: "session:b", pane: "block:hit" });
+  expect(other.calls.map((c) => c.at(-2)).filter((a) => a === S).length).toBe(1);
+  expect(other.calls.some((c) => c.join(" ").includes("session:c"))).toBe(false);
+});
+
+test("findLabelledBlockAnywhere: nothing found, or no session list, is no match", async () => {
+  const none = { [`block ls -s ${S} --json`]: { stdout: JSON.stringify({ blocks: [] }) } };
+  expect(await findLabelledBlockAnywhere(S, "L", null, fakeRex(none))).toBeNull();
+  expect(await findLabelledBlockAnywhere(S, "L", null, fakeRex({ ...none, "ls --json": { stdout: JSON.stringify({ sessions: [{ session_id: S }] }) } }))).toBeNull();
 });
