@@ -241,7 +241,7 @@ describe("attachRemote in Rex", () => {
       "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:old", label: LABEL("view") }] }) },
       [focus]: { stdout: "{}" },
       "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
-      [`-C client:app do session.select session_id=${S}`]: {},
+      [`-C client:app do session.select -s ${S} session_id=${S}`]: {},
     });
     expect(await attachRemote(remoteRow(), undefined, rexEnv(), r.deps)).toBeNull();
     const all = r.exec.calls.map((c) => c.join(" "));
@@ -257,7 +257,7 @@ describe("attachRemote in Rex", () => {
         "block ls -s session:s1 --json": { stdout: JSON.stringify({ blocks: [{ block_id: "block:old", label: LABEL("view") }] }) },
         [`api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:old" })}`]: { stdout: "{}" },
         "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
-        [`-C client:app do session.select session_id=${S}`]: {},
+        [`-C client:app do session.select -s ${S} session_id=${S}`]: {},
       });
       expect(await attachRemote(remoteRow(), { placement }, rexEnv(), r.deps)).toBeNull();
       expect(r.spawned).toEqual([]);

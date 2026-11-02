@@ -72,7 +72,7 @@ test("rexSwitchClient focuses the window's block and switches the app", async ()
     "session inspect session:aa --json": { stdout: JSON.stringify({ windows: [{ window_id: "window:zz", focused_block_id: "block:no" }, { window_id: "window:bb", focused_block_id: "block:cc" }] }) },
     [`api call -s session:aa session.focus_block ${JSON.stringify({ session_id: "session:aa", block_id: "block:cc" })}`]: { stdout: "{}" },
     "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: app, info: { kind: "app" } }] }) },
-    [`-C ${app} do session.select session_id=session:aa window_id=window:bb`]: {},
+    [`-C ${app} do session.select -s session:aa session_id=session:aa window_id=window:bb`]: {},
   });
   await rexSwitchClient("session:aa:window:bb", "unix:///x", null, exec);
   for (const c of exec.calls) expect(c.slice(0, 3)).toEqual(["--autostart=false", "-S", "unix:///x"]);
@@ -149,7 +149,7 @@ test("placementOps' switchClient in a popup picks the app by the tiled block, on
     [`api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:zz" })}`]: { stdout: "{}" },
     "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:other", info: { kind: "app" } }, { client_id: app, info: { kind: "app" } }] }) },
     "block inspect block:t1 --json": { stdout: JSON.stringify({ block: { owner: app } }) },
-    [`-C ${app} do session.select session_id=${S} window_id=window:other`]: {},
+    [`-C ${app} do session.select -s ${S} session_id=${S} window_id=window:other`]: {},
   });
   await placementOps(popupEnv, true, exec).switchClient(`${S}:window:other`, null);
   expect(exec.calls.flat()).toContain("session.select");
