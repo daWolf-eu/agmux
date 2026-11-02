@@ -92,3 +92,22 @@ export function openPty(initRows: number, initCols: number): PtyHandles {
     slaveErr: platformLib.symbols.dup(slave)!,
   };
 }
+
+function writeFully(fd: number, chunk: Uint8Array): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const step = (off: number): void => {
+      if (off >= chunk.length) { resolve(); return; }
+      fs.write(fd, chunk, off, chunk.length - off, null, (err, n) => { if (err) reject(err); else step(off + n); });
+    };
+    step(0);
+  });
+}
+
+// Input for the child, in order and never on the event loop. A full tty queue
+// blocks the write; if the child is itself blocked writing output, only this loop
+// can drain that, so a synchronous write deadlocks both (about 2 KB of paste into
+// an agent that redraws). A failed write means the child has gone.
+export function ptyWriter(fd: number): (chunk: Uint8Array) => void {
+  let tail = Promise.resolve();
+  return (chunk) => { tail = tail.then(() => writeFully(fd, chunk)).catch(() => {}); };
+}

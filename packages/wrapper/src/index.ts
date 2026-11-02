@@ -10,7 +10,7 @@ import {
   detectMux,
 } from "@agmux/protocol";
 import { buildChildEnv, reexecEnv } from "./child-env.ts";
-import { openPty, setWinsize } from "./pty.ts";
+import { openPty, ptyWriter, setWinsize } from "./pty.ts";
 import type { ProfileConfig } from "./profile.ts";
 import { HubClient, portFileHubUrl } from "./hub-client.ts";
 import { mintSessionId } from "./ids.ts";
@@ -171,7 +171,8 @@ export async function runWrapper(opts: RunOpts): Promise<number> {
   const mr = fs.createReadStream("", { fd: master, autoClose: false });
   mr.on("data", (chunk) => { process.stdout.write(chunk); onOutput(chunk as Buffer); });
   mr.on("error", () => {});
-  process.stdin.on("data", (chunk: Buffer) => { try { fs.writeSync(master, chunk); } catch {} });
+  const writeToChild = ptyWriter(master);
+  process.stdin.on("data", (chunk: Buffer) => writeToChild(chunk));
   if (stdinIsTty) process.stdin.resume();
 
   process.stdout.on("resize", () => {
