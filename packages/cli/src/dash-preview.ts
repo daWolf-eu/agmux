@@ -26,20 +26,20 @@ interface HubUsageRow {
   last_model: string | null; turn_count: number;
 }
 
-export function makePreviewSource(hubUrl: string, tmuxText: TmuxText = defaultTmuxText, rexExec: RexExec = defaultRexExec): PreviewSource {
+export function makePreviewSource(hubUrl: string, tmuxText: TmuxText = defaultTmuxText, rexExec: RexExec = defaultRexExec, now: () => number = Date.now): PreviewSource {
   const poll = new RexPoll();
   const last = new Map<string, { at: number; text: string }>();
   return {
     async mirror(row: SessionRow): Promise<string> {
       if (!LIVE_STATUSES.includes(row.status) || !row.tmux_pane) return "";
       if (rowMux(row) === "rex") {
-        const id = row.tmux_pane;
+        const id = `${row.tmux_socket ?? ""}|${row.tmux_pane}`;
         const prev = last.get(id);
-        const now = Date.now();
-        if (prev && now - prev.at < poll.delayMs(id, 0)) return prev.text;
+        const start = now();
+        if (prev && start - prev.at < poll.delayMs(id, 0)) return prev.text;
         const text = await rexTail(row, undefined, rexExec);
-        const done = Date.now();
-        poll.record(id, done - now);
+        const done = now();
+        poll.record(id, done - start);
         last.set(id, { at: done, text });
         return text;
       }

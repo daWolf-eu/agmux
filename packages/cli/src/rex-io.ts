@@ -36,10 +36,13 @@ export async function rexTail(row: RexRowRef, maxBytes = DEFAULT_MAX, exec: RexE
     for (let i = 0; i < 64; i++) {
       const b = await call(row, exec, "blob_read", { id: f.id, offset, max_bytes: maxBytes });
       if (!b || typeof b.data !== "string") return "";
-      out += b.data;
-      if (b.eof) return out.startsWith("�") ? out.slice(1) : out;
-      const n = Buffer.byteLength(b.data);
-      if (n === 0) return "";
+      // An offset inside a multi-byte character leaves 1-3 stray bytes, each decoded as its own
+      // U+FFFD (3 bytes encoded) but only 1 byte on the wire: drop them and count them as 1.
+      const stray = /^\uFFFD*/.exec(b.data)![0].length;
+      out += b.data.slice(stray);
+      if (b.eof) return out;
+      const n = Buffer.byteLength(b.data) - 2 * stray;
+      if (n <= 0) return "";
       offset += n;
     }
     return "";
