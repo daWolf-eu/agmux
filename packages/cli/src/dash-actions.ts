@@ -5,7 +5,8 @@ import { createDefaultRegistry } from "@agmux/adapters";
 import { buildAttachCommands, type AttachCoords } from "./attach.ts";
 import { buildRelaunchSpec } from "./relaunch.ts";
 import { loadProfileLaunch } from "./profile-env.ts";
-import { readCurrentPane, hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
+import { hasSession, splitPane, type PaneCoords } from "./tmux-place.ts";
+import { placementOps } from "./mux-ops.ts";
 import { resumeIntoSession, defaultPlacementDeps, relaunchEnv, type ResumePlacementDeps } from "./resume-place.ts";
 import { copyToClipboard } from "./clipboard.ts";
 import { postSeen, seenHost } from "./seen.ts";
@@ -66,10 +67,11 @@ export function makeActions(
 ): Actions {
   const inTmux = !!process.env.TMUX;
   const sessionExists = deps.sessionExists ?? hasSession;
-  const currentPane = deps.currentPane ?? (() => readCurrentPane().catch(() => null));
+  const ops = placementOps(process.env, popup);
+  const currentPane = deps.currentPane ?? (() => ops.currentPane().catch(() => null));
   const spawnDetached = deps.spawnDetached ?? spawnDetachedDefault;
-  const placement = deps.placement ?? defaultPlacementDeps;
-  const split = deps.splitPane ?? splitPane;
+  const placement = deps.placement ?? ops;
+  const split = deps.splitPane ?? ops.splitPane;
   const ctx = attachCtxFor(settings, process.env, popup);
   // Opened somewhere else: in a popup the empty handoff closes the popup onto
   // it; in an inline dash the dash stays (null).

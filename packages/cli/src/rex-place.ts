@@ -1,0 +1,207 @@
+// Rex placements for `agmux run` and resume: the same shapes as tmux-place.ts,
+// with Rex ids in PaneCoords (session = session id, window = window id, pane =
+// block id, socket = the server endpoint).
+//
+// Rex has no per-pane env flag, so env goes through env(1) ahead of the
+// hold-on-failure wrapper. Values are separate argv elements, never a shell string.
+import { defaultRexExec, readCurrentRexCoords, rexTarget, type RexExec } from "@agmux/wrapper";
+import { holdOnFailure, withEnv, type PaneCoords } from "./tmux-place.ts";
+
+const PLACE_TIMEOUT = "10s";
+
+// A user's init.lua popup binding can pass ctx.block_id here: Rex doesn't expose
+// which tiled block was focused under a float.
+export const REX_ORIGIN_BLOCK_ENV = "AGMUX_REX_ORIGIN_BLOCK";
+
+function parse(stdout: string): any {
+  try { return JSON.parse(stdout); } catch { return null; }
+}
+
+async function place(exec: RexExec, socket: string | null, args: string[]): Promise<any> {
+  const r = await exec([...rexTarget(socket, PLACE_TIMEOUT), ...args]);
+  if (r.code !== 0) throw new Error(`rex ${args[0]}${args[0] === "window" ? " new" : ""} failed (exit ${r.code})`);
+  const j = parse(r.stdout);
+  if (!j) throw new Error(`rex ${args[0]}: unparseable output`);
+  return j;
+}
+
+const placed = (env: Record<string, string>, cmd: string[]): string[] => withEnv(env, holdOnFailure(cmd));
+
+async function windowOf(exec: RexExec, socket: string | null, session: string, block: string): Promise<string> {
+  const r = await exec([...rexTarget(socket), "block", "inspect", block, "-s", session, "--json"]);
+  const w = r.code === 0 ? parse(r.stdout)?.block?.window_id : null;
+  return typeof w === "string" ? w : "";
+}
+
+export async function rexCurrentPane(
+  env: Record<string, string | undefined>,
+  popup: boolean,
+  exec: RexExec = defaultRexExec,
+): Promise<PaneCoords | null> {
+  try {
+    const session = env.REX_SESSION;
+    const block = env.REX_BLOCK;
+    if (!session || !block) return null;
+    const socket = env.REX_SERVER || null;
+    if (!popup) {
+      const c = await readCurrentRexCoords(env, exec);
+      return c ? { session: c.session, window: c.window ?? "", pane: c.pane, socket: c.socket } : null;
+    }
+    // In a popup REX_BLOCK is the float, which closes with the dash.
+    const origin = env[REX_ORIGIN_BLOCK_ENV];
+    if (origin) {
+      const window = await windowOf(exec, socket, session, origin);
+      if (window) return { session, window, pane: origin, socket };
+    }
+    const window = await windowOf(exec, socket, session, block);
+    if (!window) return null;
+    const g = rexTarget(socket);
+    const ins = await exec([...g, "session", "inspect", session, "--json"]);
+    const j = ins.code === 0 ? parse(ins.stdout) : null;
+    const win = Array.isArray(j?.windows) ? j.windows.find((w: any) => w?.window_id === window) : null;
+    const tiled = Array.isArray(win?.layers) ? win.layers.find((l: any) => l?.kind === "tiled") : null;
+    const first = tiled?.blocks?.[0]?.block_id;
+    return typeof first === "string" ? { session, window, pane: first, socket } : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function rexHasSession(
+  name: string,
+  socket: string | null = null,
+  exec: RexExec = defaultRexExec,
+): Promise<boolean> {
+  return (await rexResolveSession(name, socket, exec)) !== null;
+}
+
+// A full session id or an exact label → the session id; null when absent or unreachable.
+async function rexResolveSession(name: string, socket: string | null, exec: RexExec): Promise<string | null> {
+  const r = await exec([...rexTarget(socket), "ls", "--json"]);
+  const list = r.code === 0 ? parse(r.stdout)?.sessions : null;
+  if (!Array.isArray(list)) return null;
+  const hit = list.find((s: any) => s?.session_id === name) ?? list.find((s: any) => s?.label === name);
+  return typeof hit?.session_id === "string" ? hit.session_id : null;
+}
+
+export async function rexSplitPane(args: {
+  targetPane: string;
+  cmd: string[];
+  env: Record<string, string>;
+  detach: boolean;
+  cwd?: string;
+  socket?: string | null;
+  session?: string;
+}, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
+  const socket = args.socket ?? null;
+  const session = args.session ?? process.env.REX_SESSION;
+  if (!session) throw new Error("rex split: no session for the anchor block");
+  const j = await place(exec, socket, [
+    "split", "-s", session, "-b", args.targetPane, "--json",
+    ...(args.detach ? ["--focus=false"] : []),
+    ...(args.cwd ? ["-c", args.cwd] : []),
+    "--", ...placed(args.env, args.cmd),
+  ]);
+  const pane = j.block_ids?.[0];
+  if (typeof pane !== "string") throw new Error("rex split: no block id in output");
+  return { session, window: await windowOf(exec, socket, session, pane), pane, socket };
+}
+
+export async function rexNewWindow(args: {
+  sessionName: string;
+  windowName: string;
+  cmd: string[];
+  env: Record<string, string>;
+  detach: boolean;
+  cwd?: string;
+  socket?: string | null;
+}, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
+  const socket = args.socket ?? null;
+  // The current session arrives as an id; AGMUX_TMUX_SESSION arrives as a label.
+  const session = await rexResolveSession(args.sessionName, socket, exec);
+  if (!session) {
+    return rexNewSession({
+      sessionName: args.sessionName, windowName: args.windowName, cmd: args.cmd, env: args.env,
+      cwd: args.cwd, socket,
+    }, exec);
+  }
+  const j = await place(exec, socket, [
+    "window", "new", "-s", session, args.windowName, "--json",
+    ...(args.detach ? ["--focus=false"] : []),
+    ...(args.cwd ? ["-c", args.cwd] : []),
+    "--", ...placed(args.env, args.cmd),
+  ]);
+  const window = j.window_id;
+  const pane = j.block_ids?.[0];
+  if (typeof window !== "string" || typeof pane !== "string") throw new Error("rex window new: no ids in output");
+  return { session, window, pane, socket };
+}
+
+export async function rexNewSession(args: {
+  sessionName: string;
+  windowName: string;
+  cmd: string[];
+  env: Record<string, string>;
+  cwd?: string;
+  socket?: string | null;
+}, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
+  const socket = args.socket ?? null;
+  if (await rexHasSession(args.sessionName, socket, exec)) {
+    throw new Error(`rex session already exists: ${args.sessionName}`);
+  }
+  const j = await place(exec, socket, [
+    "new", args.sessionName, "--window", args.windowName, "--json",
+    ...(args.cwd ? ["-c", args.cwd] : []),
+    "--", ...placed(args.env, args.cmd),
+  ]);
+  const win = j.initial_windows?.[0];
+  const session = j.session_id;
+  const pane = win?.block_ids?.[0];
+  if (typeof session !== "string" || typeof win?.window_id !== "string" || typeof pane !== "string") {
+    throw new Error("rex new: no ids in output");
+  }
+  return { session, window: win.window_id, pane, socket };
+}
+
+// Temporary: Task 8 replaces this with a focus that also switches the app.
+// `target` is "<session id>:<window id>", as the callers build it.
+export async function rexSwitchClient(
+  target: string,
+  socket: string | null = null,
+  exec: RexExec = defaultRexExec,
+): Promise<void> {
+  const m = /^(session:[^:]+):(window:.+)$/.exec(target);
+  if (!m) throw new Error(`rex focus: unparseable target ${JSON.stringify(target)}`);
+  const r = await exec([...rexTarget(socket, PLACE_TIMEOUT), "focus", "-s", m[1]!, m[2]!]);
+  if (r.code !== 0) throw new Error(`rex focus failed (exit ${r.code})`);
+}
+
+// A new tab (window) in `session` whose block carries `label`, so it can be found again.
+export async function rexNewLabelledTab(a: {
+  session: string;
+  label: string;
+  cmd: string[];
+  env: Record<string, string>;
+  socket: string | null;
+}, exec: RexExec = defaultRexExec): Promise<PaneCoords> {
+  const j = await place(exec, a.socket, [
+    "run", "-s", a.session, "--label", a.label, "--json", "--", ...withEnv(a.env, a.cmd),
+  ]);
+  const window = j.window_id;
+  const pane = j.block_ids?.[0];
+  if (typeof window !== "string" || typeof pane !== "string") throw new Error("rex run: no ids in output");
+  return { session: a.session, window, pane, socket: a.socket };
+}
+
+export async function findLabelledBlock(
+  session: string,
+  label: string,
+  socket: string | null,
+  exec: RexExec = defaultRexExec,
+): Promise<string | null> {
+  const r = await exec([...rexTarget(socket), "block", "ls", "-s", session, "--json"]);
+  const blocks = r.code === 0 ? parse(r.stdout)?.blocks : null;
+  if (!Array.isArray(blocks)) return null;
+  const hit = blocks.find((b: any) => b?.label === label);
+  return typeof hit?.block_id === "string" ? hit.block_id : null;
+}
