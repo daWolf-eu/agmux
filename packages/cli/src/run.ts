@@ -17,9 +17,10 @@ import { loadProfile } from "@agmux/wrapper";
 import type { Placement } from "./parse-run.ts";
 import type { LaunchMode } from "./launch-mode.ts";
 import {
-  readCurrentPane, splitPane, newWindow, newSession, switchClient, hasSession, tmuxServerId,
+  newWindow, newSession, hasSession, tmuxServerId,
   type PaneCoords,
 } from "./tmux-place.ts";
+import { placementOps, type PlacementOps } from "./mux-ops.ts";
 
 // Profile mode → wrapper loads the named profile from ~/.config/agmux/config.toml.
 export interface RunProfileOpts {
@@ -189,9 +190,13 @@ async function runPrintCoords(opts: RunOpts, agmuxBin: string, deps: PrintCoords
   return 0;
 }
 
-async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number> {
+async function runWithPlacement(
+  opts: RunOpts,
+  agmuxBin: string,
+  ops: PlacementOps = placementOps(process.env),
+): Promise<number> {
   const spawn = spawnFor(opts, agmuxBin);
-  const here = await readCurrentPane();
+  const here = await ops.currentPane();
   // Forward AGMUX_TMUX_SESSION through so the wrapper inside the new pane sees
   // the same logical agmux session name (only relevant if the wrapper ever
   // re-execs without an attached tmux, but cheap to keep consistent).
@@ -206,11 +211,14 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
   if (opts.placement === "new-pane") {
     if (!here) {
       console.error(
-        "agmux run --new-pane: not inside a tmux client; use --new-window or --new-session instead",
+        ops.kind === "rex"
+          ? "agmux run --new-pane: cannot read the current Rex pane; use --new-window or --new-session instead"
+          : "agmux run --new-pane: not inside a tmux client; use --new-window or --new-session instead",
       );
       return 2;
     }
-    coords = await splitPane({
+    coords = await ops.splitPane({
+      session: here.session,
       targetPane: here.pane,
       cmd, env: envForward,
       detach: opts.detach,
@@ -219,7 +227,7 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
     });
   } else if (opts.placement === "new-window") {
     const targetSession = pickWindowTargetSession(here);
-    coords = await newWindow({
+    coords = await ops.newWindow({
       sessionName: targetSession,
       windowName, cmd, env: envForward,
       detach: opts.detach,
@@ -228,17 +236,23 @@ async function runWithPlacement(opts: RunOpts, agmuxBin: string): Promise<number
     });
   } else if (opts.placement === "new-session") {
     const sessionName = `${AGMUX_TMUX_SESSION_DEFAULT}-${spawn.label}-${shortRandomTag()}`;
-    coords = await newSession({ sessionName, windowName, cmd, env: envForward, cwd: spawn.cwd, socket: here?.socket ?? null });
+    coords = await ops.newSession({ sessionName, windowName, cmd, env: envForward, cwd: spawn.cwd, socket: here?.socket ?? null });
     // `tmux new-session -d` ignores -d's "no switch" semantics — there's nothing
     // to switch *to* yet. So we explicitly switch-client when the user wants
     // focus to follow the new session.
     if (!opts.detach && here) {
-      await switchClient(`${coords.session}:${coords.window}`, here?.socket ?? null);
+      await ops.switchClient(`${coords.session}:${coords.window}`, here?.socket ?? null);
     }
   } else {
     throw new Error(`runWithPlacement: unexpected placement ${opts.placement}`);
   }
 
+  if (ops.kind === "rex") {
+    console.log(`agmux: spawned in Rex block ${coords.pane}`);
+    // The bootstrap inject is tmux send-keys; there is no Rex path yet.
+    if (opts.prompt) console.error("agmux: --prompt is not injected in Rex yet; paste it into the new block");
+    return 0;
+  }
   console.log(`agmux: spawned in ${coords.session}:${coords.window}.${coords.pane}`);
   const report = await runInjectStep({ pane: coords.pane, prompt: opts.prompt, agentKind: opts.agentKind, socket: coords.socket });
   if (report) console.log(report);
@@ -254,15 +268,16 @@ export async function runCmd(
   opts: RunOpts,
   agmuxBin: string = process.env.AGMUX_BIN ?? "agmux",
   printDeps: PrintCoordsDeps = defaultPrintCoordsDeps,
+  ops?: PlacementOps,
 ): Promise<number> {
   if (opts.placement === "print-coords") return runPrintCoords(opts, agmuxBin, printDeps);
   if (opts.placement === "inherit") {
     // Direct + not in a multiplexer → fall back to a fresh agmux session so the agent is
     // still tmux-tracked; otherwise run inline in the current pane.
     if (needsNewSession(opts, process.env)) {
-      return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin);
+      return runWithPlacement({ ...opts, placement: "new-session" }, agmuxBin, ops);
     }
     return runInherit(opts, agmuxBin);
   }
-  return runWithPlacement(opts, agmuxBin);
+  return runWithPlacement(opts, agmuxBin, ops);
 }

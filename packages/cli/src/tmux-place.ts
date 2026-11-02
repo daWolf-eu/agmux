@@ -70,6 +70,8 @@ export async function splitPane(args: {
   detach: boolean;
   cwd?: string;
   socket?: string | null;
+  // Rex splits need the anchor's session; tmux ignores it.
+  session?: string;
 }): Promise<PaneCoords> {
   // `tmux split-window -d` creates the new pane without making it the active
   // pane in the caller's client.
@@ -108,7 +110,7 @@ export async function newWindow(args: {
 // inherits (a shell the user opens there, an agent started by hand would carry
 // this agent's AGMUX_LAUNCH / AGMUX_SESSION_ID). The placed command alone gets
 // the env, through env(1) ahead of the hold wrapper.
-function withEnv(env: Record<string, string>, cmd: string[]): string[] {
+export function withEnv(env: Record<string, string>, cmd: string[]): string[] {
   const assignments = Object.entries(env).map(([k, v]) => `${k}=${v}`);
   return assignments.length === 0 ? cmd : ["env", ...assignments, ...cmd];
 }
