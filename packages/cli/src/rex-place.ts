@@ -165,7 +165,10 @@ export async function rexNewSession(args: {
     throw new Error("rex new: no ids in output");
   }
   // The block is already running: a failed rename only loses the dedup label.
-  if (args.label) await exec([...rexTarget(socket), "block", "rename", pane, args.label, "-s", session]).catch(() => null);
+  if (args.label) {
+    const r = await exec([...rexTarget(socket), "block", "rename", pane, args.label, "-s", session]).catch(() => null);
+    if (r?.code !== 0) console.error(`agmux: rex block rename failed${r ? ` (exit ${r.code})` : ""}: ${pane} can't be found again`);
+  }
   return { session, window: win.window_id, pane, socket };
 }
 
@@ -299,4 +302,26 @@ export async function findLabelledBlock(
   if (!Array.isArray(blocks)) return null;
   const hit = blocks.find((b: any) => b?.label === label);
   return typeof hit?.block_id === "string" ? hit.block_id : null;
+}
+
+// The same search across the server, as tmux's list-panes -a: the caller's
+// session first, then every other one `rex ls` names. A session that can't be
+// listed is no match, so the search carries on.
+export async function findLabelledBlockAnywhere(
+  session: string,
+  label: string,
+  socket: string | null,
+  exec: RexExec = defaultRexExec,
+): Promise<{ session: string; pane: string } | null> {
+  const own = await findLabelledBlock(session, label, socket, exec);
+  if (own) return { session, pane: own };
+  const r = await exec([...rexTarget(socket), "ls", "--json"]);
+  const list = r.code === 0 ? parse(r.stdout)?.sessions : null;
+  if (!Array.isArray(list)) return null;
+  for (const s of list) {
+    if (typeof s?.session_id !== "string" || s.session_id === session) continue;
+    const pane = await findLabelledBlock(s.session_id, label, socket, exec);
+    if (pane) return { session: s.session_id, pane };
+  }
+  return null;
 }

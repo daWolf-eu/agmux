@@ -251,6 +251,22 @@ describe("attachRemote in Rex", () => {
     expect(await attachRemote(remoteRow(), undefined, rexEnv({ popup: true }), r.deps)).toEqual({ argv: [] });
   });
 
+  test.each(["new-session", "new-window"] as const)("%s: a client open in another Rex session is focused there, with nothing placed", async (placement) => {
+    const OTHER = "session:other";
+    const r = rexRec({
+      ...noBlocks,
+      "ls --json": { stdout: JSON.stringify({ sessions: [{ session_id: S }, { session_id: OTHER, label: "agmux-11111111-view" }] }) },
+      [`block ls -s ${OTHER} --json`]: { stdout: JSON.stringify({ blocks: [{ block_id: "block:old", label: LABEL("view") }] }) },
+      [`api call -s ${OTHER} session.focus_block ${JSON.stringify({ session_id: OTHER, block_id: "block:old" })}`]: { stdout: "{}" },
+      "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:app", info: { kind: "app" } }] }) },
+      [`-C client:app do session.select -s ${OTHER} session_id=${OTHER}`]: {},
+    });
+    expect(await attachRemote(remoteRow(), { placement }, rexEnv(), r.deps)).toBeNull();
+    const all = r.exec.calls.map((c) => c.join(" "));
+    expect(all.at(-1)).toContain(`session.select -s ${OTHER}`);
+    expect(all.some((c) => / run | new /.test(c))).toBe(false);
+  });
+
   test("an existing labelled block is focused for inline and new-tab too; nothing starts", async () => {
     for (const placement of ["inline", "new-tab"] as const) {
       const r = rexRec({

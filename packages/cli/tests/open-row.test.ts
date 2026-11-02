@@ -250,6 +250,8 @@ test("first open creates a tab running holdOnFailure(tmux attach-session ...)", 
   expect(run).toContain(tmuxTabLabel(TSOCK, row.tmux_session!));
   expect(run).not.toContain("--shell=none");
   expect(run.slice(0, run.indexOf("run"))).toEqual(["--autostart=false", "-S", SERVER, "--timeout", "10s"]); // caller's server
+  // Deduplicated per current session: other Rex sessions aren't searched.
+  expect(exec.calls.some((c) => / ls --json$/.test(c.join(" ")))).toBe(false);
 });
 
 test("session names with spaces, ':' and '#' stay single argv elements", async () => {

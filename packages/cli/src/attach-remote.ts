@@ -15,7 +15,7 @@ import { resolvePlacement, type AttachCtx, type AttachRequest, type Handoff } fr
 import { placementOps } from "./mux-ops.ts";
 import { holdOnFailure, newSession, newWindow, splitPane, switchClient, type PaneCoords } from "./tmux-place.ts";
 import {
-  findLabelledBlock, rexFocus, rexNewLabelledTab, rexNewSession, rexSplitPane, rexSwitchClient,
+  findLabelledBlockAnywhere, rexFocus, rexNewLabelledTab, rexNewSession, rexSplitPane, rexSwitchClient,
 } from "./rex-place.ts";
 import { expandTemplate, resumeSessionName, withoutTmuxEnv, type AttachSettings } from "./attach-place.ts";
 
@@ -164,8 +164,9 @@ export async function attachRemote(
   return opened();
 }
 
-// The same placements inside Rex. Dedup by block label instead of tmux pane
-// options; every placement sets the label, an inline attach sets none.
+// The same placements inside Rex. Dedup by block label across all sessions
+// instead of tmux pane options; every placement sets the label, an inline
+// attach sets none.
 async function attachRemoteRex(
   row: SessionRow,
   mode: RemoteAttachMode,
@@ -184,9 +185,9 @@ async function attachRemoteRex(
   const here = await deps.currentPane();
   if (here) {
     const caller = { block: here.pane, server: here.socket };
-    const existing = await findLabelledBlock(here.session, label, here.socket, exec);
+    const existing = await findLabelledBlockAnywhere(here.session, label, here.socket, exec);
     if (existing) {
-      const r = await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, caller, exec);
+      const r = await rexFocus({ session: existing.session, window: null, pane: existing.pane, socket: here.socket }, caller, exec);
       if (r === "no-app") throw new Error("Rex app not running");
       return opened();
     }
