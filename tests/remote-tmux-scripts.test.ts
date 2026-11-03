@@ -273,9 +273,12 @@ for (const shell of SHELLS) {
       fs.symlinkSync(DASH ?? Bun.which("bash")!, path.join(fake, "tmux"));
       fs.mkdirSync(path.join(fake, "srv"));
       // tmux by name only, no attach-session in its args (like the tmux server).
-      fs.symlinkSync(Bun.which("sleep")!, path.join(fake, "srv", "tmux"));
-      const client = Bun.spawn([path.join(fake, "tmux"), "-c", "trap 'exit 0' TERM; while :; do sleep 1; done", "attach-session"], { stdin: "ignore" });
-      const named = Bun.spawn([path.join(fake, "srv", "tmux"), "600"], { stdin: "ignore" });
+      // A shell again, not `sleep`: a multi-call coreutils (uutils, Ubuntu 26.04)
+      // dispatches on argv[0] and exits at once when called as `tmux`.
+      fs.symlinkSync(DASH ?? Bun.which("bash")!, path.join(fake, "srv", "tmux"));
+      const loop = "trap 'exit 0' TERM; while :; do sleep 1; done";
+      const client = Bun.spawn([path.join(fake, "tmux"), "-c", loop, "attach-session"], { stdin: "ignore" });
+      const named = Bun.spawn([path.join(fake, "srv", "tmux"), "-c", loop], { stdin: "ignore" });
       const other = Bun.spawn([Bun.which("sleep")!, "600"], { stdin: "ignore" });
       try {
         await Bun.sleep(100);
