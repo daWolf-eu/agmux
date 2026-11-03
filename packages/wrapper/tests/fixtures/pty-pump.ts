@@ -61,7 +61,10 @@ if (role === "child") {
   const writer = await fillQueue(master);
   const stopping = writer.stop(4000);
   child.kill("SIGKILL");
-  if (!(await stopping)) process.exit(3);
+  // Linux never wakes a master write blocked on a full queue when the slave
+  // closes (reads get EIO, the write stays put), so stop declines and the
+  // wrapper keeps the fd open: nothing can be reused, nothing to check.
+  if (!(await stopping)) process.exit(process.platform === "linux" ? 0 : 3);
   fs.closeSync(master);
   const reused = fs.openSync(file, "w");
   if (reused !== master) process.exit(4); // the check below would prove nothing
