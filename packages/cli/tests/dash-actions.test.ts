@@ -558,7 +558,7 @@ test("resume of a closed tmux row inside Rex opens a new tab and never calls tmu
   }) as typeof exec;
   await withEnv(REX_HERE, () => withSession(closed, () =>
     makeActions("http://hub", "w", false, { ...r.deps, currentPane: undefined, rexExec: spy }, SETTINGS).resume(closed)));
-  expect(seen).toHaveLength(2);
+  // The new tab is in the caller's own session: focus_block switches to it, no session.select.
+  expect(seen).toHaveLength(1);
   expect(seen[0]!.join(" ")).toContain(`window new -s ${HERE_S}`);
-  expect(seen[1]!.join(" ")).toContain(`session_id=${HERE_S} window_id=window:new`);
 });

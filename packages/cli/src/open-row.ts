@@ -49,7 +49,7 @@ export async function openRexRow(row: SessionRow, o: OpenRexOpts, exec: RexExec 
   const here = o.caller === "rex" ? await o.currentPane() : null;
   const result = await rexFocus(
     { session: row.tmux_session!, window: row.tmux_window, pane: row.tmux_pane!, socket: row.tmux_socket },
-    here ? { block: here.pane, server: here.socket } : null,
+    here ? { block: here.pane, server: here.socket, session: here.session } : null,
     exec,
   );
   if (result === "no-app") throw new Error("Rex app not running");
@@ -84,7 +84,7 @@ export async function openTmuxTab(
 
   const existing = await findLabelledBlock(here.session, label, here.socket, exec);
   if (existing) {
-    await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, { block: here.pane, server: here.socket }, exec);
+    await rexFocus({ session: here.session, window: null, pane: existing, socket: here.socket }, { block: here.pane, server: here.socket, session: here.session }, exec);
     // Everything after attach-session's `-t <session>` is the `;`-chained selects.
     const sock = attach.slice(0, attach.indexOf("attach-session"));
     const rest = attach.slice(attach.indexOf(";") + 1);

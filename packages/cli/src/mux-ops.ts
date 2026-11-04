@@ -33,7 +33,7 @@ export function placementOps(
       newSession: (a) => rexNewSession({ ...a, socket: a.socket ?? server }, exec),
       switchClient: async (target, socket) => {
         const here = await currentPane();
-        await rexSwitchClient(target, socket ?? server, here ? { block: here.pane, server: here.socket } : null, exec);
+        await rexSwitchClient(target, socket ?? server, here ? { block: here.pane, server: here.socket, session: here.session } : null, exec);
       },
     };
   }

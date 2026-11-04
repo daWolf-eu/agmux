@@ -184,7 +184,32 @@ test("rexFocus reports a failed focus, a failed client listing and a failed sele
   await expect(rexFocus(coords, null, fakeRex({ [focusKey()]: { stdout: "{}" } }))).rejects.toThrow("rex client ls failed");
   await expect(rexFocus(coords, null, fakeRex({
     [focusKey()]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)),
-  }))).rejects.toThrow("rex session.select failed (exit 4)");
+  }))).rejects.toThrow("Rex could not switch sessions: session.select exit 4");
+});
+
+// Rex.app refuses client actions unless Remote Control is on (seen live).
+test("a refused session.select names Rex's reason", async () => {
+  const why = "Rex.app is not accepting actions. Turn on Remote Control in its Settings under Rex Server.";
+  await expect(rexFocus(coords, null, fakeRex({
+    [focusKey()]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)),
+    [selectKey(APP)]: { code: 1, stderr: `Error: ${why}\n` },
+  }))).rejects.toThrow(`Rex could not switch sessions: ${why}`);
+});
+
+// focus_block alone switches tabs within a session: the app already shows the
+// caller's session, so no client action (which Remote Control may refuse).
+test("rexFocus in the caller's own session stops after focus_block", async () => {
+  const exec = fakeRex({ [focusKey()]: { stdout: "{}" } });
+  expect(await rexFocus(coords, { block: "block:tiled", server: SERVER, session: S }, exec)).toBe("selected");
+  expect(verbs(exec.calls)).toEqual(["api"]);
+});
+
+test("a caller in the same-named session on another server still selects", async () => {
+  const exec = fakeRex({
+    [focusKey()]: { stdout: "{}" }, "client ls --json": clientsOut(client(APP)), [selectKey(APP)]: {},
+  });
+  expect(await rexFocus(coords, { block: "block:me", server: "unix:///caller", session: S }, exec)).toBe("selected");
+  expect(exec.calls.flat()).toContain("session.select");
 });
 
 const opts = (over: Partial<Parameters<typeof openRexRow>[1]> = {}) =>

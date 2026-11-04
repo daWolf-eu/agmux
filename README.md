@@ -195,6 +195,8 @@ A session is never resumed while its Rex server can't be reached, because the ag
 
 The dash float. Rex doesn't say which tiled block was focused under a float, so `--popup` anchors placements on the first tiled block of the window. To anchor on the block you were in, pass it from your `init.lua` binding as `AGMUX_REX_ORIGIN_BLOCK`, set to `ctx.block_id`; `new-pane` and the attached highlight are then exact.
 
+Opening a session in another Rex session switches the app with a client action, which Rex.app accepts only with **Remote Control** turned on (Rex Settings → Rex Server). Without it, sessions in the Rex session you're in still open; for others the dash stays open and shows Rex's reason.
+
 Known limits in Rex:
 
 - No "seen while watching": Rex doesn't expose OS focus or what an app is showing, so a session that finishes in front of you stays `done` until you open or dismiss it. It never hides a session.
