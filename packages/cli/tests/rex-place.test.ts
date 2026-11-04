@@ -213,16 +213,28 @@ test("rexCurrentPane outside a popup uses REX_BLOCK", async () => {
 
 test("placementOps' switchClient in a popup picks the app by the tiled block, on the Rex server", async () => {
   const app = "client:app";
+  const S2 = "session:s2";
+  const exec = fakeRex({
+    ...popupScript,
+    [`session inspect ${S2} --json`]: { stdout: JSON.stringify({ windows: [{ window_id: "window:other", focused_block_id: "block:zz" }] }) },
+    [`api call -s ${S2} session.focus_block ${JSON.stringify({ session_id: S2, block_id: "block:zz" })}`]: { stdout: "{}" },
+    "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:other", info: { kind: "app" } }, { client_id: app, info: { kind: "app" } }] }) },
+    "block inspect block:t1 --json": { stdout: JSON.stringify({ block: { owner: app } }) },
+    [`-C ${app} do session.select -s ${S2} session_id=${S2} window_id=window:other`]: {},
+  });
+  await placementOps(popupEnv, true, exec).switchClient(`${S2}:window:other`, null);
+  expect(exec.calls.flat()).toContain("session.select");
+  for (const c of exec.calls) expect(c.slice(0, 3)).toEqual(["--autostart=false", "-S", "unix:///x"]);
+});
+
+test("placementOps' switchClient to a tab in the popup's own session only focuses", async () => {
   const exec = fakeRex({
     ...popupScript,
     [`api call -s ${S} session.focus_block ${JSON.stringify({ session_id: S, block_id: "block:zz" })}`]: { stdout: "{}" },
-    "client ls --json": { stdout: JSON.stringify({ clients: [{ client_id: "client:other", info: { kind: "app" } }, { client_id: app, info: { kind: "app" } }] }) },
-    "block inspect block:t1 --json": { stdout: JSON.stringify({ block: { owner: app } }) },
-    [`-C ${app} do session.select -s ${S} session_id=${S} window_id=window:other`]: {},
   });
   await placementOps(popupEnv, true, exec).switchClient(`${S}:window:other`, null);
-  expect(exec.calls.flat()).toContain("session.select");
-  for (const c of exec.calls) expect(c.slice(0, 3)).toEqual(["--autostart=false", "-S", "unix:///x"]);
+  expect(exec.calls.flat()).toContain("session.focus_block");
+  expect(exec.calls.flat()).not.toContain("session.select");
 });
 
 test("placementOps picks rex only for detectMux rex", () => {

@@ -184,7 +184,7 @@ async function attachRemoteRex(
   // Dedup first, for every placement, as the tmux path does. No block, no dedup.
   const here = await deps.currentPane();
   if (here) {
-    const caller = { block: here.pane, server: here.socket };
+    const caller = { block: here.pane, server: here.socket, session: here.session };
     const existing = await findLabelledBlockAnywhere(here.session, label, here.socket, exec);
     if (existing) {
       const r = await rexFocus({ session: existing.session, window: null, pane: existing.pane, socket: here.socket }, caller, exec);
@@ -204,7 +204,7 @@ async function attachRemoteRex(
   }
 
   if (!here) throw new Error(`${where}: cannot read the current Rex block`);
-  const caller = { block: here.pane, server: here.socket };
+  const caller = { block: here.pane, server: here.socket, session: here.session };
 
   // A held, failed client keeps its label until its block closes.
   const held = holdOnFailure(cmd);

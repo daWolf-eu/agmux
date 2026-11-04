@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-export type RexExec = (args: string[], stdin?: Uint8Array) => Promise<{ code: number; stdout: string }>;
+// stderr is kept for messages worth passing on (a refused client action says why).
+export type RexExec = (args: string[], stdin?: Uint8Array) => Promise<{ code: number; stdout: string; stderr?: string }>;
 
 const MAC_REL = "Library/Application Support/com.superlogical.rex/RexServer/Versions/Current/Rex Server.app/Contents/MacOS/rex";
 
@@ -35,13 +36,15 @@ export const defaultRexExec: RexExec = async (args, stdin) => {
   if (!bin) return { code: 127, stdout: "" };
   try {
     const proc = Bun.spawn([bin, ...args], {
-      stdin: stdin ? new Blob([stdin]) : "ignore", stdout: "pipe", stderr: "ignore",
+      stdin: stdin ? new Blob([stdin]) : "ignore", stdout: "pipe", stderr: "pipe",
     });
     let killed = false;
     const timer = setTimeout(() => { killed = true; try { proc.kill(); } catch {} }, timeoutMs(args));
     try {
-      const [stdout, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-      return { code: killed ? 124 : code, stdout };
+      const [stdout, stderr, code] = await Promise.all([
+        new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited,
+      ]);
+      return { code: killed ? 124 : code, stdout, stderr };
     } finally {
       clearTimeout(timer);
     }

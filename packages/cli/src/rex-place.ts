@@ -185,7 +185,8 @@ export async function rexPresence(
   return r.code === 0 ? "present" : r.code === 3 ? "gone" : "unreachable";
 }
 
-export interface RexCallerBlock { block: string; server: string | null }
+// session: the one the caller's block is in, which the app is showing.
+export interface RexCallerBlock { block: string; server: string | null; session?: string }
 
 // The apps connected to a server; null when it can't be asked. `client ls` also
 // lists CLI clients and connections with no kind. Rex says to treat an unknown
@@ -228,10 +229,12 @@ export async function pickClient(
 
 export type RexFocusResult = "selected" | "focused-only" | "no-app";
 
-// focus_block alone doesn't move the app between sessions, so session.select
-// follows. Every call goes to the row's own server. In a popup this runs while
-// the float is still up: Rex doesn't restore focus when it closes, but focus set
-// from inside it sticks (Task 1).
+// focus_block switches tabs within a session but doesn't move the app between
+// sessions, so session.select follows when the row is in another session. That
+// is a client action, which Rex.app refuses unless Remote Control is on: the
+// error carries Rex's reason. Every call goes to the row's own server. In a
+// popup this runs while the float is still up: Rex doesn't restore focus when it
+// closes, but focus set from inside it sticks (Task 1).
 export async function rexFocus(
   row: { session: string; window: string | null; pane: string; socket: string | null },
   caller: RexCallerBlock | null,
@@ -241,6 +244,7 @@ export async function rexFocus(
   const args = JSON.stringify({ session_id: row.session, block_id: row.pane });
   const f = await exec([...g, "api", "call", "-s", row.session, "session.focus_block", args]);
   if (f.code !== 0) throw new Error(`rex focus failed (exit ${f.code})`);
+  if (caller?.session === row.session && caller.server === row.socket) return "selected";
   const apps = await connectedApps(row.socket, exec);
   if (!apps) throw new Error("rex client ls failed");
   if (apps.length === 0) return "no-app";
@@ -251,7 +255,10 @@ export async function rexFocus(
     ...g, "-C", client, "do", "session.select", "-s", row.session, `session_id=${row.session}`,
     ...(row.window ? [`window_id=${row.window}`] : []),
   ]);
-  if (s.code !== 0) throw new Error(`rex session.select failed (exit ${s.code})`);
+  if (s.code !== 0) {
+    const why = (s.stderr ?? "").split("\n").map((l) => l.replace(/^Error:\s*/, "").trim()).find(Boolean);
+    throw new Error(`Rex could not switch sessions: ${why ?? `session.select exit ${s.code}`}`);
+  }
   return "selected";
 }
 
